@@ -1,0 +1,30 @@
+{
+    "schemaVersion": 1,
+    "id": "hunterboard",
+    "version": "${version}",
+    "name": "HunterBoard",
+    "description": "Detects Pokemon from the Hunting Board and displays them as a HUD overlay with required Pokeballs",
+    "authors": ["HunterBoard Dev"],
+    "license": "MIT",
+    "environment": "client",
+    "entrypoints": {
+        "client": [
+            {
+                "adapter": "kotlin",
+                "value": "com.hunterboard.HunterBoard"
+            }
+        ]
+    },
+    "mixins": [
+        "hunterboard.mixins.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.16.0",
+        "fabric-api": ">=0.100.0",
+        "fabric-language-kotlin": ">=1.10.0",
+        "minecraft": "~1.21.1"
+    },
+    "suggests": {
+        "cobblemon": ">=1.7.0"
+    }
+}
