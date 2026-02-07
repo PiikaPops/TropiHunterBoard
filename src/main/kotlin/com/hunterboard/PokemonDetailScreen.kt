@@ -494,27 +494,43 @@ class PokemonDetailScreen(
 
     private fun getLevelUpMoves(): List<MoveEntry> {
         return try {
-            species.moves.levelUpMoves.flatMap { (level, moves) ->
+            val apiMoves = species.moves.levelUpMoves.flatMap { (level, moves) ->
                 moves.map { MoveEntry(level, it) }
             }.sortedBy { it.level }
+            if (apiMoves.isNotEmpty()) return apiMoves
+
+            val fallback = MoveData.getMoves(species.name) ?: return emptyList()
+            fallback.levelUp.map { MoveEntry(it.first, it.second) }
         } catch (_: Exception) { emptyList() }
     }
 
     private fun getTmMoves(): List<MoveEntry> {
         return try {
-            species.moves.tmMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            val apiMoves = species.moves.tmMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            if (apiMoves.isNotEmpty()) return apiMoves
+
+            val fallback = MoveData.getMoves(species.name) ?: return emptyList()
+            fallback.tm.map { MoveEntry(-1, it) }
         } catch (_: Exception) { emptyList() }
     }
 
     private fun getEggMoves(): List<MoveEntry> {
         return try {
-            species.moves.eggMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            val apiMoves = species.moves.eggMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            if (apiMoves.isNotEmpty()) return apiMoves
+
+            val fallback = MoveData.getMoves(species.name) ?: return emptyList()
+            fallback.egg.map { MoveEntry(-1, it) }
         } catch (_: Exception) { emptyList() }
     }
 
     private fun getTutorMoves(): List<MoveEntry> {
         return try {
-            species.moves.tutorMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            val apiMoves = species.moves.tutorMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
+            if (apiMoves.isNotEmpty()) return apiMoves
+
+            val fallback = MoveData.getMoves(species.name) ?: return emptyList()
+            fallback.tutor.map { MoveEntry(-1, it) }
         } catch (_: Exception) { emptyList() }
     }
 
