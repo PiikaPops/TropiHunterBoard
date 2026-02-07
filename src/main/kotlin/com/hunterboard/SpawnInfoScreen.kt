@@ -36,10 +36,27 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     private data class ToggleBounds(val x: Int, val y: Int, val index: Int)
     private var toggleButtons: MutableList<ToggleBounds> = mutableListOf()
 
+    // Cached ball ItemStacks
+    private var cachedBallStacks: Map<String, ItemStack> = emptyMap()
+
     override fun init() {
         super.init()
         SpawnData.ensureLoaded()
         buildModelWidgets()
+        buildBallCache()
+    }
+
+    private fun buildBallCache() {
+        val stacks = mutableMapOf<String, ItemStack>()
+        for (target in BoardState.targets) {
+            if (target.ballId.isNotEmpty() && target.ballId !in stacks) {
+                try {
+                    val stack = ItemStack(Registries.ITEM.get(Identifier.of(target.ballId)))
+                    if (!stack.isEmpty) stacks[target.ballId] = stack
+                } catch (_: Exception) {}
+            }
+        }
+        cachedBallStacks = stacks
     }
 
     private fun buildModelWidgets() {
@@ -166,6 +183,14 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 val cardContentH = calculateCardContentHeight(spawns, maxTextW)
                 val cardHeight = maxOf(cardContentH, MODEL_SIZE + 12)
 
+                // Skip rendering if card is fully off-screen (but still track position)
+                if (y + cardHeight < contentTop || y > contentBottom) {
+                    toggleButtons.add(ToggleBounds(-1000, -1000, index))
+                    y += cardHeight + 5
+                    totalHeight += cardHeight + 5
+                    continue
+                }
+
                 // Card background
                 val cardBg = if (target.isCaught) 0xFF142014.toInt() else 0xFF1A1A1A.toInt()
                 context.fill(cardX, y, cardX + cardWidth, y + cardHeight, cardBg)
@@ -182,7 +207,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 // 3D Model
                 if (index < modelWidgets.size) {
                     val widget = modelWidgets[index]
-                    if (widget != null && y + cardHeight > contentTop && y < contentBottom) {
+                    if (widget != null) {
                         try {
                             widget.x = cardX + 4
                             widget.y = y - 2
@@ -200,23 +225,18 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 context.drawText(textRenderer, nameText, textContentX, textY, nameColor, true)
 
                 // Ball icon next to name
-                if (target.ballId.isNotEmpty()) {
-                    try {
-                        val ballStack = ItemStack(Registries.ITEM.get(Identifier.of(target.ballId)))
-                        if (!ballStack.isEmpty) {
-                            val nameWidth = textRenderer.getWidth(nameText)
-                            val ballIconX = textContentX + nameWidth + 4
-                            val ballIconY = textY - 4
-                            context.drawItem(ballStack, ballIconX, ballIconY)
+                val ballStack = cachedBallStacks[target.ballId]
+                if (ballStack != null) {
+                    val nameWidth = textRenderer.getWidth(nameText)
+                    val ballIconX = textContentX + nameWidth + 4
+                    val ballIconY = textY - 4
+                    context.drawItem(ballStack, ballIconX, ballIconY)
 
-                            // Check hover for tooltip
-                            if (mouseX >= ballIconX && mouseX <= ballIconX + 16 &&
-                                mouseY >= ballIconY && mouseY <= ballIconY + 16 &&
-                                mouseY >= contentTop && mouseY <= contentBottom) {
-                                hoveredBallName = target.requiredBall
-                            }
-                        }
-                    } catch (_: Exception) {}
+                    if (mouseX >= ballIconX && mouseX <= ballIconX + 16 &&
+                        mouseY >= ballIconY && mouseY <= ballIconY + 16 &&
+                        mouseY >= contentTop && mouseY <= contentBottom) {
+                        hoveredBallName = target.requiredBall
+                    }
                 }
 
                 textY += 13

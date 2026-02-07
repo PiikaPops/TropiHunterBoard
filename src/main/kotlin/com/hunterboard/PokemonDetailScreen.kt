@@ -33,6 +33,9 @@ class PokemonDetailScreen(
     private val tabLabels = arrayOf("Level-Up", "TM", "Egg", "Tutor")
     private val tabBounds = Array(4) { IntArray(4) } // x, y, w, h for each tab
 
+    // Cached move lists (avoid recomputing every frame)
+    private var cachedMoves: Array<List<MoveEntry>?> = arrayOfNulls(4)
+
     // Hover tooltip state
     private var hoveredMoveIndex = -1
     private var hoverStartTime = 0L
@@ -392,12 +395,16 @@ class PokemonDetailScreen(
         y += 6
 
         // ========== ACTIVE MOVE LIST ==========
-        val moves = when (selectedTab) {
-            0 -> getLevelUpMoves()
-            1 -> getTmMoves()
-            2 -> getEggMoves()
-            3 -> getTutorMoves()
-            else -> emptyList()
+        val moves = cachedMoves[selectedTab] ?: run {
+            val computed = when (selectedTab) {
+                0 -> getLevelUpMoves()
+                1 -> getTmMoves()
+                2 -> getEggMoves()
+                3 -> getTutorMoves()
+                else -> emptyList()
+            }
+            cachedMoves[selectedTab] = computed
+            computed
         }
         val showLevel = selectedTab == 0
 

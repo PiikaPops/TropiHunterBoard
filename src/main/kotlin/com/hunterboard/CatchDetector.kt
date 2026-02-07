@@ -8,7 +8,9 @@ import java.util.UUID
 object CatchDetector {
 
     private var knownUuids: MutableSet<UUID> = mutableSetOf()
+    private val tempUuids: MutableSet<UUID> = mutableSetOf()
     private var initialized = false
+    private var tickSkip = 0
 
     private val rewardRegex = Regex("""\+(\d+)""")
 
@@ -16,15 +18,19 @@ object CatchDetector {
         // Method 1: Party monitoring (works in solo)
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (client.world == null || !BoardState.hasTargets()) return@register
-            if (BoardState.targets.all { it.isCaught }) return@register
+            if (BoardState.remainingCount() == 0) return@register
+
+            // Only check every 10 ticks (~0.5s) instead of every tick
+            if (++tickSkip < 10) return@register
+            tickSkip = 0
 
             try {
                 val party = CobblemonClient.storage.party
-                val currentUuids = mutableSetOf<UUID>()
+                tempUuids.clear()
 
                 for (pokemon in party) {
                     if (pokemon == null) continue
-                    currentUuids.add(pokemon.uuid)
+                    tempUuids.add(pokemon.uuid)
 
                     if (!initialized) continue
                     if (pokemon.uuid in knownUuids) continue
@@ -43,7 +49,8 @@ object CatchDetector {
                     }
                 }
 
-                knownUuids = currentUuids
+                knownUuids.clear()
+                knownUuids.addAll(tempUuids)
                 initialized = true
             } catch (_: Exception) {}
         }

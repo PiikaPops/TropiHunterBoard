@@ -38,6 +38,12 @@ object HuntOverlay {
     private var cachedWidgets: List<ModelWidget> = emptyList()
     private var lastBoardUpdate: Long = 0
 
+    // Cached per-board-update values (avoid recalculating every frame)
+    private var cachedBallStacks: Map<String, ItemStack> = emptyMap()
+    private var cachedPanelWidth: Int = 80
+    private var cachedDisplayMode: Int = -1
+    private var cachedDisplayCount: Int = -1
+
     // Colors
     private const val BG_COLOR = 0xCC000000.toInt()
     private const val BORDER_COLOR = 0xFFFFAA00.toInt()
@@ -74,14 +80,17 @@ object HuntOverlay {
         val allTargets = BoardState.targets
         val displayTargets = allTargets.take(BoardState.displayCount)
 
-        // Rebuild model widgets if board data changed
-        if (BoardState.lastUpdated != lastBoardUpdate) {
+        // Rebuild caches if board data or display settings changed
+        if (BoardState.lastUpdated != lastBoardUpdate || mode != cachedDisplayMode || BoardState.displayCount != cachedDisplayCount) {
             rebuildModelWidgets()
+            rebuildBallCache()
+            cachedPanelWidth = calculatePanelWidth(displayTargets, textRenderer, mode)
+            cachedDisplayMode = mode
+            cachedDisplayCount = BoardState.displayCount
             lastBoardUpdate = BoardState.lastUpdated
         }
 
-        // Calculate adaptive panel width
-        val panelW = calculatePanelWidth(displayTargets, textRenderer, mode)
+        val panelW = cachedPanelWidth
 
         // Calculate panel height
         val showHeader = mode != 3
@@ -146,6 +155,8 @@ object HuntOverlay {
                 val textY = currentY + (ROW_HEIGHT - 9) / 2
                 var ballRendered = false
 
+                val ballStack = cachedBallStacks[target.ballId]
+
                 if (mode == 0) {
                     // Full mode: ball icon + ball name, right-aligned
                     val ballText = target.requiredBall
@@ -153,25 +164,15 @@ object HuntOverlay {
                     val ballNameX = x + panelW - ballTextWidth
                     context.drawText(textRenderer, ballText, ballNameX, textY, BALL_COLOR, true)
 
-                    if (target.ballId.isNotEmpty()) {
-                        try {
-                            val ballStack = ItemStack(Registries.ITEM.get(Identifier.of(target.ballId)))
-                            if (!ballStack.isEmpty) {
-                                context.drawItem(ballStack, ballNameX - 18, currentY + (ROW_HEIGHT - 16) / 2)
-                                ballRendered = true
-                            }
-                        } catch (_: Exception) {}
+                    if (ballStack != null) {
+                        context.drawItem(ballStack, ballNameX - 18, currentY + (ROW_HEIGHT - 16) / 2)
+                        ballRendered = true
                     }
                 } else {
                     // Compact mode: ball icon only, right-aligned
-                    if (target.ballId.isNotEmpty()) {
-                        try {
-                            val ballStack = ItemStack(Registries.ITEM.get(Identifier.of(target.ballId)))
-                            if (!ballStack.isEmpty) {
-                                context.drawItem(ballStack, x + panelW - 18, currentY + (ROW_HEIGHT - 16) / 2)
-                                ballRendered = true
-                            }
-                        } catch (_: Exception) {}
+                    if (ballStack != null) {
+                        context.drawItem(ballStack, x + panelW - 18, currentY + (ROW_HEIGHT - 16) / 2)
+                        ballRendered = true
                     }
                     if (!ballRendered) {
                         val ballText = target.requiredBall
@@ -226,6 +227,19 @@ object HuntOverlay {
                 maxOf(headerTextWidth, modelArea + maxName + 10 + 18 + maxBall + PADDING)
             }
         }
+    }
+
+    private fun rebuildBallCache() {
+        val stacks = mutableMapOf<String, ItemStack>()
+        for (target in BoardState.targets) {
+            if (target.ballId.isNotEmpty() && target.ballId !in stacks) {
+                try {
+                    val stack = ItemStack(Registries.ITEM.get(Identifier.of(target.ballId)))
+                    if (!stack.isEmpty) stacks[target.ballId] = stack
+                } catch (_: Exception) {}
+            }
+        }
+        cachedBallStacks = stacks
     }
 
     private fun rebuildModelWidgets() {
