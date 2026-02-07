@@ -40,12 +40,9 @@ Le mod lit automatiquement les chasses depuis le tableau (TropimodClient) et aff
 
 ## Installation
 
-1. Installer [Fabric Loader](https://fabricmc.net/) pour Minecraft 1.21.1
-2. Installer les dependances :
-   - [Fabric API](https://modrinth.com/mod/fabric-api)
-   - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-   - [Cobblemon](https://cobblemon.com/) 1.7+
-3. Mettre le `.jar` de HunterBoard dans le dossier `mods/`
+1. Jouer avec le modpack Tropimon (Modrinth ou Launcher officiel)
+2. Mettre le `.jar` de HunterBoard dans le dossier `mods/`
+
 
 ## Touches
 
