@@ -261,7 +261,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     // Spawn conditions
                     val seen = mutableSetOf<String>()
                     for (spawn in spawns) {
-                        val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}"
+                        val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}"
                         if (key in seen) continue
                         seen.add(key)
 
@@ -274,10 +274,22 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                                 maxTextW - 8, mouseX, mouseY, contentTop, contentBottom)
                         }
 
-                        // Time / Weather
+                        // Structures
+                        if (spawn.structures.isNotEmpty()) {
+                            val structText = "\u2302 " + spawn.structures.joinToString(", ")
+                            context.drawText(textRenderer, structText, textContentX + 4, textY, 0xFFCC8844.toInt(), true)
+                            textY += 10
+                        }
+
+                        // Time / Weather / Sky
                         val timeStr = if (spawn.time == "any") "Any time" else spawn.time.replaceFirstChar { it.uppercase() }
                         val weatherStr = if (spawn.weather == "any") "Any weather" else spawn.weather.replaceFirstChar { it.uppercase() }
-                        context.drawText(textRenderer, "  $timeStr | $weatherStr", textContentX + 4, textY, 0xFF707070.toInt(), true)
+                        val skyStr = when (spawn.canSeeSky) {
+                            true -> " | Outdoor"
+                            false -> " | Underground"
+                            else -> ""
+                        }
+                        context.drawText(textRenderer, "  $timeStr | $weatherStr$skyStr", textContentX + 4, textY, 0xFF707070.toInt(), true)
                         textY += 11
                     }
                 } else {
@@ -387,11 +399,12 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             h += 13 // level + rarity
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}"
+                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}"
                 if (key in seen) continue
                 seen.add(key)
                 h += calculateBiomeLinesHeight(spawn.biomeDetails, maxTextW - 8)
-                h += 11 // time/weather
+                if (spawn.structures.isNotEmpty()) h += 10 // structures line
+                h += 11 // time/weather/sky
             }
         }
 

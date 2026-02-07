@@ -285,7 +285,7 @@ class PokemonDetailScreen(
 
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}"
+                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}"
                 if (key in seen) continue
                 seen.add(key)
 
@@ -297,9 +297,21 @@ class PokemonDetailScreen(
                         halfW - 12, mouseX, mouseY, contentTop, contentBottom)
                 }
 
+                // Structures
+                if (spawn.structures.isNotEmpty()) {
+                    val structText = "\u2302 " + spawn.structures.joinToString(", ")
+                    context.drawText(textRenderer, structText, leftX + 8, spawnY, 0xFFCC8844.toInt(), true)
+                    spawnY += 10
+                }
+
                 val timeStr = if (spawn.time == "any") "Any time" else spawn.time.replaceFirstChar { it.uppercase() }
                 val weatherStr = if (spawn.weather == "any") "Any weather" else spawn.weather.replaceFirstChar { it.uppercase() }
-                context.drawText(textRenderer, "  $timeStr | $weatherStr", leftX + 8, spawnY, 0xFF707070.toInt(), true)
+                val skyStr = when (spawn.canSeeSky) {
+                    true -> " | Outdoor"
+                    false -> " | Underground"
+                    else -> ""
+                }
+                context.drawText(textRenderer, "  $timeStr | $weatherStr$skyStr", leftX + 8, spawnY, 0xFF707070.toInt(), true)
                 spawnY += 12
             }
         } else {

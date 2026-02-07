@@ -24,7 +24,9 @@ data class SpawnEntry(
     val lvMin: Int,
     val lvMax: Int,
     val context: String,
-    val bucket: String
+    val bucket: String,
+    val structures: List<String> = emptyList(),
+    val canSeeSky: Boolean? = null
 )
 
 object SpawnData {
@@ -64,11 +66,16 @@ object SpawnData {
                 val biomeDetails = mutableListOf<BiomeDetail>()
                 var time = "any"
                 var weather = "any"
+                val structures = mutableListOf<String>()
+                var canSeeSky: Boolean? = null
 
                 for (condition in detail.conditions) {
                     extractBiomes(condition, biomeDetails)
                     condition.timeRange?.let { time = identifyTimeRange(it) }
                     extractWeather(condition)?.let { weather = it }
+                    extractStructures(condition, structures)
+                    val sky = extractCanSeeSky(condition)
+                    if (sky != null) canSeeSky = sky
                 }
 
                 val lvRange = detail.levelRange
@@ -80,7 +87,9 @@ object SpawnData {
                     lvMin = lvRange?.first ?: 0,
                     lvMax = lvRange?.last ?: 0,
                     context = "",
-                    bucket = detail.bucket.name
+                    bucket = detail.bucket.name,
+                    structures = structures.toList(),
+                    canSeeSky = canSeeSky
                 )
                 map.getOrPut(species) { mutableListOf() }.add(entry)
             }
@@ -169,11 +178,15 @@ object SpawnData {
         val biomeDetails = mutableListOf<BiomeDetail>()
         var time = "any"
         var weather = "any"
+        val structures = mutableListOf<String>()
+        var canSeeSky: Boolean? = null
 
         obj.getAsJsonObject("condition")?.let { condition ->
             parseConditionBiomes(condition, biomeDetails)
             condition.get("timeRange")?.asString?.let { time = it }
             parseConditionWeather(condition)?.let { weather = it }
+            parseConditionStructures(condition, structures)
+            if (condition.has("canSeeSky")) canSeeSky = condition.get("canSeeSky").asBoolean
         }
 
         val entry = SpawnEntry(
@@ -184,7 +197,9 @@ object SpawnData {
             lvMin = lvMin,
             lvMax = lvMax,
             context = "",
-            bucket = bucket
+            bucket = bucket,
+            structures = structures.toList(),
+            canSeeSky = canSeeSky
         )
         map.getOrPut(species) { mutableListOf() }.add(entry)
     }
@@ -196,11 +211,15 @@ object SpawnData {
         val biomeDetails = mutableListOf<BiomeDetail>()
         var time = "any"
         var weather = "any"
+        val structures = mutableListOf<String>()
+        var canSeeSky: Boolean? = null
 
         obj.getAsJsonObject("condition")?.let { condition ->
             parseConditionBiomes(condition, biomeDetails)
             condition.get("timeRange")?.asString?.let { time = it }
             parseConditionWeather(condition)?.let { weather = it }
+            parseConditionStructures(condition, structures)
+            if (condition.has("canSeeSky")) canSeeSky = condition.get("canSeeSky").asBoolean
         }
 
         for (member in herdPokemon) {
@@ -225,7 +244,9 @@ object SpawnData {
                 lvMin = lvMin,
                 lvMax = lvMax,
                 context = "",
-                bucket = bucket
+                bucket = bucket,
+                structures = structures.toList(),
+                canSeeSky = canSeeSky
             )
             map.getOrPut(species) { mutableListOf() }.add(entry)
         }
@@ -253,6 +274,25 @@ object SpawnData {
                 list.add(detail)
             }
         }
+    }
+
+    private fun parseConditionStructures(condition: JsonObject, list: MutableList<String>) {
+        val structures = condition.getAsJsonArray("structures") ?: return
+        for (el in structures) {
+            val raw = el.asString
+            val name = formatStructureId(raw)
+            if (name.isNotEmpty() && name !in list) list.add(name)
+        }
+    }
+
+    private fun formatStructureId(raw: String): String {
+        // "#minecraft:village" -> "Village", "minecraft:mansion" -> "Mansion"
+        return raw.removePrefix("#")
+            .substringAfter(":")
+            .replace("_", " ")
+            .split(" ")
+            .filter { it.isNotEmpty() }
+            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
     }
 
     private fun parseConditionWeather(condition: JsonObject): String? {
@@ -328,6 +368,22 @@ object SpawnData {
                 raining == false -> "clear"
                 else -> null
             }
+        } catch (_: Exception) { null }
+    }
+
+    private fun extractStructures(condition: SpawningCondition<*>, list: MutableList<String>) {
+        try {
+            val structures = condition.structures ?: return
+            for (structure in structures) {
+                val name = formatStructureId(structure.toString())
+                if (name.isNotEmpty() && name !in list) list.add(name)
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun extractCanSeeSky(condition: SpawningCondition<*>): Boolean? {
+        return try {
+            condition.canSeeSky
         } catch (_: Exception) { null }
     }
 }
