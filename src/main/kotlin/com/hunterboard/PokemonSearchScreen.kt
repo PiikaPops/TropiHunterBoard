@@ -20,6 +20,19 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var scrollOffset = 0
     private val rowHeight = 16
 
+    // Scrollbar drag state
+    private var isScrollbarDragging = false
+    private var scrollbarDragStartY = 0.0
+    private var scrollbarDragStartOffset = 0
+
+    // Scrollbar geometry (updated each frame)
+    private var sbTrackX = 0
+    private var sbContentTop = 0
+    private var sbContentBottom = 0
+    private var sbThumbY = 0
+    private var sbThumbHeight = 0
+    private var sbMaxScroll = 0
+
     override fun init() {
         super.init()
         SpawnData.ensureLoaded()
@@ -34,7 +47,8 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val panelX = (width - panelWidth) / 2
         val panelTop = 25
 
-        searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 24, panelWidth - 20, 16, Text.literal("Search"))
+        val placeholder: String = Translations.tr("Search")
+        searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 24, panelWidth - 20, 16, Text.literal(placeholder))
         searchField.setMaxLength(50)
         searchField.setChangedListener { updateSearch() }
         addDrawableChild(searchField)
@@ -72,7 +86,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         drawBorder(context, panelX, panelTop, panelWidth, panelHeight, 0xFFFFAA00.toInt())
 
         // Title
-        val title = "\u2726 Pok\u00e9mon Search \u2726"
+        val title: String = Translations.tr("\u2726 Pok\u00e9mon Search \u2726")
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, 0xFFFFAA00.toInt(), true)
 
@@ -91,7 +105,8 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (filteredSpecies.isEmpty()) {
-            context.drawText(textRenderer, "No Pok\u00e9mon found", panelX + 15, resultsTop + 10, 0xFF666666.toInt(), true)
+            val noResult: String = Translations.tr("No Pok\u00e9mon found")
+            context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, 0xFF666666.toInt(), true)
         } else {
             var y = resultsTop + 2 - scrollOffset
             for (species in filteredSpecies) {
@@ -129,19 +144,22 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
         // Scrollbar
         val contentHeight = filteredSpecies.size * rowHeight + 4
+        sbMaxScroll = maxOf(0, contentHeight - resultsAreaHeight)
         if (contentHeight > resultsAreaHeight && resultsAreaHeight > 0) {
-            val trackX = panelX + panelWidth - 5
-            context.fill(trackX, resultsTop, trackX + 3, resultsBottom, 0xFF1A1A1A.toInt())
-            val thumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
+            sbTrackX = panelX + panelWidth - 5
+            sbContentTop = resultsTop
+            sbContentBottom = resultsBottom
+            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, 0xFF1A1A1A.toInt())
+            sbThumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
             val maxScroll = contentHeight - resultsAreaHeight
-            val thumbY = resultsTop + (scrollOffset * (resultsAreaHeight - thumbHeight) / maxOf(1, maxScroll))
-            context.fill(trackX, thumbY, trackX + 3, thumbY + thumbHeight, 0xFFFFAA00.toInt())
+            sbThumbY = resultsTop + (scrollOffset * (resultsAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, 0xFFFFAA00.toInt())
         }
 
         // Footer
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
         context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint = "ESC to close  \u2022  Click for details"
+        val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
         val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
         context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
 
@@ -150,25 +168,82 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (button == 0 && filteredSpecies.isNotEmpty()) {
+        if (button == 0) {
+            // Check scrollbar click
+            val contentHeight = filteredSpecies.size * rowHeight + 4
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
             val resultsTop = panelTop + 46
             val resultsBottom = height - 25 - 16
+            val resultsAreaHeight = resultsBottom - resultsTop
 
-            if (mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
-                mouseY >= resultsTop && mouseY <= resultsBottom) {
-                val relativeY = mouseY.toInt() - resultsTop + scrollOffset - 2
-                val index = relativeY / rowHeight
-                if (index >= 0 && index < filteredSpecies.size) {
-                    val species = filteredSpecies[index]
-                    client?.setScreen(PokemonDetailScreen(species, this))
+            if (contentHeight > resultsAreaHeight && resultsAreaHeight > 0) {
+                val trackX = panelX + panelWidth - 5
+                if (mouseX >= trackX && mouseX <= trackX + 3 &&
+                    mouseY >= resultsTop && mouseY <= resultsBottom) {
+                    val thumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
+                    val maxScroll = contentHeight - resultsAreaHeight
+                    val thumbY = resultsTop + (scrollOffset * (resultsAreaHeight - thumbHeight) / maxOf(1, maxScroll))
+
+                    if (mouseY >= thumbY && mouseY <= thumbY + thumbHeight) {
+                        // Click on thumb - start dragging
+                        isScrollbarDragging = true
+                        scrollbarDragStartY = mouseY
+                        scrollbarDragStartOffset = scrollOffset
+                    } else {
+                        // Click on track - jump to position
+                        val clickRatio = (mouseY - resultsTop - thumbHeight / 2.0) / (resultsAreaHeight - thumbHeight)
+                        scrollOffset = (clickRatio * maxScroll).toInt().coerceIn(0, maxScroll)
+                    }
                     return true
+                }
+            }
+
+            // Check results click
+            if (filteredSpecies.isNotEmpty()) {
+                if (mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
+                    mouseY >= resultsTop && mouseY <= resultsBottom) {
+                    val relativeY = mouseY.toInt() - resultsTop + scrollOffset - 2
+                    val index = relativeY / rowHeight
+                    if (index >= 0 && index < filteredSpecies.size) {
+                        val species = filteredSpecies[index]
+                        client?.setScreen(PokemonDetailScreen(species, this))
+                        return true
+                    }
                 }
             }
         }
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (isScrollbarDragging && button == 0) {
+            val panelTop = 25
+            val resultsTop = panelTop + 46
+            val resultsBottom = height - 25 - 16
+            val resultsAreaHeight = resultsBottom - resultsTop
+            val contentHeight = filteredSpecies.size * rowHeight + 4
+            val thumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
+            val maxScroll = maxOf(0, contentHeight - resultsAreaHeight)
+            val trackRange = resultsAreaHeight - thumbHeight
+
+            if (trackRange > 0) {
+                val dy = mouseY - scrollbarDragStartY
+                val scrollDelta = (dy / trackRange * maxScroll).toInt()
+                scrollOffset = (scrollbarDragStartOffset + scrollDelta).coerceIn(0, maxScroll)
+            }
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button == 0 && isScrollbarDragging) {
+            isScrollbarDragging = false
+            return true
+        }
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {

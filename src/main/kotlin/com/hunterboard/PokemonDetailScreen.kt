@@ -30,7 +30,7 @@ class PokemonDetailScreen(
 
     // Move tabs
     private var selectedTab = 0
-    private val tabLabels = arrayOf("Level-Up", "TM", "Egg", "Tutor")
+    private val tabKeys = arrayOf("Level-Up", "TM", "Egg", "Tutor")
     private val tabBounds = Array(4) { IntArray(4) } // x, y, w, h for each tab
 
     // Cached move lists (avoid recomputing every frame)
@@ -65,6 +65,16 @@ class PokemonDetailScreen(
     private var shinyBtnY = 0
     private val shinyBtnW = 14
     private val shinyBtnH = 14
+
+    // Scrollbar drag state
+    private var isScrollbarDragging = false
+    private var scrollbarDragStartY = 0
+    private var scrollbarDragStartOffset = 0
+    private var sbTrackX = 0
+    private var sbContentTop = 0
+    private var sbContentBottom = 0
+    private var sbThumbY = 0
+    private var sbThumbHeight = 0
 
     companion object {
         private const val MODEL_SIZE = 80
@@ -110,13 +120,13 @@ class PokemonDetailScreen(
         drawBorder(context, panelX, panelTop, panelWidth, panelHeight, 0xFFFFAA00.toInt())
 
         // Header
-        val backText = "\u2190 Back"
+        val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY >= panelTop + 5 && mouseY <= panelTop + 17
         context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
             if (backHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
-        val displayName = species.translatedName.string
+        val displayName: String = species.translatedName.string
         context.drawText(textRenderer, displayName,
             panelX + (panelWidth - textRenderer.getWidth(displayName)) / 2, panelTop + 6, 0xFFFFFFFF.toInt(), true)
 
@@ -191,13 +201,14 @@ class PokemonDetailScreen(
         leftY += 16
 
         // Abilities
-        context.drawText(textRenderer, "Abilities", infoX, leftY, 0xFFFFAA00.toInt(), true)
+        val abilitiesLabel: String = Translations.tr("Abilities")
+        context.drawText(textRenderer, abilitiesLabel, infoX, leftY, 0xFFFFAA00.toInt(), true)
         leftY += 11
         try {
             for (ability in species.abilities) {
                 val pa = ability as? PotentialAbility ?: continue
                 val isHidden = pa is HiddenAbility
-                val abilityName = Text.translatable(pa.template.displayName).string
+                val abilityName: String = Text.translatable(pa.template.displayName).string
                 val color = if (isHidden) 0xFFFFDD55.toInt() else 0xFFCCCCCC.toInt()
                 context.drawText(textRenderer, abilityName, infoX + 4, leftY, color, true)
                 var totalW = textRenderer.getWidth(abilityName)
@@ -213,18 +224,26 @@ class PokemonDetailScreen(
         leftY += 4
 
         // EV Yield
-        context.drawText(textRenderer, "EV Yield", infoX, leftY, 0xFFFFAA00.toInt(), true)
+        val evLabel: String = Translations.tr("EV Yield")
+        context.drawText(textRenderer, evLabel, infoX, leftY, 0xFFFFAA00.toInt(), true)
         leftY += 11
         try {
             val evYield = species.evYield
             val evParts = mutableListOf<String>()
-            val statOrder = listOf(Stats.HP to "HP", Stats.ATTACK to "Atk", Stats.DEFENCE to "Def",
-                Stats.SPECIAL_ATTACK to "SpAtk", Stats.SPECIAL_DEFENCE to "SpDef", Stats.SPEED to "Spd")
+            val statOrder = listOf(
+                Stats.HP to Translations.tr("HP"),
+                Stats.ATTACK to Translations.tr("Attack"),
+                Stats.DEFENCE to Translations.tr("Defence"),
+                Stats.SPECIAL_ATTACK to Translations.tr("SpAtk"),
+                Stats.SPECIAL_DEFENCE to Translations.tr("SpDef"),
+                Stats.SPEED to Translations.tr("Speed")
+            )
             for ((stat, label) in statOrder) {
                 val value = evYield[stat]
                 if (value != null && value > 0) evParts.add("$label $value")
             }
-            context.drawText(textRenderer, if (evParts.isEmpty()) "None" else evParts.joinToString(", "),
+            val noneText: String = Translations.tr("None")
+            context.drawText(textRenderer, if (evParts.isEmpty()) noneText else evParts.joinToString(", "),
                 infoX + 4, leftY, 0xFFCCCCCC.toInt(), true)
         } catch (_: Exception) {}
         leftY += 12
@@ -232,12 +251,17 @@ class PokemonDetailScreen(
         val leftEndY = maxOf(leftY, y + MODEL_SIZE + 6)
 
         // --- RIGHT: Base Stats ---
-        context.drawText(textRenderer, "Base Stats", midX, y, 0xFFFFAA00.toInt(), true)
+        val baseStatsLabel: String = Translations.tr("Base Stats")
+        context.drawText(textRenderer, baseStatsLabel, midX, y, 0xFFFFAA00.toInt(), true)
         var statsY = y + 13
 
         val statEntries = listOf(
-            Stats.HP to "HP", Stats.ATTACK to "Attack", Stats.DEFENCE to "Defence",
-            Stats.SPECIAL_ATTACK to "SpAtk", Stats.SPECIAL_DEFENCE to "SpDef", Stats.SPEED to "Speed"
+            Stats.HP to Translations.tr("HP"),
+            Stats.ATTACK to Translations.tr("Attack"),
+            Stats.DEFENCE to Translations.tr("Defence"),
+            Stats.SPECIAL_ATTACK to Translations.tr("SpAtk"),
+            Stats.SPECIAL_DEFENCE to Translations.tr("SpDef"),
+            Stats.SPEED to Translations.tr("Speed")
         )
         val labelWidth = 42
         val barX = midX + labelWidth
@@ -254,7 +278,8 @@ class PokemonDetailScreen(
         }
 
         val total = statEntries.sumOf { species.baseStats[it.first] ?: 0 }
-        context.drawText(textRenderer, "Total", midX, statsY, 0xFFBBBBBB.toInt(), true)
+        val totalLabel: String = Translations.tr("Total")
+        context.drawText(textRenderer, totalLabel, midX, statsY, 0xFFBBBBBB.toInt(), true)
         context.drawText(textRenderer, "$total", barX + barMaxW + 4, statsY, 0xFFFFFFFF.toInt(), true)
         statsY += 12
 
@@ -267,34 +292,38 @@ class PokemonDetailScreen(
         // ========== ROW 2: Spawn Conditions (left) | Dropped Items (right) ==========
         val row2StartY = y
 
-        context.drawText(textRenderer, "Spawn Conditions", leftX, y, 0xFFFFAA00.toInt(), true)
+        val spawnLabel: String = Translations.tr("Spawn Conditions")
+        context.drawText(textRenderer, spawnLabel, leftX, y, 0xFFFFAA00.toInt(), true)
         var spawnY = y + 13
 
         val spawns = SpawnData.getSpawns(species.name)
         if (spawns.isNotEmpty()) {
-            val rarity = spawns.firstOrNull()?.bucket ?: ""
-            context.drawText(textRenderer, "Rarity: ", leftX + 4, spawnY, 0xFFBBBBBB.toInt(), true)
-            context.drawText(textRenderer, formatRarity(rarity),
-                leftX + 4 + textRenderer.getWidth("Rarity: "), spawnY, getRarityColor(rarity), true)
-            spawnY += 11
-
             val lvMin = spawns.minOf { it.lvMin }
             val lvMax = spawns.maxOf { it.lvMax }
-            context.drawText(textRenderer, "Lv. $lvMin-$lvMax", leftX + 4, spawnY, 0xFFBBBBBB.toInt(), true)
+            val lvPrefix: String = Translations.tr("Lv.")
+            context.drawText(textRenderer, "$lvPrefix $lvMin-$lvMax", leftX + 4, spawnY, 0xFFBBBBBB.toInt(), true)
             spawnY += 13
 
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}"
+                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}"
                 if (key in seen) continue
                 seen.add(key)
 
+                // Rarity tag per spawn line
+                val rarityText: String = Translations.formatRarity(spawn.bucket)
+                val rarityColor = getRarityColor(spawn.bucket)
+                val rarityTagText = "[$rarityText] "
+                context.drawText(textRenderer, rarityTagText, leftX + 8, spawnY, rarityColor, true)
+                val rarityTagW = textRenderer.getWidth(rarityTagText)
+
                 if (spawn.biomeDetails.isEmpty()) {
-                    context.drawText(textRenderer, "\u25CF Any", leftX + 8, spawnY, 0xFF999999.toInt(), true)
+                    val anyText: String = Translations.tr("Any")
+                    context.drawText(textRenderer, anyText, leftX + 8 + rarityTagW, spawnY, 0xFF999999.toInt(), true)
                     spawnY += 10
                 } else {
-                    spawnY = renderBiomesInline(context, spawn.biomeDetails, leftX + 8, spawnY,
-                        halfW - 12, mouseX, mouseY, contentTop, contentBottom)
+                    spawnY = renderBiomesInline(context, spawn.biomeDetails, leftX + 8 + rarityTagW, spawnY,
+                        halfW - 12 - rarityTagW, mouseX, mouseY, contentTop, contentBottom)
                 }
 
                 // Structures
@@ -304,18 +333,15 @@ class PokemonDetailScreen(
                     spawnY += 10
                 }
 
-                val timeStr = if (spawn.time == "any") "Any time" else spawn.time.replaceFirstChar { it.uppercase() }
-                val weatherStr = if (spawn.weather == "any") "Any weather" else spawn.weather.replaceFirstChar { it.uppercase() }
-                val skyStr = when (spawn.canSeeSky) {
-                    true -> " | Outdoor"
-                    false -> " | Underground"
-                    else -> ""
-                }
+                val timeStr: String = Translations.formatTime(spawn.time)
+                val weatherStr: String = Translations.formatWeather(spawn.weather)
+                val skyStr: String = Translations.formatSky(spawn.canSeeSky)
                 context.drawText(textRenderer, "  $timeStr | $weatherStr$skyStr", leftX + 8, spawnY, 0xFF707070.toInt(), true)
                 spawnY += 12
             }
         } else {
-            context.drawText(textRenderer, "No spawn data", leftX + 4, spawnY, 0xFF666666.toInt(), true)
+            val noSpawnText: String = Translations.tr("No spawn data")
+            context.drawText(textRenderer, noSpawnText, leftX + 4, spawnY, 0xFF666666.toInt(), true)
             spawnY += 12
         }
 
@@ -324,13 +350,15 @@ class PokemonDetailScreen(
             maxOf(spawnY, row2StartY + 30), 0xFF333333.toInt())
 
         // Dropped Items (right)
-        context.drawText(textRenderer, "Dropped Items", midX, row2StartY, 0xFFFFAA00.toInt(), true)
+        val dropsLabel: String = Translations.tr("Dropped Items")
+        context.drawText(textRenderer, dropsLabel, midX, row2StartY, 0xFFFFAA00.toInt(), true)
         var dropY = row2StartY + 13
 
         try {
             val entries = species.drops.entries
             if (entries.isEmpty()) {
-                context.drawText(textRenderer, "None", midX + 4, dropY, 0xFF666666.toInt(), true)
+                val noneText: String = Translations.tr("None")
+                context.drawText(textRenderer, noneText, midX + 4, dropY, 0xFF666666.toInt(), true)
                 dropY += 12
             } else {
                 for (entry in entries) {
@@ -346,14 +374,16 @@ class PokemonDetailScreen(
                         val qtyText = if (qty != null && qty.first != qty.last) "${qty.first}-${qty.last}" else "${entry.quantity}"
                         context.drawText(textRenderer, "${item.name.string} ${entry.percentage.toInt()}%",
                             textStartX, dropY, 0xFFCCCCCC.toInt(), true)
-                        context.drawText(textRenderer, "Qty: $qtyText",
+                        val qtyLabel: String = Translations.tr("Qty:")
+                        context.drawText(textRenderer, "$qtyLabel $qtyText",
                             textStartX, dropY + 10, 0xFF999999.toInt(), true)
                         dropY += 22
                     }
                 }
             }
         } catch (_: Exception) {
-            context.drawText(textRenderer, "N/A", midX + 4, dropY, 0xFF666666.toInt(), true)
+            val naText: String = Translations.tr("N/A")
+            context.drawText(textRenderer, naText, midX + 4, dropY, 0xFF666666.toInt(), true)
             dropY += 12
         }
 
@@ -366,8 +396,8 @@ class PokemonDetailScreen(
         // ========== MOVE TABS ==========
         val tabY = y
         var tabX = leftX
-        for (i in tabLabels.indices) {
-            val label = tabLabels[i]
+        for (i in tabKeys.indices) {
+            val label: String = Translations.tr(tabKeys[i])
             val tw = textRenderer.getWidth(label) + 12
             val isSelected = i == selectedTab
             val isTabHovered = mouseX >= tabX && mouseX <= tabX + tw &&
@@ -421,7 +451,7 @@ class PokemonDetailScreen(
         val showLevel = selectedTab == 0
 
         if (moves.isEmpty()) {
-            val emptyText = "No ${tabLabels[selectedTab]} moves"
+            val emptyText: String = Translations.noMovesText(tabKeys[selectedTab])
             context.drawText(textRenderer, emptyText,
                 panelX + (panelWidth - textRenderer.getWidth(emptyText)) / 2, y + 6, 0xFF666666.toInt(), true)
             y += 22
@@ -438,7 +468,7 @@ class PokemonDetailScreen(
             val now = System.currentTimeMillis()
             if (now - hoverStartTime >= HOVER_DELAY_MS) {
                 try {
-                    val desc = tooltipMove!!.description.string
+                    val desc: String = tooltipMove!!.description.string
                     if (desc.isNotEmpty()) {
                         val lines = mutableListOf<Text>()
                         lines.add(Text.literal(tooltipMove!!.displayName.string).styled { it.withBold(true) })
@@ -458,8 +488,8 @@ class PokemonDetailScreen(
             if (now - abilityHoverStartTime >= HOVER_DELAY_MS) {
                 try {
                     val tmpl = tooltipAbility!!.template
-                    val abilityName = Text.translatable(tmpl.displayName).string
-                    val desc = Text.translatable(tmpl.description).string
+                    val abilityName: String = Text.translatable(tmpl.displayName).string
+                    val desc: String = Text.translatable(tmpl.description).string
                     if (desc.isNotEmpty()) {
                         val lines = mutableListOf<Text>()
                         lines.add(Text.literal(abilityName).styled { it.withBold(true) })
@@ -487,19 +517,23 @@ class PokemonDetailScreen(
         }
 
         // Scrollbar
+        sbTrackX = panelX + panelWidth - 5
+        sbContentTop = contentTop
+        sbContentBottom = contentBottom
         if (contentHeight > contentAreaHeight && contentAreaHeight > 0) {
-            val trackX = panelX + panelWidth - 5
-            context.fill(trackX, contentTop, trackX + 3, contentBottom, 0xFF1A1A1A.toInt())
-            val thumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
+            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, 0xFF1A1A1A.toInt())
+            sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
             val maxScroll = contentHeight - contentAreaHeight
-            val thumbY = contentTop + (scrollOffset * (contentAreaHeight - thumbHeight) / maxOf(1, maxScroll))
-            context.fill(trackX, thumbY, trackX + 3, thumbY + thumbHeight, 0xFFFFAA00.toInt())
+            sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, 0xFFFFAA00.toInt())
+        } else {
+            sbThumbHeight = 0
         }
 
         // Footer
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
         context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint = "ESC / Click Back to return"
+        val hint: String = Translations.tr("ESC / Click Back to return")
         context.drawText(textRenderer, hint,
             panelX + (panelWidth - textRenderer.getWidth(hint)) / 2, panelBottom - 10, 0xFF555555.toInt(), true)
 
@@ -561,7 +595,6 @@ class PokemonDetailScreen(
     ): Int {
         var y = startY
         val rowH = 14
-        val contentW = panelWidth - 16
 
         // Column layout - centered within panel
         val tableX = panelX + 8
@@ -576,13 +609,13 @@ class PokemonDetailScreen(
 
         // Header
         val headerColor = 0xFF777777.toInt()
-        if (showLevel) context.drawText(textRenderer, "Lv", colLvl, y, headerColor, true)
-        context.drawText(textRenderer, "Move", colName, y, headerColor, true)
-        context.drawText(textRenderer, "Type", colType, y, headerColor, true)
-        context.drawText(textRenderer, "Cat.", colCat, y, headerColor, true)
-        context.drawText(textRenderer, "Pow", colPow, y, headerColor, true)
-        context.drawText(textRenderer, "Acc", colAcc, y, headerColor, true)
-        context.drawText(textRenderer, "PP", colPP, y, headerColor, true)
+        if (showLevel) context.drawText(textRenderer, Translations.tr("Lv"), colLvl, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("Move"), colName, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("Type"), colType, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("Cat."), colCat, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("Pow"), colPow, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("Acc"), colAcc, y, headerColor, true)
+        context.drawText(textRenderer, Translations.tr("PP"), colPP, y, headerColor, true)
         y += 11
         context.fill(tableX, y, panelX + panelWidth - 8, y + 1, 0xFF2A2A2A.toInt())
         y += 4
@@ -612,7 +645,7 @@ class PokemonDetailScreen(
                 drawMiniTypeBadge(context, colType, y + 1, typeName)
 
                 // Category
-                val catName = move.damageCategory.displayName.string
+                val catName: String = move.damageCategory.displayName.string
                 context.drawText(textRenderer, catName, colCat, y + 2, getCategoryColor(move.damageCategory.name), true)
 
                 // Power
@@ -759,10 +792,26 @@ class PokemonDetailScreen(
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            // Scrollbar click
+            if (sbThumbHeight > 0 && mouseX >= sbTrackX && mouseX <= sbTrackX + 6 &&
+                mouseY >= sbContentTop && mouseY <= sbContentBottom) {
+                if (mouseY >= sbThumbY && mouseY <= sbThumbY + sbThumbHeight) {
+                    isScrollbarDragging = true
+                    scrollbarDragStartY = mouseY.toInt()
+                    scrollbarDragStartOffset = scrollOffset
+                } else {
+                    val contentAreaHeight = sbContentBottom - sbContentTop
+                    val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+                    val ratio = (mouseY - sbContentTop).toFloat() / contentAreaHeight
+                    scrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
+                }
+                return true
+            }
+
             val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
             val panelX = (width - panelWidth) / 2
             val panelTop = 10
-            val backText = "\u2190 Back"
+            val backText: String = Translations.tr("\u2190 Back")
             if (mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                 mouseY >= panelTop + 5.0 && mouseY <= panelTop + 17.0) {
                 client?.setScreen(parent)
@@ -806,6 +855,29 @@ class PokemonDetailScreen(
             }
         }
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (isScrollbarDragging && button == 0) {
+            val contentAreaHeight = sbContentBottom - sbContentTop
+            val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+            val trackRange = contentAreaHeight - sbThumbHeight
+            if (trackRange > 0) {
+                val mouseDelta = mouseY.toInt() - scrollbarDragStartY
+                val scrollDelta = (mouseDelta.toFloat() / trackRange * maxScroll).toInt()
+                scrollOffset = (scrollbarDragStartOffset + scrollDelta).coerceIn(0, maxScroll)
+            }
+            return true
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+    }
+
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button == 0 && isScrollbarDragging) {
+            isScrollbarDragging = false
+            return true
+        }
+        return super.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
@@ -852,11 +924,6 @@ class PokemonDetailScreen(
         }
     }
 
-    private fun formatRarity(bucket: String): String {
-        if (bucket.isEmpty()) return "Unknown"
-        return bucket.split("-").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-    }
-
     private fun renderBiomesInline(
         context: DrawContext, biomes: List<BiomeDetail>,
         startX: Int, startY: Int, maxWidth: Int,
@@ -864,18 +931,15 @@ class PokemonDetailScreen(
     ): Int {
         var x = startX
         var y = startY
-        val bulletW = textRenderer.getWidth("\u25CF ")
-        context.drawText(textRenderer, "\u25CF ", x, y, 0xFF999999.toInt(), true)
-        x += bulletW
 
         for ((i, biome) in biomes.withIndex()) {
             val nameW = textRenderer.getWidth(biome.displayName)
             val separator = if (i < biomes.lastIndex) ", " else ""
             val sepW = textRenderer.getWidth(separator)
 
-            if (x + nameW > startX + maxWidth && x > startX + bulletW) {
+            if (x + nameW > startX + maxWidth && x > startX) {
                 y += 10
-                x = startX + textRenderer.getWidth("    ")
+                x = startX
             }
 
             val isHovered = biome.tagId != null &&

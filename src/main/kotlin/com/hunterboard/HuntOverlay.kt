@@ -114,7 +114,7 @@ object HuntOverlay {
         // Header
         var currentY = y
         if (showHeader) {
-            val headerText = "Hunting Board"
+            val headerText = Translations.tr("Hunting Board")
             val headerX = x + (panelW - textRenderer.getWidth(headerText)) / 2
             context.drawText(textRenderer, headerText, headerX, y, TITLE_COLOR, true)
             currentY = y + HEADER_HEIGHT + 2
@@ -141,11 +141,12 @@ object HuntOverlay {
             if (mode <= 2) {
                 val textX = x + MODEL_SIZE + 4
                 val textY = currentY + (ROW_HEIGHT - 9) / 2
-                context.drawText(textRenderer, target.pokemonName, textX, textY, color, true)
+                val displayName: String = Translations.pokemonName(target.speciesId)
+                context.drawText(textRenderer, displayName, textX, textY, color, true)
 
                 // Strikethrough if caught
                 if (target.isCaught) {
-                    val nameWidth = textRenderer.getWidth(target.pokemonName)
+                    val nameWidth = textRenderer.getWidth(displayName)
                     context.fill(textX, textY + 4, textX + nameWidth, textY + 5, CAUGHT_COLOR)
                 }
             }
@@ -159,7 +160,7 @@ object HuntOverlay {
 
                 if (mode == 0) {
                     // Full mode: ball icon + ball name, right-aligned
-                    val ballText = target.requiredBall
+                    val ballText: String = Translations.ballName(target.ballId)
                     val ballTextWidth = textRenderer.getWidth(ballText)
                     val ballNameX = x + panelW - ballTextWidth
                     context.drawText(textRenderer, ballText, ballNameX, textY, BALL_COLOR, true)
@@ -175,7 +176,7 @@ object HuntOverlay {
                         ballRendered = true
                     }
                     if (!ballRendered) {
-                        val ballText = target.requiredBall
+                        val ballText: String = Translations.ballName(target.ballId)
                         val ballWidth = textRenderer.getWidth(ballText)
                         context.drawText(textRenderer, ballText, x + panelW - ballWidth, textY, BALL_COLOR, true)
                     }
@@ -209,21 +210,22 @@ object HuntOverlay {
         if (targets.isEmpty()) return 80
 
         val modelArea = MODEL_SIZE + 4
-        val headerTextWidth = textRenderer.getWidth("Hunting Board") + PADDING * 2
+        val headerText: String = Translations.tr("Hunting Board")
+        val headerTextWidth = textRenderer.getWidth(headerText) + PADDING * 2
 
         return when (mode) {
             3 -> MODEL_SIZE + PADDING * 3
             2 -> {
-                val maxName = targets.maxOf { textRenderer.getWidth(it.pokemonName) }
+                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
                 maxOf(headerTextWidth, modelArea + maxName + PADDING * 2)
             }
             1 -> {
-                val maxName = targets.maxOf { textRenderer.getWidth(it.pokemonName) }
+                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
                 maxOf(headerTextWidth, modelArea + maxName + 10 + 16 + PADDING)
             }
             else -> {
-                val maxName = targets.maxOf { textRenderer.getWidth(it.pokemonName) }
-                val maxBall = targets.maxOf { textRenderer.getWidth(it.requiredBall) }
+                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
+                val maxBall = targets.maxOf { val b: String = Translations.ballName(it.ballId); textRenderer.getWidth(b) }
                 maxOf(headerTextWidth, modelArea + maxName + 10 + 18 + maxBall + PADDING)
             }
         }
