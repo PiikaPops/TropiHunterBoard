@@ -2,5 +2,6 @@
     "key.hunterboard.toggle": "Toggle HunterBoard HUD",
     "key.hunterboard.info": "Open Spawn Info",
     "key.hunterboard.search": "Search Pok\u00e9mon",
+    "key.hunterboard.cycle_mode": "Cycle HUD Display Mode",
     "category.hunterboard": "HunterBoard"
 }

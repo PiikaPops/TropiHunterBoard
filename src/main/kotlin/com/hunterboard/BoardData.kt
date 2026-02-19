@@ -37,16 +37,16 @@ object BoardState {
     var displayMode: Int = 0
         private set
 
-    private val MODE_KEYS = arrayOf("Full", "Compact", "Minimal", "Icon")
+    private val MODE_KEYS = arrayOf("Full", "Compact", "Minimal", "Icon", "Icon+")
     val MODE_LABELS: Array<String> get() = MODE_KEYS.map { Translations.tr(it) }.toTypedArray()
 
     fun setDisplayCount(count: Int) {
-        displayCount = count.coerceIn(3, 6)
+        displayCount = count.coerceIn(3, ModConfig.maxHunts())
         save()
     }
 
     fun setDisplayMode(mode: Int) {
-        displayMode = mode.coerceIn(0, 3)
+        displayMode = mode.coerceIn(0, 4)
         save()
     }
 

@@ -1,6 +1,7 @@
 {
     "key.hunterboard.toggle": "Afficher/Masquer le HUD HunterBoard",
     "key.hunterboard.info": "Ouvrir les Infos d'Apparition",
-    "key.hunterboard.search": "Rechercher un Pokémon",
+    "key.hunterboard.search": "Rechercher un Pok\u00e9mon",
+    "key.hunterboard.cycle_mode": "Changer le mode d'affichage du HUD",
     "category.hunterboard": "HunterBoard"
 }

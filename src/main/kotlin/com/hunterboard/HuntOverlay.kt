@@ -8,31 +8,40 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
+import net.minecraft.registry.RegistryKeys
+import net.minecraft.registry.tag.TagKey
 import net.minecraft.util.Identifier
-import org.lwjgl.glfw.GLFW
 
 object HuntOverlay {
 
-    // Panel position (null = auto bottom-right)
-    private var panelX: Int? = null
-    private var panelY: Int? = null
+    // Panel position (null = auto bottom-right) — stored in screen pixels
+    var panelX: Int? = null
+    var panelY: Int? = null
 
-    // Panel dimensions (constants)
-    private const val ROW_HEIGHT = 24
-    private const val MODEL_SIZE = 22
-    private const val PADDING = 5
-    private const val HEADER_HEIGHT = 14
+    // Exposed rendered bounds in screen pixels for HudPositionScreen
+    var renderedX = 0; private set
+    var renderedY = 0; private set
+    var renderedW = 0; private set
+    var renderedH = 0; private set
 
-    // Drag state
-    private var isDragging = false
-    private var dragStarted = false
-    private var dragOffsetX = 0
-    private var dragOffsetY = 0
-    private var dragStartMouseX = 0
-    private var dragStartMouseY = 0
-    private var wasMouseDown = false
-    private const val DRAG_DEAD_ZONE = 5
-    private const val SNAP_DISTANCE = 20
+    // Force visibility for position editing
+    var forceVisible = false
+
+    // Size layout per preset (Small / Normal / Large)
+    private data class SizeLayout(
+        val rowHeight: Int,
+        val modelSize: Int,
+        val padding: Int,
+        val headerHeight: Int,
+        val modelBaseScale: Float
+    )
+
+    private val SIZE_PRESETS = arrayOf(
+        SizeLayout(rowHeight = 17, modelSize = 15, padding = 4, headerHeight = 11, modelBaseScale = 0.65f), // 0 Small
+        SizeLayout(rowHeight = 24, modelSize = 22, padding = 5, headerHeight = 14, modelBaseScale = 0.85f), // 1 Normal
+        SizeLayout(rowHeight = 36, modelSize = 32, padding = 6, headerHeight = 18, modelBaseScale = 1.20f), // 2 Large
+        SizeLayout(rowHeight = 50, modelSize = 44, padding = 7, headerHeight = 22, modelBaseScale = 1.60f)  // 3 Extra Large
+    )
 
     // Cached model widgets
     private var cachedWidgets: List<ModelWidget> = emptyList()
@@ -43,142 +52,200 @@ object HuntOverlay {
     private var cachedPanelWidth: Int = 80
     private var cachedDisplayMode: Int = -1
     private var cachedDisplayCount: Int = -1
+    private var cachedRank: Int = -1
+    private var cachedSizePreset: Int = -1
+
+    // Cached translated names
+    private var cachedPokemonNames: List<String> = emptyList()
+    private var cachedBallNames: List<String> = emptyList()
+    private var cachedHeaderText: String = ""
+    private var cachedRemaining: Int = 0
+    private var cachedTotal: Int = 0
+    private var cachedReward: Int = 0
+    private var cachedFooterColor: Int = 0
+
+    // Biome highlight cache
+    private var cachedBiomeHighlight: List<Boolean> = emptyList()
+    private var lastBiomeCheck: Long = 0
+    private const val BIOME_CHECK_INTERVAL_MS = 3_000L
+    private const val BIOME_HIGHLIGHT_COLOR = 0xFF55FF55.toInt()
 
     // Colors
-    private const val BG_COLOR = 0xCC000000.toInt()
-    private const val BORDER_COLOR = 0xFFFFAA00.toInt()
-    private const val TITLE_COLOR = 0xFFFFAA00.toInt()
+    private fun BG_COLOR() = ModConfig.bgColor()
+    private fun BORDER_COLOR() = ModConfig.accentColor()
+    private fun TITLE_COLOR() = ModConfig.accentColor()
     private const val POKEMON_COLOR = 0xFFFFFFFF.toInt()
-    private const val CAUGHT_COLOR = 0xFF55FF55.toInt()
+    private const val CAUGHT_COLOR = 0xFFFF5555.toInt()
     private const val BALL_COLOR = 0xFFAAAAFF.toInt()
     private const val REMAINING_COLOR = 0xFFFF5555.toInt()
 
     fun register() {
         BoardState.load()
+        loadPosition()
 
-        HudRenderCallback.EVENT.register { context, tickDelta ->
-            safeRender(context, tickDelta)
+        HudRenderCallback.EVENT.register { context, _ ->
+            safeRender(context)
         }
         HunterBoard.LOGGER.info("Hunt overlay registered")
     }
 
-    private fun safeRender(context: DrawContext, tickDelta: net.minecraft.client.render.RenderTickCounter) {
-        try {
-            render(context)
-        } catch (e: Exception) {
-            // Silently fail
-        }
+    fun loadPosition() {
+        panelX = if (ModConfig.hudPosX >= 0) ModConfig.hudPosX else null
+        panelY = if (ModConfig.hudPosY >= 0) ModConfig.hudPosY else null
+    }
+
+    private fun safeRender(context: DrawContext) {
+        try { render(context) } catch (_: Exception) {}
     }
 
     private fun render(context: DrawContext) {
-        if (!BoardState.hudVisible) return
+        if (!BoardState.hudVisible && !forceVisible) return
         if (!BoardState.hasTargets()) return
 
         val client = MinecraftClient.getInstance()
         val textRenderer = client.textRenderer
         val mode = BoardState.displayMode
         val allTargets = BoardState.targets
-        val displayTargets = allTargets.take(BoardState.displayCount)
+        val displayTargets = allTargets.take(ModConfig.maxHunts())
+        val layout = SIZE_PRESETS[ModConfig.hudSizePreset.coerceIn(0, 3)]
 
-        // Rebuild caches if board data or display settings changed
-        if (BoardState.lastUpdated != lastBoardUpdate || mode != cachedDisplayMode || BoardState.displayCount != cachedDisplayCount) {
-            rebuildModelWidgets()
+        // Rebuild caches if board data, display settings, or size changed
+        if (BoardState.lastUpdated != lastBoardUpdate
+            || mode != cachedDisplayMode
+            || BoardState.displayCount != cachedDisplayCount
+            || ModConfig.rank != cachedRank
+            || ModConfig.hudSizePreset != cachedSizePreset
+        ) {
+            rebuildModelWidgets(displayTargets, layout)
             rebuildBallCache()
+            rebuildNameCaches(displayTargets)
+            cachedHeaderText = Translations.tr("Hunting Board")
             cachedPanelWidth = calculatePanelWidth(displayTargets, textRenderer, mode)
+            cachedRemaining = displayTargets.count { !it.isCaught }
+            cachedTotal = displayTargets.size
+            cachedReward = displayTargets.filter { !it.isCaught }.sumOf { it.reward }
+            cachedFooterColor = if (cachedRemaining == 0) CAUGHT_COLOR else REMAINING_COLOR
             cachedDisplayMode = mode
             cachedDisplayCount = BoardState.displayCount
+            cachedRank = ModConfig.rank
+            cachedSizePreset = ModConfig.hudSizePreset
             lastBoardUpdate = BoardState.lastUpdated
         }
 
-        val panelW = cachedPanelWidth
+        // Throttled biome highlight check
+        val now = System.currentTimeMillis()
+        if (now - lastBiomeCheck > BIOME_CHECK_INTERVAL_MS) {
+            lastBiomeCheck = now
+            cachedBiomeHighlight = if (SpawnData.isLoaded) {
+                displayTargets.map { if (!it.isCaught) isInSpawnBiome(it.speciesId) else false }
+            } else emptyList()
+        }
 
-        // Calculate panel height
-        val showHeader = mode != 3
-        val headerH = if (showHeader) HEADER_HEIGHT + 2 else 2
-        val footerH = if (mode != 3) 14 else 10
+        val ROW_HEIGHT = layout.rowHeight
+        val MODEL_SIZE = layout.modelSize
+        val PADDING = layout.padding
+        val HEADER_HEIGHT = layout.headerHeight
+
+        val panelW = cachedPanelWidth
+        val showHeader = mode <= 2
+        val headerH = if (showHeader) HEADER_HEIGHT + 6 else HEADER_HEIGHT
+        val footerH = if (mode <= 2) 14 else 10
         val panelHeight = headerH + displayTargets.size * ROW_HEIGHT + PADDING + footerH
 
         val screenWidth = client.window.scaledWidth
         val screenHeight = client.window.scaledHeight
 
-        handleDragging(client, panelW, panelHeight)
+        // panelX/Y are in screen pixels; clamp so the panel never goes off-screen
+        val rawX = panelX ?: (screenWidth - panelW - 10)
+        val rawY = panelY ?: (screenHeight - panelHeight - 10)
+        val x = rawX.coerceIn(PADDING, (screenWidth - panelW - PADDING).coerceAtLeast(PADDING))
+        val y = rawY.coerceIn(PADDING, (screenHeight - panelHeight - PADDING).coerceAtLeast(PADDING))
 
-        // Position: default to bottom-right
-        val x = panelX ?: (screenWidth - panelW - 10)
-        val y = panelY ?: (screenHeight - panelHeight - 10)
+        // Store rendered bounds (screen pixels) for HudPositionScreen
+        renderedX = x - PADDING
+        renderedY = y - PADDING
+        renderedW = panelW + PADDING * 2
+        renderedH = panelHeight + PADDING
 
-        // Draw background + border
-        context.fill(x - PADDING, y - PADDING, x + panelW + PADDING, y + panelHeight, BG_COLOR)
-        drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelHeight + PADDING, BORDER_COLOR)
+        // Background + border
+        context.fill(x - PADDING, y - PADDING, x + panelW + PADDING, y + panelHeight, BG_COLOR())
+        drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelHeight + PADDING, BORDER_COLOR())
 
         // Header
-        var currentY = y
+        var currentY: Int
         if (showHeader) {
-            val headerText = Translations.tr("Hunting Board")
-            val headerX = x + (panelW - textRenderer.getWidth(headerText)) / 2
-            context.drawText(textRenderer, headerText, headerX, y, TITLE_COLOR, true)
-            currentY = y + HEADER_HEIGHT + 2
+            val headerX = x + (panelW - textRenderer.getWidth(cachedHeaderText)) / 2
+            context.drawText(textRenderer, cachedHeaderText, headerX, y, TITLE_COLOR(), true)
+            currentY = y + HEADER_HEIGHT + 6
+        } else {
+            currentY = y + headerH
         }
 
         // Draw each target
         for ((index, target) in displayTargets.withIndex()) {
-            val color = if (target.isCaught) CAUGHT_COLOR else POKEMON_COLOR
+            val inSpawnBiome = cachedBiomeHighlight.getOrElse(index) { false }
+            val color = when {
+                target.isCaught -> CAUGHT_COLOR
+                inSpawnBiome    -> BIOME_HIGHLIGHT_COLOR
+                else            -> POKEMON_COLOR
+            }
 
-            // Render 3D model (always shown in all modes)
+            // 3D model
             if (index < cachedWidgets.size) {
                 try {
                     val widget = cachedWidgets[index]
                     widget.x = x
-                    widget.y = currentY - 10
+                    widget.y = currentY - MODEL_SIZE / 2
                     widget.render(context, 0, 0, 0f)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     val icon = if (target.isCaught) "\u2713" else "\u25CF"
                     context.drawText(textRenderer, icon, x + 4, currentY + (ROW_HEIGHT - 9) / 2, color, true)
                 }
+            }
+
+            // Red cross overlay on caught model
+            if (target.isCaught) {
+                context.matrices.push()
+                context.matrices.translate(0.0, 0.0, 200.0)
+                val crossX = x
+                val crossY = currentY - MODEL_SIZE / 2
+                for (i in 0 until MODEL_SIZE step 2) {
+                    val px1 = crossX + i; val py1 = crossY + i
+                    context.fill(px1, py1, px1 + 3, py1 + 3, 0xCCFF3333.toInt())
+                    val px2 = crossX + MODEL_SIZE - i - 3
+                    context.fill(px2, py1, px2 + 3, py1 + 3, 0xCCFF3333.toInt())
+                }
+                context.matrices.pop()
             }
 
             // Pokemon name (modes 0, 1, 2)
             if (mode <= 2) {
                 val textX = x + MODEL_SIZE + 4
                 val textY = currentY + (ROW_HEIGHT - 9) / 2
-                val displayName: String = Translations.pokemonName(target.speciesId)
+                val displayName = cachedPokemonNames.getOrElse(index) { target.speciesId }
                 context.drawText(textRenderer, displayName, textX, textY, color, true)
-
-                // Strikethrough if caught
                 if (target.isCaught) {
                     val nameWidth = textRenderer.getWidth(displayName)
                     context.fill(textX, textY + 4, textX + nameWidth, textY + 5, CAUGHT_COLOR)
                 }
             }
 
-            // Ball icon + optional ball name (modes 0, 1)
-            if (mode <= 1) {
+            // Ball icon + name (modes 0, 1, 4)
+            if (mode <= 1 || mode == 4) {
                 val textY = currentY + (ROW_HEIGHT - 9) / 2
-                var ballRendered = false
-
                 val ballStack = cachedBallStacks[target.ballId]
-
                 if (mode == 0) {
-                    // Full mode: ball icon + ball name, right-aligned
-                    val ballText: String = Translations.ballName(target.ballId)
+                    val ballText = cachedBallNames.getOrElse(index) { target.ballId }
                     val ballTextWidth = textRenderer.getWidth(ballText)
                     val ballNameX = x + panelW - ballTextWidth
                     context.drawText(textRenderer, ballText, ballNameX, textY, BALL_COLOR, true)
-
-                    if (ballStack != null) {
-                        context.drawItem(ballStack, ballNameX - 18, currentY + (ROW_HEIGHT - 16) / 2)
-                        ballRendered = true
-                    }
+                    if (ballStack != null) context.drawItem(ballStack, ballNameX - 18, currentY + (ROW_HEIGHT - 16) / 2)
                 } else {
-                    // Compact mode: ball icon only, right-aligned
                     if (ballStack != null) {
                         context.drawItem(ballStack, x + panelW - 18, currentY + (ROW_HEIGHT - 16) / 2)
-                        ballRendered = true
-                    }
-                    if (!ballRendered) {
-                        val ballText: String = Translations.ballName(target.ballId)
-                        val ballWidth = textRenderer.getWidth(ballText)
-                        context.drawText(textRenderer, ballText, x + panelW - ballWidth, textY, BALL_COLOR, true)
+                    } else {
+                        val ballText = cachedBallNames.getOrElse(index) { target.ballId }
+                        context.drawText(textRenderer, ballText, x + panelW - textRenderer.getWidth(ballText), textY, BALL_COLOR, true)
                     }
                 }
             }
@@ -187,19 +254,41 @@ object HuntOverlay {
         }
 
         // Footer
-        val remaining = BoardState.remainingCount()
-        val total = allTargets.size
-        if (mode != 3) {
-            val rewardText = BoardState.reward
-            val remainText = "$remaining/$total | $rewardText"
-            val remainColor = if (remaining == 0) CAUGHT_COLOR else REMAINING_COLOR
-            context.drawText(textRenderer, remainText, x, currentY + 2, remainColor, true)
+        if (mode <= 2) {
+            val remainText = "${cachedRemaining}/${cachedTotal} | ${cachedReward}$"
+            context.drawText(textRenderer, remainText, x, currentY + 2, cachedFooterColor, true)
         } else {
-            val remainText = "$remaining/$total"
-            val remainColor = if (remaining == 0) CAUGHT_COLOR else REMAINING_COLOR
-            val footerX = x + (panelW - textRenderer.getWidth(remainText)) / 2
-            context.drawText(textRenderer, remainText, footerX, currentY + 1, remainColor, true)
+            val remainText = "${cachedRemaining}/${cachedTotal}"
+            context.drawText(textRenderer, remainText, x + (panelW - textRenderer.getWidth(remainText)) / 2, currentY + 1, cachedFooterColor, true)
         }
+    }
+
+    /** Returns true if the player's current biome is a valid spawn biome for this species. */
+    private fun isInSpawnBiome(speciesId: String): Boolean {
+        try {
+            val client = MinecraftClient.getInstance()
+            val world = client.world ?: return false
+            val player = client.player ?: return false
+            val biomeEntry = world.getBiome(player.blockPos)
+            val biomeKey = biomeEntry.key.orElse(null) ?: return false
+            val biomeFullId = "${biomeKey.value.namespace}:${biomeKey.value.path}"
+
+            for (entry in SpawnData.getSpawns(speciesId)) {
+                for (biomeDetail in entry.biomeDetails) {
+                    when {
+                        biomeDetail.biomeId != null -> if (biomeDetail.biomeId == biomeFullId) return true
+                        biomeDetail.tagId != null -> {
+                            val parts = biomeDetail.tagId.split(":", limit = 2)
+                            if (parts.size == 2) {
+                                val tagKey = TagKey.of(RegistryKeys.BIOME, Identifier.of(parts[0], parts[1]))
+                                if (biomeEntry.isIn(tagKey)) return true
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return false
     }
 
     private fun calculatePanelWidth(
@@ -208,24 +297,27 @@ object HuntOverlay {
         mode: Int
     ): Int {
         if (targets.isEmpty()) return 80
+        val layout = SIZE_PRESETS[ModConfig.hudSizePreset.coerceIn(0, 3)]
+        val MODEL_SIZE = layout.modelSize
+        val PADDING = layout.padding
 
         val modelArea = MODEL_SIZE + 4
-        val headerText: String = Translations.tr("Hunting Board")
-        val headerTextWidth = textRenderer.getWidth(headerText) + PADDING * 2
+        val headerTextWidth = textRenderer.getWidth(cachedHeaderText) + PADDING * 2
 
         return when (mode) {
-            3 -> MODEL_SIZE + PADDING * 3
-            2 -> {
-                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
+            3    -> MODEL_SIZE + PADDING * 3
+            4    -> MODEL_SIZE + 18 + PADDING * 2
+            2    -> {
+                val maxName = cachedPokemonNames.maxOfOrNull { textRenderer.getWidth(it) } ?: 0
                 maxOf(headerTextWidth, modelArea + maxName + PADDING * 2)
             }
-            1 -> {
-                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
+            1    -> {
+                val maxName = cachedPokemonNames.maxOfOrNull { textRenderer.getWidth(it) } ?: 0
                 maxOf(headerTextWidth, modelArea + maxName + 10 + 16 + PADDING)
             }
             else -> {
-                val maxName = targets.maxOf { val n: String = Translations.pokemonName(it.speciesId); textRenderer.getWidth(n) }
-                val maxBall = targets.maxOf { val b: String = Translations.ballName(it.ballId); textRenderer.getWidth(b) }
+                val maxName = cachedPokemonNames.maxOfOrNull { textRenderer.getWidth(it) } ?: 0
+                val maxBall = cachedBallNames.maxOfOrNull { textRenderer.getWidth(it) } ?: 0
                 maxOf(headerTextWidth, modelArea + maxName + 10 + 18 + maxBall + PADDING)
             }
         }
@@ -244,42 +336,31 @@ object HuntOverlay {
         cachedBallStacks = stacks
     }
 
-    private fun rebuildModelWidgets() {
-        val newWidgets = mutableListOf<ModelWidget>()
+    private fun rebuildNameCaches(targets: List<HuntTarget>) {
+        cachedPokemonNames = targets.map { Translations.pokemonName(it.speciesId) }
+        cachedBallNames = targets.map { Translations.ballName(it.ballId) }
+    }
 
-        for (target in BoardState.targets) {
+    private fun rebuildModelWidgets(targets: List<HuntTarget>, layout: SizeLayout) {
+        val newWidgets = mutableListOf<ModelWidget>()
+        for (target in targets) {
             try {
                 val species = PokemonSpecies.getByName(target.speciesId)
+                    ?: PokemonSpecies.getByName("bulbasaur")
                 if (species != null) {
-                    val renderablePokemon = RenderablePokemon(species, target.aspects)
-                    val widget = ModelWidget(
+                    newWidgets.add(ModelWidget(
                         pX = 0, pY = 0,
-                        pWidth = MODEL_SIZE, pHeight = MODEL_SIZE,
-                        pokemon = renderablePokemon,
-                        baseScale = 1.2f,
+                        pWidth = layout.modelSize, pHeight = layout.modelSize,
+                        pokemon = RenderablePokemon(species, if (PokemonSpecies.getByName(target.speciesId) != null) target.aspects else emptySet()),
+                        baseScale = layout.modelBaseScale,
                         rotationY = 325f,
-                        offsetY = -16.0
-                    )
-                    newWidgets.add(widget)
-                } else {
-                    val fallbackSpecies = PokemonSpecies.getByName("bulbasaur")
-                    if (fallbackSpecies != null) {
-                        val widget = ModelWidget(
-                            pX = 0, pY = 0,
-                            pWidth = MODEL_SIZE, pHeight = MODEL_SIZE,
-                            pokemon = RenderablePokemon(fallbackSpecies, emptySet()),
-                            baseScale = 1.2f,
-                            rotationY = 325f,
-                            offsetY = -16.0
-                        )
-                        newWidgets.add(widget)
-                    }
+                        offsetY = -10.0
+                    ))
                 }
             } catch (e: Exception) {
                 HunterBoard.LOGGER.debug("Failed to create model widget for ${target.speciesId}: ${e.message}")
             }
         }
-
         cachedWidgets = newWidgets
     }
 
@@ -288,70 +369,5 @@ object HuntOverlay {
         context.fill(x, y + height - 1, x + width, y + height, color)
         context.fill(x, y, x + 1, y + height, color)
         context.fill(x + width - 1, y, x + width, y + height, color)
-    }
-
-    private fun handleDragging(client: MinecraftClient, panelW: Int, panelHeight: Int) {
-        try {
-            if (client.currentScreen != null) {
-                isDragging = false
-                dragStarted = false
-                return
-            }
-
-            val mouseX = (client.mouse.x * client.window.scaledWidth / client.window.width).toInt()
-            val mouseY = (client.mouse.y * client.window.scaledHeight / client.window.height).toInt()
-            val isMouseDown = GLFW.glfwGetMouseButton(client.window.handle, GLFW.GLFW_MOUSE_BUTTON_RIGHT) == GLFW.GLFW_PRESS
-
-            val screenWidth = client.window.scaledWidth
-            val screenHeight = client.window.scaledHeight
-            val currentX = panelX ?: (screenWidth - panelW - 10)
-            val currentPanelY = panelY ?: (screenHeight - panelHeight - 10)
-
-            if (isMouseDown && !wasMouseDown) {
-                if (mouseX >= currentX - PADDING && mouseX <= currentX + panelW + PADDING &&
-                    mouseY >= currentPanelY - PADDING && mouseY <= currentPanelY + panelHeight) {
-                    isDragging = true
-                    dragStarted = false
-                    dragOffsetX = mouseX - currentX
-                    dragOffsetY = mouseY - currentPanelY
-                    dragStartMouseX = mouseX
-                    dragStartMouseY = mouseY
-                }
-            } else if (!isMouseDown) {
-                // On release: snap back to bottom-right if close to default position
-                if (isDragging && dragStarted && panelX != null) {
-                    val defaultX = screenWidth - panelW - 10
-                    val defaultY = screenHeight - panelHeight - 10
-                    val dx = (panelX!! - defaultX)
-                    val dy = (panelY!! - defaultY)
-                    if (dx * dx + dy * dy <= SNAP_DISTANCE * SNAP_DISTANCE) {
-                        panelX = null
-                        panelY = null
-                    }
-                }
-                isDragging = false
-                dragStarted = false
-            }
-
-            if (isDragging && isMouseDown) {
-                // Only start moving after exceeding the dead zone
-                if (!dragStarted) {
-                    val movedX = mouseX - dragStartMouseX
-                    val movedY = mouseY - dragStartMouseY
-                    if (movedX * movedX + movedY * movedY >= DRAG_DEAD_ZONE * DRAG_DEAD_ZONE) {
-                        dragStarted = true
-                    }
-                }
-                if (dragStarted) {
-                    panelX = (mouseX - dragOffsetX).coerceIn(0, screenWidth - panelW - PADDING * 2)
-                    panelY = (mouseY - dragOffsetY).coerceIn(0, screenHeight - panelHeight)
-                }
-            }
-
-            wasMouseDown = isMouseDown
-        } catch (e: Exception) {
-            isDragging = false
-            dragStarted = false
-        }
     }
 }

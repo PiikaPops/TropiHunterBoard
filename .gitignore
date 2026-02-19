@@ -4,3 +4,5 @@ build/
 buildtmpdecompile/
 /com/
 run/
+.claude/
+nul

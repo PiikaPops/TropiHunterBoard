@@ -10,7 +10,8 @@ object BiomeTagResolver {
     private val cache = mutableMapOf<String, List<String>>()
 
     fun resolve(tagId: String): List<String> {
-        return cache.getOrPut(tagId) { resolveFromRegistry(tagId) }
+        val cacheKey = "$tagId|${Translations.isFrench()}"
+        return cache.getOrPut(cacheKey) { resolveFromRegistry(tagId) }
     }
 
     fun clearCache() {
@@ -33,7 +34,8 @@ object BiomeTagResolver {
             for (entry in entryList.get()) {
                 val key = entry.key
                 if (key.isPresent) {
-                    biomes.add(formatBiomeName(key.get().value.path))
+                    val id = key.get().value
+                    biomes.add(Translations.biomeName(id.namespace, id.path))
                 }
             }
             return biomes.sorted()

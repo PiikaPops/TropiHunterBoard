@@ -4,7 +4,9 @@ import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.client.gui.screen.Screen
+
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
@@ -15,6 +17,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
     companion object {
         private const val MODEL_SIZE = 36
+        private val OPTIONS_ICON = Identifier.of("hunterboard", "img/option.png")
     }
 
     private var scrollOffset = 0
@@ -22,14 +25,16 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     private var modelWidgets: List<ModelWidget?> = emptyList()
     private var hoveredBiomeDetail: BiomeDetail? = null
 
-    // Button bounds
-    private var countBtnX = 0
-    private var countBtnY = 0
-    private var countBtnW = 0
-    private var modeBtnX = 0
-    private var modeBtnY = 0
-    private var modeBtnW = 0
-    private val btnH = 14
+    // Option button bounds
+    private val optBtnSize = 40
+    private var optBtnX = 0
+    private var optBtnY = 0
+
+    // Chat button bounds
+    private var chatBtnX = 0
+    private var chatBtnY = 0
+    private var chatBtnW = 0
+    private val chatBtnH = 14
 
     // Toggle button bounds per card (index -> bounds)
     private val TOGGLE_SIZE = 20
@@ -38,6 +43,9 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
     // Cached ball ItemStacks
     private var cachedBallStacks: Map<String, ItemStack> = emptyMap()
+
+    // Cached card heights (avoid recalculating every frame)
+    private var cachedCardHeights: List<Int> = emptyList()
 
     // Scrollbar drag state
     private var isScrollbarDragging = false
@@ -55,6 +63,19 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         SpawnData.ensureLoaded()
         buildModelWidgets()
         buildBallCache()
+        buildCardHeightCache()
+    }
+
+    private fun buildCardHeightCache() {
+        val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
+        val cardWidth = panelWidth - 12
+        val maxTextW = cardWidth - 6 - MODEL_SIZE - 6 - 8
+        val visibleTargets = BoardState.targets.take(ModConfig.maxHunts())
+        cachedCardHeights = visibleTargets.map { target ->
+            val spawns = SpawnData.getSpawns(target.speciesId)
+            val cardContentH = calculateCardContentHeight(spawns, maxTextW)
+            maxOf(cardContentH, MODEL_SIZE + 12)
+        }
     }
 
     private fun buildBallCache() {
@@ -105,6 +126,8 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         }
     }
 
+    override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
+
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         hoveredBiomeDetail = null
         // Dark overlay
@@ -118,46 +141,51 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
         // Panel background
         context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, 0xFFFFAA00.toInt())
+        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
 
         // Title
         val title: String = Translations.tr("\u2726 Spawn Info \u2726")
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
-        context.drawText(textRenderer, title, titleX, panelTop + 6, 0xFFFFAA00.toInt(), true)
+        context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
+
+        // Options button (top-right of screen, MC-style)
+        optBtnX = width - optBtnSize - 4
+        optBtnY = 4
+        val optHovered = mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
+                         mouseY >= optBtnY && mouseY <= optBtnY + optBtnSize
+        val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
+        val btnLight = if (optHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
+        val btnDark = if (optHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
+        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnBase)
+        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + 1, btnLight)
+        context.fill(optBtnX, optBtnY, optBtnX + 1, optBtnY + optBtnSize, btnLight)
+        context.fill(optBtnX, optBtnY + optBtnSize - 1, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
+        context.fill(optBtnX + optBtnSize - 1, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
+        context.drawTexture(OPTIONS_ICON, optBtnX + 4, optBtnY + 4, 0f, 0f, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8)
+
+        // Chat button (left side of header, inside panel)
+        val chatLabel: String = Translations.tr("Send to Chat")
+        chatBtnW = textRenderer.getWidth(chatLabel) + 8
+        chatBtnX = panelX + 6
+        chatBtnY = panelTop + 4
+        val uncaughtCount = BoardState.targets.take(ModConfig.maxHunts()).count { !it.isCaught }
+        if (uncaughtCount > 0) {
+            val chatHovered = mouseX >= chatBtnX && mouseX <= chatBtnX + chatBtnW &&
+                              mouseY >= chatBtnY && mouseY <= chatBtnY + chatBtnH
+            val chatBg = if (chatHovered) 0xFF2A2A00.toInt() else 0xFF1A1A1A.toInt()
+            context.fill(chatBtnX, chatBtnY, chatBtnX + chatBtnW, chatBtnY + chatBtnH, chatBg)
+            val chatBorder = if (chatHovered) ModConfig.accentColor() else 0xFF444444.toInt()
+            drawBorder(context, chatBtnX, chatBtnY, chatBtnW, chatBtnH, chatBorder)
+            val chatColor = if (chatHovered) ModConfig.accentColor() else 0xFFFFFFFF.toInt()
+            context.drawText(textRenderer, chatLabel, chatBtnX + 4, chatBtnY + 3, chatColor, true)
+        }
 
         // Gold separator + shadow
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, 0xFFFFAA00.toInt())
+        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
         context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
-        // --- Buttons ---
-        val buttonsY = panelTop + 24
-
-        val showLabel: String = Translations.tr("Show:")
-        val countText = "$showLabel ${BoardState.displayCount}"
-        countBtnW = textRenderer.getWidth("$showLabel 6") + 10
-        countBtnX = panelX + 8
-        countBtnY = buttonsY
-        val countHovered = mouseX >= countBtnX && mouseX <= countBtnX + countBtnW &&
-                mouseY >= countBtnY && mouseY <= countBtnY + btnH
-        renderButton(context, countBtnX, countBtnY, countBtnW, btnH, countText, countHovered)
-
-        val modeLabel: String = Translations.tr("Mode:")
-        val modeLabelText: String = Translations.tr(BoardState.MODE_LABELS[BoardState.displayMode])
-        val modeText = "$modeLabel $modeLabelText"
-        val widestMode: String = Translations.tr("Compact")
-        modeBtnW = textRenderer.getWidth("$modeLabel $widestMode") + 10
-        modeBtnX = countBtnX + countBtnW + 6
-        modeBtnY = buttonsY
-        val modeHovered = mouseX >= modeBtnX && mouseX <= modeBtnX + modeBtnW &&
-                mouseY >= modeBtnY && mouseY <= modeBtnY + btnH
-        renderButton(context, modeBtnX, modeBtnY, modeBtnW, btnH, modeText, modeHovered)
-
-        // Separator after buttons
-        val sep2Y = buttonsY + btnH + 4
-        context.fill(panelX + 6, sep2Y, panelX + panelWidth - 6, sep2Y + 1, 0xFF333333.toInt())
-
-        // --- Scrollable content ---
-        val contentTop = sep2Y + 4
+        // --- Scrollable content (no more buttons row) ---
+        val contentTop = panelTop + 24
         val contentBottom = panelBottom - 16
         val contentAreaHeight = contentBottom - contentTop
 
@@ -173,6 +201,9 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         var hoveredBallName: String? = null
         toggleButtons.clear()
 
+        // Respect rank: only show up to maxHunts targets
+        val visibleTargets = BoardState.targets.take(ModConfig.maxHunts())
+
         if (SpawnData.isLoading) {
             val loadingText: String = Translations.tr("Loading spawn data...")
             context.drawText(textRenderer, loadingText, cardX + 10, y + 10, 0xFFAAAAAA.toInt(), true)
@@ -184,14 +215,16 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         } else {
             var totalHeight = 2
 
-            for ((index, target) in BoardState.targets.withIndex()) {
+            for ((index, target) in visibleTargets.withIndex()) {
                 val spawns = SpawnData.getSpawns(target.speciesId)
                 val mainRarity = spawns.firstOrNull()?.bucket ?: ""
                 val mainRarityColor = getRarityColor(mainRarity)
 
-                // Calculate card height
-                val cardContentH = calculateCardContentHeight(spawns, maxTextW)
-                val cardHeight = maxOf(cardContentH, MODEL_SIZE + 12)
+                // Use cached card height
+                val cardHeight = cachedCardHeights.getOrElse(index) {
+                    val cardContentH = calculateCardContentHeight(spawns, maxTextW)
+                    maxOf(cardContentH, MODEL_SIZE + 12)
+                }
 
                 // Skip rendering if card is fully off-screen (but still track position)
                 if (y + cardHeight < contentTop || y > contentBottom) {
@@ -202,7 +235,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 }
 
                 // Card background
-                val cardBg = if (target.isCaught) 0xFF142014.toInt() else 0xFF1A1A1A.toInt()
+                val cardBg = if (target.isCaught) 0xFF201414.toInt() else 0xFF1A1A1A.toInt()
                 context.fill(cardX, y, cardX + cardWidth, y + cardHeight, cardBg)
 
                 // Rarity left border (3px)
@@ -226,10 +259,27 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     }
                 }
 
+                // Red cross overlay on caught Pokemon model (rendered in front of 3D model)
+                if (target.isCaught) {
+                    context.matrices.push()
+                    context.matrices.translate(0.0, 0.0, 200.0)
+                    val crossX = cardX + 4
+                    val crossY = y - 2
+                    val crossSize = MODEL_SIZE
+                    for (i in 0 until crossSize step 2) {
+                        val px1 = crossX + i
+                        val py1 = crossY + i
+                        context.fill(px1, py1, px1 + 3, py1 + 3, 0xCCFF3333.toInt())
+                        val px2 = crossX + crossSize - i - 3
+                        context.fill(px2, py1, px2 + 3, py1 + 3, 0xCCFF3333.toInt())
+                    }
+                    context.matrices.pop()
+                }
+
                 var textY = y + 6
 
                 // Pokemon name (translated)
-                val nameColor = if (target.isCaught) 0xFF55FF55.toInt() else 0xFFFFFFFF.toInt()
+                val nameColor = if (target.isCaught) 0xFFFF5555.toInt() else 0xFFFFFFFF.toInt()
                 val statusIcon = if (target.isCaught) "\u2713 " else ""
                 val pokeName: String = Translations.pokemonName(target.speciesId)
                 val nameText = "$statusIcon$pokeName"
@@ -264,25 +314,56 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     // Spawn conditions - with rarity per line
                     val seen = mutableSetOf<String>()
                     for (spawn in spawns) {
-                        val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}"
+                        val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}|${spawn.spawnContext}|${spawn.minY}|${spawn.maxY}|${spawn.minSkyLight}|${spawn.maxSkyLight}|${spawn.presets}"
                         if (key in seen) continue
                         seen.add(key)
 
-                        // Rarity tag before biomes
+                        // Rarity tag + weight
                         val rarityText: String = Translations.formatRarity(spawn.bucket)
                         val rarityColor = getRarityColor(spawn.bucket)
-                        val rarityTagText = "[$rarityText] "
+                        val weightStr = if (spawn.weight != null) " (${Translations.tr("Weight:")} ${String.format("%.1f", spawn.weight)})" else ""
+                        val rarityTagText = "[$rarityText]$weightStr "
                         context.drawText(textRenderer, rarityTagText, textContentX + 4, textY, rarityColor, true)
                         val rarityTagW = textRenderer.getWidth(rarityTagText)
 
-                        // Biomes (inline after rarity tag)
-                        if (spawn.biomeDetails.isEmpty()) {
-                            val anyText: String = Translations.tr("Any")
-                            context.drawText(textRenderer, anyText, textContentX + 4 + rarityTagW, textY, 0xFF999999.toInt(), true)
+                        // Presets + Context tag
+                        val tags = mutableListOf<String>()
+                        val meaningfulPresets = spawn.presets.filter { it != "natural" }
+                        if (meaningfulPresets.isNotEmpty()) {
+                            tags.addAll(meaningfulPresets.map { Translations.formatPreset(it) })
+                        }
+                        val ctxStr = Translations.formatSpawnContext(spawn.spawnContext)
+                        if (ctxStr.isNotEmpty()) tags.add(ctxStr)
+                        if (tags.isNotEmpty()) {
+                            val tagText = tags.joinToString(", ")
+                            context.drawText(textRenderer, tagText, textContentX + 4 + rarityTagW, textY, 0xFFAA8855.toInt(), true)
                             textY += 10
+                            if (spawn.biomeDetails.isEmpty()) {
+                                val anyText: String = Translations.tr("Any")
+                                context.drawText(textRenderer, anyText, textContentX + 8, textY, 0xFF999999.toInt(), true)
+                                textY += 10
+                            } else {
+                                textY = renderBiomesInline(context, spawn.biomeDetails, textContentX + 8, textY,
+                                    maxTextW - 12, mouseX, mouseY, contentTop, contentBottom)
+                            }
                         } else {
-                            textY = renderBiomesInline(context, spawn.biomeDetails, textContentX + 4 + rarityTagW, textY,
-                                maxTextW - 8 - rarityTagW, mouseX, mouseY, contentTop, contentBottom)
+                            // Biomes (inline after rarity tag)
+                            if (spawn.biomeDetails.isEmpty()) {
+                                val anyText: String = Translations.tr("Any")
+                                context.drawText(textRenderer, anyText, textContentX + 4 + rarityTagW, textY, 0xFF999999.toInt(), true)
+                                textY += 10
+                            } else {
+                                textY = renderBiomesInline(context, spawn.biomeDetails, textContentX + 4 + rarityTagW, textY,
+                                    maxTextW - 8 - rarityTagW, mouseX, mouseY, contentTop, contentBottom)
+                            }
+                        }
+
+                        // Excluded biomes
+                        if (spawn.excludedBiomes.isNotEmpty()) {
+                            val exclLabel: String = Translations.tr("Excluded:")
+                            val exclNames = spawn.excludedBiomes.joinToString(", ") { Translations.biomeName(it) }
+                            context.drawText(textRenderer, "  \u2716 $exclLabel $exclNames", textContentX + 4, textY, 0xFFAA5555.toInt(), true)
+                            textY += 10
                         }
 
                         // Structures
@@ -297,7 +378,65 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                         val weatherStr: String = Translations.formatWeather(spawn.weather)
                         val skyStr: String = Translations.formatSky(spawn.canSeeSky)
                         context.drawText(textRenderer, "  $timeStr | $weatherStr$skyStr", textContentX + 4, textY, 0xFF707070.toInt(), true)
-                        textY += 11
+                        textY += 10
+
+                        // Height, Light, Moon
+                        val extras = mutableListOf<String>()
+                        if (spawn.minY != null || spawn.maxY != null) {
+                            val yMin = spawn.minY?.toString() ?: "?"
+                            val yMax = spawn.maxY?.toString() ?: "?"
+                            val heightLabel: String = Translations.tr("Height:")
+                            extras.add("$heightLabel $yMin \u2192 $yMax")
+                        }
+                        if (spawn.minSkyLight != null || spawn.maxSkyLight != null) {
+                            val lMin = spawn.minSkyLight?.toString() ?: "0"
+                            val lMax = spawn.maxSkyLight?.toString() ?: "15"
+                            val skyLightLabel: String = Translations.tr("SkyLight:")
+                            extras.add("$skyLightLabel $lMin-$lMax")
+                        } else if (spawn.minLight != null || spawn.maxLight != null) {
+                            val lMin = spawn.minLight?.toString() ?: "0"
+                            val lMax = spawn.maxLight?.toString() ?: "15"
+                            val lightLabel: String = Translations.tr("Light:")
+                            extras.add("$lightLabel $lMin-$lMax")
+                        }
+                        if (spawn.moonPhase != null) {
+                            val moonLabel: String = Translations.tr("Moon:")
+                            extras.add("$moonLabel ${Translations.formatMoonPhase(spawn.moonPhase)}")
+                        }
+                        if (extras.isNotEmpty()) {
+                            context.drawText(textRenderer, "  ${extras.joinToString(" | ")}", textContentX + 4, textY, 0xFF887755.toInt(), true)
+                            textY += 10
+                        }
+
+                        // Block requirements
+                        val blockParts = mutableListOf<String>()
+                        if (spawn.neededBaseBlocks.isNotEmpty()) {
+                            val baseLabel: String = Translations.tr("Base:")
+                            val names = spawn.neededBaseBlocks.map { Translations.blockName(it) }
+                            blockParts.add("$baseLabel ${names.joinToString(", ")}")
+                        }
+                        if (spawn.neededNearbyBlocks.isNotEmpty()) {
+                            val nearLabel: String = Translations.tr("Nearby:")
+                            val names = spawn.neededNearbyBlocks.map { Translations.blockName(it) }
+                            blockParts.add("$nearLabel ${names.joinToString(", ")}")
+                        }
+                        if (blockParts.isNotEmpty()) {
+                            context.drawText(textRenderer, "  ${blockParts.joinToString(" | ")}", textContentX + 4, textY, 0xFF887755.toInt(), true)
+                            textY += 10
+                        }
+
+                        // Weight multipliers
+                        if (spawn.weightMultipliers.isNotEmpty()) {
+                            for (wm in spawn.weightMultipliers) {
+                                val multStr = if (wm.multiplier == wm.multiplier.toInt().toFloat())
+                                    "\u00d7${wm.multiplier.toInt()}" else "\u00d7${String.format("%.1f", wm.multiplier)}"
+                                val condLabel = Translations.formatMultiplierCondition(wm.conditionLabel)
+                                context.drawText(textRenderer, "  $multStr $condLabel", textContentX + 4, textY, 0xFF55BBFF.toInt(), true)
+                                textY += 10
+                            }
+                        }
+
+                        textY += 2
                     }
                 } else {
                     val noDataText: String = if (SpawnData.loadError != null) Translations.tr("Error loading data") else Translations.tr("No spawn data")
@@ -313,17 +452,17 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                         mouseY >= toggleY && mouseY <= toggleY + TOGGLE_SIZE &&
                         mouseY >= contentTop && mouseY <= contentBottom
                 val toggleBg = when {
-                    target.isCaught && toggleHovered -> 0xFF1A3A1A.toInt()
-                    target.isCaught -> 0xFF143014.toInt()
-                    toggleHovered -> 0xFF3A1A1A.toInt()
-                    else -> 0xFF2A1515.toInt()
+                    target.isCaught && toggleHovered -> 0xFF3A1A1A.toInt()
+                    target.isCaught -> 0xFF201414.toInt()
+                    toggleHovered -> 0xFF1A3A1A.toInt()
+                    else -> 0xFF142014.toInt()
                 }
                 context.fill(toggleX, toggleY, toggleX + TOGGLE_SIZE, toggleY + TOGGLE_SIZE, toggleBg)
                 val toggleBorder = when {
-                    target.isCaught && toggleHovered -> 0xFF77FF77.toInt()
-                    target.isCaught -> 0xFF55CC55.toInt()
-                    toggleHovered -> 0xFFFF7777.toInt()
-                    else -> 0xFFCC5555.toInt()
+                    target.isCaught && toggleHovered -> 0xFFFF7777.toInt()
+                    target.isCaught -> 0xFFCC5555.toInt()
+                    toggleHovered -> 0xFF77FF77.toInt()
+                    else -> 0xFF55CC55.toInt()
                 }
                 drawBorder(context, toggleX, toggleY, TOGGLE_SIZE, TOGGLE_SIZE, toggleBorder)
 
@@ -332,13 +471,13 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     val checkW = textRenderer.getWidth(check)
                     context.drawText(textRenderer, check,
                         toggleX + (TOGGLE_SIZE - checkW) / 2, toggleY + (TOGGLE_SIZE - 9) / 2,
-                        0xFF55FF55.toInt(), true)
+                        0xFFFF5555.toInt(), true)
                 } else {
                     val cross = "\u2716"
                     val crossW = textRenderer.getWidth(cross)
                     context.drawText(textRenderer, cross,
                         toggleX + (TOGGLE_SIZE - crossW) / 2, toggleY + (TOGGLE_SIZE - 9) / 2,
-                        0xFFFF5555.toInt(), true)
+                        0xFF55FF55.toInt(), true)
                 }
 
                 y += cardHeight + 5
@@ -360,7 +499,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
             val maxScroll = contentHeight - contentAreaHeight
             sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, 0xFFFFAA00.toInt())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
         } else {
             sbThumbHeight = 0
         }
@@ -375,7 +514,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
             if (resolved.isNotEmpty()) {
                 val lines = mutableListOf<Text>()
-                lines.add(Text.literal(hoveredBiomeDetail!!.displayName).styled { it.withBold(true).withColor(0xFFAA00) })
+                lines.add(Text.literal(Translations.biomeName(hoveredBiomeDetail!!)).styled { it.withBold(true).withColor(0xFFAA00) })
                 for (name in resolved) {
                     lines.add(Text.literal("  $name").styled { it.withColor(0xCCCCCC) })
                 }
@@ -391,15 +530,6 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
     }
 
-    private fun renderButton(context: DrawContext, x: Int, y: Int, w: Int, h: Int, text: String, hovered: Boolean) {
-        val bg = if (hovered) 0xFF353535.toInt() else 0xFF222222.toInt()
-        context.fill(x, y, x + w, y + h, bg)
-        val borderColor = if (hovered) 0xFFFFAA00.toInt() else 0xFF444444.toInt()
-        drawBorder(context, x, y, w, h, borderColor)
-        val textColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFBBBBBB.toInt()
-        context.drawText(textRenderer, text, x + 5, y + 3, textColor, true)
-    }
-
     private fun calculateCardContentHeight(spawns: List<SpawnEntry>, maxTextW: Int): Int {
         var h = 6   // top padding
         h += 13     // name line
@@ -410,15 +540,44 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             h += 13 // level line
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}"
+                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}|${spawn.spawnContext}|${spawn.minY}|${spawn.maxY}|${spawn.minSkyLight}|${spawn.maxSkyLight}|${spawn.presets}"
                 if (key in seen) continue
                 seen.add(key)
-                // Rarity tag line + biomes
-                val rarityText: String = Translations.formatRarity(spawn.bucket)
-                val rarityTagW = textRenderer.getWidth("[$rarityText] ")
-                h += calculateBiomeLinesHeight(spawn.biomeDetails, maxTextW - 8 - rarityTagW)
-                if (spawn.structures.isNotEmpty()) h += 10 // structures line
-                h += 11 // time/weather/sky
+
+                // Presets/Context tags
+                val meaningfulPresets = spawn.presets.filter { it != "natural" }
+                val ctxStr = Translations.formatSpawnContext(spawn.spawnContext)
+                val hasTags = meaningfulPresets.isNotEmpty() || ctxStr.isNotEmpty()
+
+                if (hasTags) {
+                    h += 10 // tags line
+                    h += calculateBiomeLinesHeight(spawn.biomeDetails, maxTextW - 12)
+                } else {
+                    val rarityText: String = Translations.formatRarity(spawn.bucket)
+                    val weightStr = if (spawn.weight != null) " (${Translations.tr("Weight:")} ${String.format("%.1f", spawn.weight)})" else ""
+                    val rarityTagW = textRenderer.getWidth("[$rarityText]$weightStr ")
+                    h += calculateBiomeLinesHeight(spawn.biomeDetails, maxTextW - 8 - rarityTagW)
+                }
+
+                if (spawn.excludedBiomes.isNotEmpty()) h += 10
+                if (spawn.structures.isNotEmpty()) h += 10
+                h += 10 // time/weather/sky
+
+                // Height, Light, Moon
+                val hasExtras = spawn.minY != null || spawn.maxY != null ||
+                    spawn.minSkyLight != null || spawn.maxSkyLight != null ||
+                    spawn.minLight != null || spawn.maxLight != null ||
+                    spawn.moonPhase != null
+                if (hasExtras) h += 10
+
+                // Block requirements
+                val hasBlocks = spawn.neededBaseBlocks.isNotEmpty() || spawn.neededNearbyBlocks.isNotEmpty()
+                if (hasBlocks) h += 10
+
+                // Weight multipliers
+                h += spawn.weightMultipliers.size * 10
+
+                h += 2 // spacing between spawns
             }
         }
 
@@ -428,35 +587,39 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            // Options button
+            if (mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
+                mouseY >= optBtnY.toDouble() && mouseY <= (optBtnY + optBtnSize).toDouble()) {
+                client?.setScreen(OptionsScreen(this))
+                return true
+            }
+
+            // Chat button
+            if (mouseX >= chatBtnX && mouseX <= chatBtnX + chatBtnW &&
+                mouseY >= chatBtnY.toDouble() && mouseY <= (chatBtnY + chatBtnH).toDouble()) {
+                val uncaughtNames = BoardState.targets.take(ModConfig.maxHunts())
+                    .filter { !it.isCaught }
+                    .joinToString(" ") { Translations.pokemonName(it.speciesId) }
+                if (uncaughtNames.isNotEmpty()) {
+                    val message = "[Chasse] $uncaughtNames"
+                    client?.setScreen(ChatScreen(message))
+                }
+                return true
+            }
+
             // Scrollbar click
             if (sbThumbHeight > 0 && mouseX >= sbTrackX && mouseX <= sbTrackX + 6 &&
                 mouseY >= sbContentTop && mouseY <= sbContentBottom) {
                 if (mouseY >= sbThumbY && mouseY <= sbThumbY + sbThumbHeight) {
-                    // Click on thumb - start drag
                     isScrollbarDragging = true
                     scrollbarDragStartY = mouseY.toInt()
                     scrollbarDragStartOffset = scrollOffset
                 } else {
-                    // Click on track - jump to position
                     val contentAreaHeight = sbContentBottom - sbContentTop
                     val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
                     val ratio = (mouseY - sbContentTop).toFloat() / contentAreaHeight
                     scrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
                 }
-                return true
-            }
-
-            if (mouseX >= countBtnX && mouseX <= countBtnX + countBtnW &&
-                mouseY >= countBtnY && mouseY <= countBtnY + btnH) {
-                val next = if (BoardState.displayCount >= 6) 3 else BoardState.displayCount + 1
-                BoardState.setDisplayCount(next)
-                return true
-            }
-
-            if (mouseX >= modeBtnX && mouseX <= modeBtnX + modeBtnW &&
-                mouseY >= modeBtnY && mouseY <= modeBtnY + btnH) {
-                val next = (BoardState.displayMode + 1) % 4
-                BoardState.setDisplayMode(next)
                 return true
             }
 
@@ -504,7 +667,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         var y = startY
 
         for ((i, biome) in biomes.withIndex()) {
-            val nameW = textRenderer.getWidth(biome.displayName)
+            val nameW = textRenderer.getWidth(Translations.biomeName(biome))
             val separator = if (i < biomes.lastIndex) ", " else ""
             val sepW = textRenderer.getWidth(separator)
 
@@ -520,14 +683,14 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             if (isHovered) hoveredBiomeDetail = biome
 
             val color = when {
-                isHovered -> 0xFFFFAA00.toInt()
+                isHovered -> ModConfig.accentColor()
                 biome.tagId != null -> 0xFFBBBBBB.toInt()
                 else -> 0xFF999999.toInt()
             }
-            context.drawText(textRenderer, biome.displayName, x, y, color, true)
+            context.drawText(textRenderer, Translations.biomeName(biome), x, y, color, true)
 
             if (biome.tagId != null) {
-                val underlineColor = if (isHovered) 0xFFFFAA00.toInt() else 0xFF444444.toInt()
+                val underlineColor = if (isHovered) ModConfig.accentColor() else 0xFF444444.toInt()
                 context.fill(x, y + 9, x + nameW, y + 10, underlineColor)
             }
 
@@ -545,7 +708,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         var x = 0
         var lineCount = 1
         for ((i, biome) in biomes.withIndex()) {
-            val nameW = textRenderer.getWidth(biome.displayName)
+            val nameW = textRenderer.getWidth(Translations.biomeName(biome))
             val sepW = if (i < biomes.lastIndex) textRenderer.getWidth(", ") else 0
             if (x + nameW > maxWidth && x > 0) {
                 lineCount++
@@ -556,31 +719,10 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         return lineCount * 10
     }
 
-    private fun wrapText(text: String, maxWidth: Int): List<String> {
-        if (textRenderer.getWidth(text) <= maxWidth) return listOf(text)
-
-        val words = text.split(" ")
-        val lines = mutableListOf<String>()
-        var currentLine = ""
-
-        for (word in words) {
-            val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
-            if (textRenderer.getWidth(testLine) > maxWidth && currentLine.isNotEmpty()) {
-                lines.add(currentLine)
-                currentLine = "    $word"
-            } else {
-                currentLine = testLine
-            }
-        }
-        if (currentLine.isNotEmpty()) lines.add(currentLine)
-
-        return lines
-    }
-
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val panelBottom = height - 25
-        val contentTop = panelTop + 24 + btnH + 8
+        val contentTop = panelTop + 24
         val contentAreaHeight = panelBottom - 16 - contentTop
         val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
         scrollOffset = (scrollOffset - (verticalAmount * 20).toInt()).coerceIn(0, maxScroll)

@@ -12,6 +12,7 @@ object KeyBindings {
     private lateinit var toggleHudKey: KeyBinding
     private lateinit var spawnInfoKey: KeyBinding
     private lateinit var searchKey: KeyBinding
+    private lateinit var cycleHudModeKey: KeyBinding
 
     fun register() {
         toggleHudKey = KeyBindingHelper.registerKeyBinding(
@@ -41,6 +42,15 @@ object KeyBindings {
             )
         )
 
+        cycleHudModeKey = KeyBindingHelper.registerKeyBinding(
+            KeyBinding(
+                "key.hunterboard.cycle_mode",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_RIGHT_BRACKET, // $ on French AZERTY
+                "category.hunterboard"
+            )
+        )
+
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (toggleHudKey.wasPressed()) {
                 BoardState.hudVisible = !BoardState.hudVisible
@@ -63,6 +73,13 @@ object KeyBindings {
                 if (mc.currentScreen == null) {
                     SpawnData.ensureLoaded()
                     mc.setScreen(PokemonSearchScreen())
+                }
+            }
+
+            if (cycleHudModeKey.wasPressed()) {
+                if (client.currentScreen == null) {
+                    val newMode = (BoardState.displayMode + 1) % 5
+                    BoardState.setDisplayMode(newMode)
                 }
             }
         }
