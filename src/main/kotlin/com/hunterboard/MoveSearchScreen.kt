@@ -113,6 +113,12 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         // Options button (attached to panel top-right corner, outside)
         optBtnX = panelX + panelWidth + 2
         optBtnY = panelTop
@@ -283,6 +289,13 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
+
+            // Close button ✕
+            val closeX = panelX + panelWidth - 12
+            val closeY = panelTop + 4
+            if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+                close(); return true
+            }
 
             // Language toggle button click
             if (mouseX >= langBtnXField && mouseX <= langBtnXField + langBtnWField &&

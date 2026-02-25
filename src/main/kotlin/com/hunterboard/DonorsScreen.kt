@@ -53,6 +53,12 @@ class DonorsScreen(
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 8, goldBright, true)
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 6
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         // Subtitle
         val subtitle = Translations.tr("Thank you for your support!")
         val subtitleX = panelX + (panelWidth - textRenderer.getWidth(subtitle)) / 2
@@ -133,12 +139,20 @@ class DonorsScreen(
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button)
-        val donors = DonorsFetcher.donors
-        if (donors.isEmpty()) return super.mouseClicked(mouseX, mouseY, button)
 
         val panelWidth = (width * 0.45).toInt().coerceIn(200, 360)
         val panelX = (width - panelWidth) / 2
         val panelTop = 30
+
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 6
+        if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+            close(); return true
+        }
+
+        val donors = DonorsFetcher.donors
+        if (donors.isEmpty()) return super.mouseClicked(mouseX, mouseY, button)
         val panelBottom = height - 30
         val listTop = panelTop + 38
         val listBottom = panelBottom - 18

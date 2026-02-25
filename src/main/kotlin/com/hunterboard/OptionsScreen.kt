@@ -69,6 +69,12 @@ class OptionsScreen(
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
         context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
@@ -86,7 +92,7 @@ class OptionsScreen(
 
         val resetLabel: String = Translations.tr("Reset")
         val resetBtnW = textRenderer.getWidth(resetLabel) + 8
-        val resetBtnX = panelX + panelWidth - resetBtnW - 8
+        val resetBtnX = panelX + panelWidth - resetBtnW - 22
         val resetBtnY = panelTop + 4
         val resetHovered = mouseX >= resetBtnX && mouseX <= resetBtnX + resetBtnW &&
                            mouseY >= resetBtnY && mouseY <= resetBtnY + 14
@@ -401,6 +407,14 @@ class OptionsScreen(
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
         val panelTop = 25
+
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+            close(); return true
+        }
+
         val leftX = panelX + 12
         val rightX = panelX + panelWidth - 12
 
@@ -409,7 +423,7 @@ class OptionsScreen(
         // Reset button
         val resetLabel: String = Translations.tr("Reset")
         val resetBtnW = textRenderer.getWidth(resetLabel) + 8
-        val resetBtnX = panelX + panelWidth - resetBtnW - 8
+        val resetBtnX = panelX + panelWidth - resetBtnW - 22
         val resetBtnY = panelTop + 4
         if (mouseX >= resetBtnX && mouseX <= resetBtnX + resetBtnW &&
             mouseY >= resetBtnY.toDouble() && mouseY <= (resetBtnY + 14).toDouble()) {

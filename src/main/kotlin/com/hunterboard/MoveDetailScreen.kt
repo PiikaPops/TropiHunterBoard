@@ -68,6 +68,12 @@ class MoveDetailScreen(
         context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
         drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         // Back button
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
@@ -401,6 +407,13 @@ class MoveDetailScreen(
             val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
             val panelX = (width - panelWidth) / 2
             val panelTop = 10
+
+            // Close button ✕
+            val closeX = panelX + panelWidth - 12
+            val closeY = panelTop + 4
+            if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+                client?.setScreen(parent); return true
+            }
 
             // Back button
             val backText: String = Translations.tr("\u2190 Back")

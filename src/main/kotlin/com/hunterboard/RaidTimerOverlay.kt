@@ -249,21 +249,31 @@ object RaidTimerOverlay {
     private fun playNotificationSound(soundId: String, times: Int, pitch: Float) {
         val volume = ModConfig.raidNotifVolumeF()
         if (volume <= 0f) return
-        Thread {
-            for (i in 0 until times) {
-                if (i > 0) Thread.sleep(500L)
-                MinecraftClient.getInstance().execute {
-                    try {
-                        val id = Identifier.of(soundId)
-                        val soundEvent = SoundEvent.of(id)
-                        MinecraftClient.getInstance().player?.playSound(soundEvent, volume, pitch)
-                    } catch (_: Exception) {
-                        MinecraftClient.getInstance().player
-                            ?.playSound(SoundEvents.BLOCK_BELL_USE, volume, pitch)
+        if (soundId.startsWith("custom:")) {
+            val filename = soundId.removePrefix("custom:")
+            Thread {
+                for (i in 0 until times) {
+                    if (i > 0) Thread.sleep(500L)
+                    CustomSoundPlayer.play(filename, volume, pitch)
+                }
+            }.also { it.isDaemon = true }.start()
+        } else {
+            Thread {
+                for (i in 0 until times) {
+                    if (i > 0) Thread.sleep(500L)
+                    MinecraftClient.getInstance().execute {
+                        try {
+                            val id = Identifier.of(soundId)
+                            val soundEvent = SoundEvent.of(id)
+                            MinecraftClient.getInstance().player?.playSound(soundEvent, volume, pitch)
+                        } catch (_: Exception) {
+                            MinecraftClient.getInstance().player
+                                ?.playSound(SoundEvents.BLOCK_BELL_USE, volume, pitch)
+                        }
                     }
                 }
-            }
-        }.also { it.isDaemon = true }.start()
+            }.also { it.isDaemon = true }.start()
+        }
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

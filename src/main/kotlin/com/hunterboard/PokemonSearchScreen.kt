@@ -168,6 +168,12 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         // Options button (attached to panel top-right corner, outside)
         optBtnX = panelX + panelWidth + 2
         optBtnY = panelTop
@@ -183,10 +189,10 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(optBtnX + optBtnSize - 1, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
         context.drawTexture(OPTIONS_ICON, optBtnX + 4, optBtnY + 4, 0f, 0f, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8)
 
-        // History toggle button (right side of header)
+        // History toggle button (right side of header, before ✕)
         val btnLabel: String = if (showingHistory) Translations.tr("All") else Translations.tr("History")
         val btnW = textRenderer.getWidth(btnLabel) + 8
-        val btnX = panelX + panelWidth - btnW - 8
+        val btnX = panelX + panelWidth - btnW - 22
         val btnY = panelTop + 4
         val btnH = 12
         val btnHovered = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH
@@ -361,6 +367,13 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
+
+            // Close button ✕
+            val closeX = panelX + panelWidth - 12
+            val closeY = panelTop + 4
+            if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+                close(); return true
+            }
 
             // Donors button click
             if (mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&

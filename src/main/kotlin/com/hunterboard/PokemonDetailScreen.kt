@@ -226,6 +226,12 @@ class PokemonDetailScreen(
         context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
         drawBorder(context, panelX, panelTop, panelWidth, panelHeight, 0xFFFFAA00.toInt())
 
+        // Close button ✕
+        val closeX = panelX + panelWidth - 12
+        val closeY = panelTop + 4
+        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
+        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+
         // ========== HEADER ==========
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
@@ -245,7 +251,7 @@ class PokemonDetailScreen(
         val prevText = "\u25C0"
         val nextText = "\u25B6"
         val navW = textRenderer.getWidth(prevText)
-        val navRightEdge = panelX + panelWidth - 8
+        val navRightEdge = panelX + panelWidth - 22
 
         // Layout: [◀] #0001 [▶] right-aligned
         val nextBtnX = navRightEdge - navW
@@ -1335,6 +1341,17 @@ class PokemonDetailScreen(
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
+            val panelX = (width - panelWidth) / 2
+            val panelTop = 10
+
+            // Close button ✕
+            val closeX = panelX + panelWidth - 12
+            val closeY = panelTop + 4
+            if (mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2.0 && mouseY <= closeY + 11.0) {
+                close(); return true
+            }
+
             // Scrollbar click
             if (sbThumbHeight > 0 && mouseX >= sbTrackX && mouseX <= sbTrackX + 6 &&
                 mouseY >= sbContentTop && mouseY <= sbContentBottom) {
@@ -1351,10 +1368,6 @@ class PokemonDetailScreen(
                 return true
             }
 
-            val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
-            val panelX = (width - panelWidth) / 2
-            val panelTop = 10
-
             // Back button
             val backText: String = Translations.tr("\u2190 Back")
             if (mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
@@ -1369,7 +1382,7 @@ class PokemonDetailScreen(
             val prevText = "\u25C0"
             val nextText = "\u25B6"
             val navW = textRenderer.getWidth(prevText)
-            val navRightEdge = panelX + panelWidth - 8
+            val navRightEdge = panelX + panelWidth - 22
             val nextBtnX = navRightEdge - navW
             val dexTextX = nextBtnX - dexW - 4
             val prevBtnX = dexTextX - navW - 4
