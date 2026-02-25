@@ -23,7 +23,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
 
     // Options button
     private val OPTIONS_ICON = Identifier.of("hunterboard", "img/option.png")
-    private val optBtnSize = 40
+    private val optBtnSize = 24
     private var optBtnX = 0
     private var optBtnY = 0
 
@@ -38,6 +38,11 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
     // Sort button bounds
     private val sortLabels = arrayOf("A-Z", "Type", "Cat.", "Pow")
     private var sortBtnBounds = Array(4) { intArrayOf(0, 0, 0) } // x, y, w
+
+    // Language toggle button bounds
+    private var langBtnXField = 0
+    private var langBtnYField = 0
+    private var langBtnWField = 0
 
     // Scrollbar drag state
     private var isScrollbarDragging = false
@@ -77,16 +82,16 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val query = if (::searchField.isInitialized) searchField.text.lowercase().trim() else ""
 
         val searched = if (query.isEmpty()) base else base.filter { move ->
-            move.displayName.string.lowercase().contains(query) ||
+            Translations.moveDisplayName(move).lowercase().contains(query) ||
             move.name.contains(query) ||
             move.elementalType.name.lowercase().contains(query)
         }
 
         filteredMoves = when (sortMode) {
-            1 -> searched.sortedWith(compareBy({ it.elementalType.name }, { it.displayName.string.lowercase() }))
-            2 -> searched.sortedWith(compareBy({ it.damageCategory.name }, { it.displayName.string.lowercase() }))
+            1 -> searched.sortedWith(compareBy({ it.elementalType.name }, { Translations.moveDisplayName(it).lowercase() }))
+            2 -> searched.sortedWith(compareBy({ it.damageCategory.name }, { Translations.moveDisplayName(it).lowercase() }))
             3 -> searched.sortedByDescending { it.power.toInt() }
-            else -> searched.sortedBy { it.displayName.string.lowercase() }
+            else -> searched.sortedBy { Translations.moveDisplayName(it).lowercase() }
         }
         scrollOffset = 0
     }
@@ -108,9 +113,9 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
-        // Options button
-        optBtnX = width - optBtnSize - 4
-        optBtnY = 4
+        // Options button (attached to panel top-right corner, outside)
+        optBtnX = panelX + panelWidth + 2
+        optBtnY = panelTop
         val optHovered = mouseX in optBtnX..(optBtnX + optBtnSize) && mouseY in optBtnY..(optBtnY + optBtnSize)
         val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
         val btnLight = if (optHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
@@ -144,6 +149,20 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, 0xFF2A2200.toInt())
         drawBorder(context, movesTabX, tY, movesTabW, tabH, ModConfig.accentColor())
         context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, ModConfig.accentColor(), true)
+
+        // Language toggle button (right side of tab row)
+        val langLabel = Translations.nameLanguageLabel()
+        langBtnWField = textRenderer.getWidth(langLabel) + 8
+        langBtnXField = panelX + panelWidth - langBtnWField - 8
+        langBtnYField = tY
+        val langBtnW = langBtnWField
+        val langBtnX = langBtnXField
+        val langBtnY = langBtnYField
+        val langBtnH = tabH
+        val langHovered = mouseX in langBtnX..(langBtnX + langBtnW) && mouseY in langBtnY..(langBtnY + langBtnH)
+        context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
+        context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
         // Sort buttons
         val sortY = panelTop + 34
@@ -209,7 +228,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
                     drawMiniTypeBadge(context, typeColX, y + 2, typeName)
 
                     // Move name
-                    val displayName = move.displayName.string
+                    val displayName = Translations.moveDisplayName(move)
                     val nameColor = if (hovered) ModConfig.accentColor() else 0xFFFFFFFF.toInt()
                     context.drawText(textRenderer, displayName, nameColX, y + 3, nameColor, true)
 
@@ -264,6 +283,14 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
+
+            // Language toggle button click
+            if (mouseX >= langBtnXField && mouseX <= langBtnXField + langBtnWField &&
+                mouseY >= langBtnYField.toDouble() && mouseY <= (langBtnYField + tabH).toDouble()) {
+                Translations.toggleNameLanguage()
+                applySortAndFilter()
+                return true
+            }
 
             // Options button
             if (mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&

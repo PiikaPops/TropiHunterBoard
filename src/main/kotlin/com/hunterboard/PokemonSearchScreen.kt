@@ -8,7 +8,9 @@ import net.minecraft.client.gui.widget.TextFieldWidget
 
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
+import net.minecraft.util.Util
 import org.lwjgl.glfw.GLFW
+import java.net.URI
 
 class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
@@ -29,7 +31,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
     // Options button
     private val OPTIONS_ICON = Identifier.of("hunterboard", "img/option.png")
-    private val optBtnSize = 40
+    private val optBtnSize = 24
     private var optBtnX = 0
     private var optBtnY = 0
 
@@ -45,6 +47,24 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var sbThumbY = 0
     private var sbThumbHeight = 0
     private var sbMaxScroll = 0
+
+    // Donate button bounds
+    private var donateBtnX = 0
+    private var donateBtnY = 0
+    private var donateBtnW = 0
+    private val donateBtnH = 16
+
+    // Donors button bounds
+    private var donorsBtnX = 0
+    private var donorsBtnY = 0
+    private var donorsBtnW = 0
+    private val donorsBtnH = 16
+
+    // Language toggle button
+    private var langBtnX = 0
+    private var langBtnY = 0
+    private var langBtnW = 0
+    private val langBtnH = 12
 
     // Tab bounds for Pokemon/Moves toggle
     private var movesTabX = 0
@@ -110,13 +130,16 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
         filteredList = (allEntriesSorted ?: emptyList()).filter { entry ->
             when (entry) {
-                is PokemonEntry.Regular -> entry.species.name.contains(query) ||
-                    entry.species.translatedName.string.lowercase().contains(query)
+                is PokemonEntry.Regular -> {
+                    val displayName = Translations.speciesDisplayName(entry.species).lowercase()
+                    entry.species.name.contains(query) || displayName.contains(query)
+                }
                 is PokemonEntry.Mega -> {
+                    val displayName = Translations.speciesDisplayName(entry.species).lowercase()
                     val mLabel = PokemonEntry.megaLabel(entry.form.name).lowercase()
-                    val fullName = "$mLabel ${entry.species.translatedName.string}".lowercase()
+                    val fullName = "$mLabel $displayName"
                     entry.species.name.contains(query) ||
-                    entry.species.translatedName.string.lowercase().contains(query) ||
+                    displayName.contains(query) ||
                     fullName.contains(query)
                 }
             }
@@ -124,6 +147,9 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // Hide search bar when showing history
+        searchField.visible = !showingHistory
+
         // Dark overlay
         context.fill(0, 0, width, height, 0xAA000000.toInt())
 
@@ -142,9 +168,9 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
-        // Options button (top-right of screen, MC-style)
-        optBtnX = width - optBtnSize - 4
-        optBtnY = 4
+        // Options button (attached to panel top-right corner, outside)
+        optBtnX = panelX + panelWidth + 2
+        optBtnY = panelTop
         val optHovered = mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
                          mouseY >= optBtnY && mouseY <= optBtnY + optBtnSize
         val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
@@ -196,8 +222,18 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, if (movTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
         context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, if (movTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
 
-        // Results area
-        val resultsTop = panelTop + 59
+        // Language toggle button (right side of tab row)
+        val langLabel = Translations.nameLanguageLabel()
+        langBtnW = textRenderer.getWidth(langLabel) + 8
+        langBtnX = panelX + panelWidth - langBtnW - 8
+        langBtnY = tY
+        val langHovered = mouseX in langBtnX..(langBtnX + langBtnW) && mouseY in langBtnY..(langBtnY + langBtnH)
+        context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
+        context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+
+        // Results area (higher when search bar is hidden in history mode)
+        val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
         val resultsBottom = panelBottom - 16
         val resultsAreaHeight = resultsBottom - resultsTop
 
@@ -227,7 +263,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                             val rarity = spawns.firstOrNull()?.bucket ?: ""
                             context.fill(panelX + 10, y + 4, panelX + 14, y + 8, getRarityColor(rarity))
 
-                            val displayName = entry.species.translatedName.string
+                            val displayName = Translations.speciesDisplayName(entry.species)
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFFFFFFF.toInt()
                             context.drawText(textRenderer, displayName, panelX + 18, y + 3, nameColor, true)
 
@@ -245,7 +281,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                             context.drawText(textRenderer, prefix, panelX + 18, y + 3, 0xFF665588.toInt(), true)
 
                             val mLabel = PokemonEntry.megaLabel(entry.form.name)
-                            val displayName = "$mLabel ${entry.species.translatedName.string}"
+                            val displayName = "$mLabel ${Translations.speciesDisplayName(entry.species)}"
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFCC99FF.toInt()
                             context.drawText(textRenderer, displayName, panelX + 18 + prefixW, y + 3, nameColor, true)
 
@@ -284,6 +320,40 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
         // Render search field and other widgets
         super.render(context, mouseX, mouseY, delta)
+
+        // Donors button (bottom-left of screen)
+        val donorsText = "\u2605 ${Translations.tr("Generous Souls")}"
+        donorsBtnW = textRenderer.getWidth(donorsText) + 16
+        donorsBtnX = 6 + (width * 15 / 100)
+        donorsBtnY = height - donorsBtnH - 6
+        val donorsHovered = mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&
+                            mouseY >= donorsBtnY && mouseY <= donorsBtnY + donorsBtnH
+        val gBase = if (donorsHovered) 0xFF8B7320.toInt() else 0xFF6B5710.toInt()
+        val gLight = if (donorsHovered) 0xFFFFD700.toInt() else 0xFFB8860B.toInt()
+        val gDark = if (donorsHovered) 0xFF5A4A0A.toInt() else 0xFF3A2F05.toInt()
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gBase)
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + 1, gLight)
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + 1, donorsBtnY + donorsBtnH, gLight)
+        context.fill(donorsBtnX, donorsBtnY + donorsBtnH - 1, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
+        context.fill(donorsBtnX + donorsBtnW - 1, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
+        context.drawText(textRenderer, donorsText, donorsBtnX + 8, donorsBtnY + 4, 0xFFFFE066.toInt(), true)
+
+        // Donate button (bottom-right, shifted 15% left)
+        val donateText: String = Translations.tr("Donate to _Popichu")
+        donateBtnW = textRenderer.getWidth(donateText) + 16
+        donateBtnX = width - donateBtnW - 6 - (width * 15 / 100)
+        donateBtnY = height - donateBtnH - 6
+        val donateHovered = mouseX >= donateBtnX && mouseX <= donateBtnX + donateBtnW &&
+                            mouseY >= donateBtnY && mouseY <= donateBtnY + donateBtnH
+        val dBase = if (donateHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
+        val dLight = if (donateHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
+        val dDark = if (donateHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
+        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dBase)
+        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + 1, dLight)
+        context.fill(donateBtnX, donateBtnY, donateBtnX + 1, donateBtnY + donateBtnH, dLight)
+        context.fill(donateBtnX, donateBtnY + donateBtnH - 1, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
+        context.fill(donateBtnX + donateBtnW - 1, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
+        context.drawText(textRenderer, donateText, donateBtnX + 8, donateBtnY + 4, 0xFFFFFFFF.toInt(), true)
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
@@ -291,6 +361,29 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
+
+            // Donors button click
+            if (mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&
+                mouseY >= donorsBtnY.toDouble() && mouseY <= (donorsBtnY + donorsBtnH).toDouble()) {
+                DonorsFetcher.fetchIfNeeded()
+                client?.setScreen(DonorsScreen(this))
+                return true
+            }
+
+            // Donate button click
+            if (mouseX >= donateBtnX && mouseX <= donateBtnX + donateBtnW &&
+                mouseY >= donateBtnY.toDouble() && mouseY <= (donateBtnY + donateBtnH).toDouble()) {
+                try { Util.getOperatingSystem().open(URI("https://www.paypal.com/paypalme/Popiipops")) } catch (_: Exception) {}
+                return true
+            }
+
+            // Language toggle button click
+            if (mouseX >= langBtnX && mouseX <= langBtnX + langBtnW &&
+                mouseY >= langBtnY.toDouble() && mouseY <= (langBtnY + langBtnH).toDouble()) {
+                Translations.toggleNameLanguage()
+                updateSearch()
+                return true
+            }
 
             // Options button click
             if (mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
@@ -322,7 +415,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
             // Check scrollbar click
             val contentHeight = filteredList.size * rowHeight + 4
-            val resultsTop = panelTop + 59
+            val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
             val resultsBottom = height - 25 - 16
             val resultsAreaHeight = resultsBottom - resultsTop
 
@@ -348,7 +441,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
             // Check results click
             if (filteredList.isNotEmpty()) {
-                val resultsTop2 = panelTop + 59
+                val resultsTop2 = if (showingHistory) panelTop + 37 else panelTop + 59
                 val resultsBottom2 = height - 25 - 16
                 if (mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
                     mouseY >= resultsTop2 && mouseY <= resultsBottom2) {
@@ -372,7 +465,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val panelTop = 25
-            val resultsTop = panelTop + 59
+            val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
             val resultsBottom = height - 25 - 16
             val resultsAreaHeight = resultsBottom - resultsTop
             val contentHeight = filteredList.size * rowHeight + 4
@@ -401,7 +494,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val panelBottom = height - 25
-        val resultsTop = panelTop + 59
+        val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
         val resultsBottom = panelBottom - 16
         val resultsAreaHeight = resultsBottom - resultsTop
         val contentHeight = filteredList.size * rowHeight + 4

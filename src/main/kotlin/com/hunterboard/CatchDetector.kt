@@ -23,8 +23,8 @@ object CatchDetector {
     // Pending data expires after 30 seconds
     private const val PENDING_EXPIRY_MS = 30_000L
 
-    // "Your team is full! Pikachu was added to your PC."
-    private val PC_EN_REGEX = Regex("""Your team is full! (.+) was added to your PC\.""")
+    // "Your party was full! Pikachu has been added to Your PC."
+    private val PC_EN_REGEX = Regex("""Your (?:party|team) (?:was|is) full! (.+) (?:has been |was )added to [Yy]our PC\.""")
     // "Votre équipe est pleine ! Crabicoque a été ajouté(e) à votre PC."
     private val PC_FR_REGEX = Regex("""Votre équipe est pleine ! (.+) a été ajouté(?:e)? à votre PC\.""")
 

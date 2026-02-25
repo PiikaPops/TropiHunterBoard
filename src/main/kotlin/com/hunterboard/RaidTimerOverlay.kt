@@ -1,9 +1,12 @@
 package com.hunterboard
 
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.sound.SoundEvent
 import net.minecraft.sound.SoundEvents
+import net.minecraft.util.Identifier
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -12,6 +15,9 @@ import java.time.temporal.ChronoUnit
 object RaidTimerOverlay {
 
     private val ZONE = ZoneId.of("Europe/Paris")
+
+    // Chat-triggered raid detection (e.g. "<pseudo> a déclenché un Raid !")
+    private val RAID_TRIGGER_REGEX = Regex(""".+ a déclenché un Raid\s*!""")
 
     // Raid times in Paris local time
     private val RAID_TIMES = listOf(
@@ -39,9 +45,32 @@ object RaidTimerOverlay {
     private var notifiedRaidTime: LocalTime? = null
     private var notifDisplayUntil: Long = 0L
 
+    // 5-minute warning state
+    private var notified5MinWarning: LocalTime? = null
+    private var warningDisplayUntil: Long = 0L
+
+    // Cached for merged mode
+    private var cachedLabelText = ""
+    private var cachedCountdown = ""
+    private var cachedUrgent = false
+    private var raidDataReady = false
+
     fun register() {
+        ClientReceiveMessageEvents.GAME.register { message, _ ->
+            handleChat(message.string)
+        }
+        ClientReceiveMessageEvents.CHAT.register { message, _, _, _, _ ->
+            handleChat(message.string)
+        }
         HudRenderCallback.EVENT.register { context, _ ->
             try { render(context) } catch (_: Exception) {}
+        }
+    }
+
+    private fun handleChat(text: String) {
+        if (RAID_TRIGGER_REGEX.containsMatchIn(text)) {
+            notifDisplayUntil = System.currentTimeMillis() + 6_000L
+            playNotificationSound(ModConfig.raidStartSound, 5, 0.8f)
         }
     }
 
@@ -75,6 +104,7 @@ object RaidTimerOverlay {
         if (!initialized) {
             initialized = true
             notifiedRaidTime = allRaids.lastOrNull { !it.isAfter(now) }?.toLocalTime()
+            if (secondsUntil <= 301) notified5MinWarning = nextRaid.toLocalTime()
         }
 
         // Detect raid start (within 30s of a past raid not yet notified)
@@ -84,16 +114,18 @@ object RaidTimerOverlay {
             if (sinceSec in 0..29 && notifiedRaidTime != lastRaid.toLocalTime()) {
                 notifiedRaidTime = lastRaid.toLocalTime()
                 notifDisplayUntil = System.currentTimeMillis() + 6_000L
-                // Play bell sound 5 times every 0.5s when raid starts
-                Thread {
-                    for (i in 0 until 5) {
-                        if (i > 0) Thread.sleep(500L)
-                        MinecraftClient.getInstance().execute {
-                            MinecraftClient.getInstance().player
-                                ?.playSound(SoundEvents.BLOCK_BELL_USE, 1.0f, 0.8f)
-                        }
-                    }
-                }.also { it.isDaemon = true }.start()
+                // Play sound 5 times every 0.5s when raid starts
+                playNotificationSound(ModConfig.raidStartSound, 5, 0.8f)
+            }
+        }
+
+        // Detect 5-minute warning (299-301 seconds before next raid)
+        if (ModConfig.raidNotification && secondsUntil in 299..301) {
+            val upcomingTime = nextRaid.toLocalTime()
+            if (notified5MinWarning != upcomingTime) {
+                notified5MinWarning = upcomingTime
+                warningDisplayUntil = System.currentTimeMillis() + 6_000L
+                playNotificationSound(ModConfig.raidWarningSound, 3, 1.2f)
             }
         }
 
@@ -101,6 +133,18 @@ object RaidTimerOverlay {
         val screenW = client.window.scaledWidth
         val screenH = client.window.scaledHeight
         val sysNow = System.currentTimeMillis()
+
+        // === 5-minute warning banner (top-center, shown for 6s, orange) ===
+        if (warningDisplayUntil > sysNow) {
+            val warnText = "\u26a0  ${Translations.tr("Raid in 5 min!")}  \u26a0"
+            val wW = textRenderer.getWidth(warnText) + 20
+            val wH = 18
+            val wX = (screenW - wW) / 2
+            val wY = if (notifDisplayUntil > sysNow) 42 else 20
+            context.fill(wX, wY, wX + wW, wY + wH, 0xCC332200.toInt())
+            drawBorder(context, wX, wY, wW, wH, 0xFFFF8833.toInt())
+            context.drawText(textRenderer, warnText, wX + 10, wY + 5, 0xFFFFAA33.toInt(), true)
+        }
 
         // === Notification banner (top-center, shown for 6s) ===
         if (notifDisplayUntil > sysNow) {
@@ -125,29 +169,101 @@ object RaidTimerOverlay {
         val nextTimeStr = "%02dh%02d".format(nextTime.hour, nextTime.minute)
         val labelText = "${Translations.tr("Next Raid")} \u2022 $nextTimeStr"
 
+        // Cache for merged mode
+        cachedLabelText = labelText
+        cachedCountdown = countdown
+        cachedUrgent = secondsUntil <= 120
+        raidDataReady = true
+
+        // In merged mode, skip standalone panel rendering
+        if (ModConfig.mergedHudMode) { renderedW = 0; renderedH = 0; return }
+
+        val scale = ModConfig.hudScale()
         val panelW = maxOf(textRenderer.getWidth(labelText), textRenderer.getWidth(countdown)) + 12
         val panelH = 22
+        val scaledW = (panelW * scale).toInt()
+        val scaledH = (panelH * scale).toInt()
 
-        // Default position: center-top
-        val rawX = panelX ?: ((screenW - panelW) / 2)
+        // Default position: center-top (use scaled dimensions for clamping)
+        val rawX = panelX ?: ((screenW - scaledW) / 2)
         val rawY = panelY ?: 4
-        val finalX = rawX.coerceIn(0, (screenW - panelW).coerceAtLeast(0))
-        val finalY = rawY.coerceIn(0, (screenH - panelH).coerceAtLeast(0))
+        val clampedX = rawX.coerceIn(0, (screenW - scaledW).coerceAtLeast(0))
+        val clampedY = rawY.coerceIn(0, (screenH - scaledH).coerceAtLeast(0))
 
-        // Expose rendered bounds for drag detection
+        // Anti-overlap: register with layout manager (skip in merged mode)
+        val (finalX, finalY) = if (!ModConfig.mergedHudMode) {
+            HudLayoutManager.register(clampedX, clampedY, scaledW, scaledH, screenW, screenH)
+        } else clampedX to clampedY
+
+        // Expose rendered bounds in screen pixels
         renderedX = finalX
         renderedY = finalY
-        renderedW = panelW
-        renderedH = panelH
-
-        context.fill(finalX, finalY, finalX + panelW, finalY + panelH, 0xAA000000.toInt())
+        renderedW = scaledW
+        renderedH = scaledH
 
         val urgent = secondsUntil <= 120
         val accentColor = if (urgent) 0xFFFF5533.toInt() else ModConfig.accentColor()
-        drawBorder(context, finalX, finalY, panelW, panelH, accentColor)
 
-        context.drawText(textRenderer, labelText,   finalX + 6, finalY + 3,  accentColor, true)
-        context.drawText(textRenderer, countdown,   finalX + 6, finalY + 13, if (urgent) 0xFFFF5533.toInt() else 0xFFFFFFFF.toInt(), true)
+        context.matrices.push()
+        context.matrices.translate(finalX.toFloat(), finalY.toFloat(), 0f)
+        context.matrices.scale(scale, scale, 1f)
+
+        if (!ModConfig.fullClearMode) {
+            context.fill(0, 0, panelW, panelH, ModConfig.bgColor())
+            drawBorder(context, 0, 0, panelW, panelH, accentColor)
+        }
+
+        val labelX = (panelW - textRenderer.getWidth(labelText)) / 2
+        val countdownX = (panelW - textRenderer.getWidth(countdown)) / 2
+        context.drawText(textRenderer, labelText,   labelX, 3,  accentColor, true)
+        context.drawText(textRenderer, countdown,   countdownX, 13, if (urgent) 0xFFFF5533.toInt() else 0xFFFFFFFF.toInt(), true)
+
+        context.matrices.pop()
+    }
+
+    /** Whether the raid section has content to show (for merged mode) */
+    fun isActive(): Boolean = raidDataReady && ModConfig.showRaidHud
+
+    /** Height of the raid content section (for merged panel sizing) */
+    fun contentHeight(): Int = if (isActive()) 22 else 0
+
+    /** Width needed by raid content (for merged panel width calculation) */
+    fun contentWidth(): Int {
+        if (!isActive()) return 0
+        val tr = MinecraftClient.getInstance().textRenderer
+        return maxOf(tr.getWidth(cachedLabelText), tr.getWidth(cachedCountdown))
+    }
+
+    /** Draw raid content without background/border. Returns height used. */
+    fun renderContent(context: DrawContext, x: Int, y: Int, panelWidth: Int): Int {
+        if (!isActive()) return 0
+        val tr = MinecraftClient.getInstance().textRenderer
+        val accentColor = if (cachedUrgent) 0xFFFF5533.toInt() else ModConfig.accentColor()
+        val labelX = x + (panelWidth - tr.getWidth(cachedLabelText)) / 2
+        val countdownX = x + (panelWidth - tr.getWidth(cachedCountdown)) / 2
+        context.drawText(tr, cachedLabelText, labelX, y, accentColor, true)
+        context.drawText(tr, cachedCountdown, countdownX, y + 10, if (cachedUrgent) 0xFFFF5533.toInt() else 0xFFFFFFFF.toInt(), true)
+        return 22
+    }
+
+    private fun playNotificationSound(soundId: String, times: Int, pitch: Float) {
+        val volume = ModConfig.raidNotifVolumeF()
+        if (volume <= 0f) return
+        Thread {
+            for (i in 0 until times) {
+                if (i > 0) Thread.sleep(500L)
+                MinecraftClient.getInstance().execute {
+                    try {
+                        val id = Identifier.of(soundId)
+                        val soundEvent = SoundEvent.of(id)
+                        MinecraftClient.getInstance().player?.playSound(soundEvent, volume, pitch)
+                    } catch (_: Exception) {
+                        MinecraftClient.getInstance().player
+                            ?.playSound(SoundEvents.BLOCK_BELL_USE, volume, pitch)
+                    }
+                }
+            }
+        }.also { it.isDaemon = true }.start()
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

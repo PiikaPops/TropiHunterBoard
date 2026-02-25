@@ -37,6 +37,9 @@ object BoardState {
     var displayMode: Int = 0
         private set
 
+    // Placeholder state after midnight reset (not persisted)
+    var waitingForBoard: Boolean = false
+
     private val MODE_KEYS = arrayOf("Full", "Compact", "Minimal", "Icon", "Icon+")
     val MODE_LABELS: Array<String> get() = MODE_KEYS.map { Translations.tr(it) }.toTypedArray()
 
@@ -61,9 +64,14 @@ object BoardState {
 
     fun updateBoard(newTargets: List<HuntTarget>) {
         targets = newTargets
+        waitingForBoard = false
         val totalReward = newTargets.filter { !it.isCaught }.sumOf { it.reward }
         reward = "${totalReward}$"
         lastUpdated = System.currentTimeMillis()
+        // Re-show HUD if auto-hide is on and there are uncaught targets
+        if (ModConfig.autoHideOnComplete && newTargets.any { !it.isCaught }) {
+            hudVisible = true
+        }
         save()
         HunterBoard.LOGGER.info("Board updated: ${targets.size} targets (${targets.count { it.isCaught }} caught)")
     }
@@ -82,6 +90,10 @@ object BoardState {
             reward = "${totalReward}$"
             save()
             HunterBoard.LOGGER.info("Auto-validated: $speciesId caught with $ballId")
+            // Auto-hide HUD when all targets are caught
+            if (ModConfig.autoHideOnComplete && remainingCount() == 0) {
+                hudVisible = false
+            }
         }
     }
 
@@ -97,6 +109,20 @@ object BoardState {
         save()
         val status = if (newTargets[index].isCaught) "caught" else "uncaught"
         HunterBoard.LOGGER.info("Manual toggle: ${target.pokemonName} -> $status")
+        // Auto-hide/show based on remaining count
+        if (ModConfig.autoHideOnComplete) {
+            hudVisible = remainingCount() > 0
+        }
+    }
+
+    fun resetBoard() {
+        targets = emptyList()
+        reward = ""
+        waitingForBoard = true
+        lastUpdated = System.currentTimeMillis()
+        hudVisible = true
+        save()
+        HunterBoard.LOGGER.info("Board reset (midnight)")
     }
 
     fun hasTargets(): Boolean = targets.isNotEmpty()

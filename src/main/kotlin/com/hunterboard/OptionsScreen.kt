@@ -107,7 +107,20 @@ class OptionsScreen(
         val posBtnX = rightX - posBtnW
         val posHovered = mouseX >= posBtnX && mouseX <= posBtnX + posBtnW && mouseY >= y && mouseY <= y + 14
         renderButton(context, posBtnX, y, posBtnW, 14, posLabel, posHovered)
-        y += 20
+        y += 18
+
+        // Grid Layout toggle + Pixel Art toggle
+        val gridLabel: String = if (ModConfig.gridLayout) Translations.tr("List Display") else Translations.tr("Square Display")
+        val gridBtnW = textRenderer.getWidth(gridLabel) + 10
+        val gridHovered = mouseX >= leftX && mouseX <= leftX + gridBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, gridBtnW, 14, gridLabel, gridHovered)
+
+        val paLabel: String = if (ModConfig.usePixelArt) Translations.tr("3D Models") else Translations.tr("2D Model")
+        val paBtnW = textRenderer.getWidth(paLabel) + 10
+        val paStart = leftX + gridBtnW + 6
+        val paHov = mouseX >= paStart && mouseX <= paStart + paBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, paStart, y, paBtnW, 14, paLabel, paHov)
+        y += 18
 
         // Size preset buttons (Small / Normal / Large)
         val sizeLabel: String = Translations.tr("Size")
@@ -158,6 +171,108 @@ class OptionsScreen(
             if (miracleHov || ModConfig.showMiracleHud) ModConfig.accentColor() else 0xFF444444.toInt())
         context.drawText(textRenderer, miracleLabel, vx + 5, y + 3,
             if (ModConfig.showMiracleHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        vx += miracleToggleW + 6
+
+        val huntLabel = "Hunt: ${if (ModConfig.showHuntHud) "ON" else "OFF"}"
+        val huntToggleW = textRenderer.getWidth("Hunt: OFF") + 10
+        val huntHov = mouseX >= vx && mouseX <= vx + huntToggleW && mouseY >= y && mouseY <= y + 14
+        context.fill(vx, y, vx + huntToggleW, y + 14,
+            if (ModConfig.showHuntHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, vx, y, huntToggleW, 14,
+            if (huntHov || ModConfig.showHuntHud) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, huntLabel, vx + 5, y + 3,
+            if (ModConfig.showHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Full Clear + Merged HUD toggles
+        val fcLabel = "${Translations.tr("Full Clear")}: ${if (ModConfig.fullClearMode) "ON" else "OFF"}"
+        val fcBtnW = textRenderer.getWidth("${Translations.tr("Full Clear")}: OFF") + 10
+        val fcHov = mouseX >= leftX && mouseX <= leftX + fcBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + fcBtnW, y + 14,
+            if (ModConfig.fullClearMode) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, fcBtnW, 14,
+            if (fcHov || ModConfig.fullClearMode) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, fcLabel, leftX + 5, y + 3,
+            if (ModConfig.fullClearMode) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+
+        val mhStart = leftX + fcBtnW + 6
+        val mhLabel = "${Translations.tr("Merged HUD")}: ${if (ModConfig.mergedHudMode) "ON" else "OFF"}"
+        val mhBtnW = textRenderer.getWidth("${Translations.tr("Merged HUD")}: OFF") + 10
+        val mhHov = mouseX >= mhStart && mouseX <= mhStart + mhBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(mhStart, y, mhStart + mhBtnW, y + 14,
+            if (ModConfig.mergedHudMode) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, mhStart, y, mhBtnW, 14,
+            if (mhHov || ModConfig.mergedHudMode) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, mhLabel, mhStart + 5, y + 3,
+            if (ModConfig.mergedHudMode) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Auto Hide + Midnight Reset toggles
+        val ahLabel = "${Translations.tr("Auto Hide")}: ${if (ModConfig.autoHideOnComplete) "ON" else "OFF"}"
+        val ahBtnW = textRenderer.getWidth("${Translations.tr("Auto Hide")}: OFF") + 10
+        val ahHov = mouseX >= leftX && mouseX <= leftX + ahBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + ahBtnW, y + 14,
+            if (ModConfig.autoHideOnComplete) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, ahBtnW, 14,
+            if (ahHov || ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, ahLabel, leftX + 5, y + 3,
+            if (ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+
+        val mrStart = leftX + ahBtnW + 6
+        val mrLabel = "${Translations.tr("Midnight Reset")}: ${if (ModConfig.midnightReset) "ON" else "OFF"}"
+        val mrBtnW = textRenderer.getWidth("${Translations.tr("Midnight Reset")}: OFF") + 10
+        val mrHov = mouseX >= mrStart && mouseX <= mrStart + mrBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(mrStart, y, mrStart + mrBtnW, y + 14,
+            if (ModConfig.midnightReset) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, mrStart, y, mrBtnW, 14,
+            if (mrHov || ModConfig.midnightReset) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, mrLabel, mrStart + 5, y + 3,
+            if (ModConfig.midnightReset) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 20
+
+        // ========== RAID SECTION ==========
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        y += 8
+        context.drawText(textRenderer, "Raid", leftX, y, ModConfig.accentColor(), true)
+        y += 14
+
+        // Raid Notification toggle
+        val rnLabel = "${Translations.tr("Raid Notification")}: ${if (ModConfig.raidNotification) "ON" else "OFF"}"
+        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Notification")}: OFF") + 10
+        val rnHov = mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + rnBtnW, y + 14,
+            if (ModConfig.raidNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, rnBtnW, 14,
+            if (rnHov || ModConfig.raidNotification) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, rnLabel, leftX + 5, y + 3,
+            if (ModConfig.raidNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Volume slider
+        val volLabel = "${Translations.tr("Volume")}: ${ModConfig.raidNotifVolume}%"
+        context.drawText(textRenderer, volLabel, leftX, y + 1, 0xFFBBBBBB.toInt(), true)
+        val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
+        val volSliderX = leftX + volLabelW
+        val volSliderW = rightX - volSliderX
+        y = renderSlider(context, null, volSliderX, y, volSliderW, (ModConfig.raidNotifVolume * 255 / 100), ModConfig.accentColor(), mouseX, mouseY, "raidVol")
+        y += 4
+
+        // Start Sound button
+        val ssName = ModConfig.raidStartSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val ssLabel = "${Translations.tr("Start Sound")}: $ssName"
+        val ssBtnW = textRenderer.getWidth(ssLabel) + 10
+        val ssHov = mouseX >= leftX && mouseX <= leftX + ssBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, ssBtnW, 14, ssLabel, ssHov)
+        y += 18
+
+        // Warning Sound button
+        val wsName = ModConfig.raidWarningSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val wsLabel = "${Translations.tr("Warning Sound")}: $wsName"
+        val wsBtnW = textRenderer.getWidth(wsLabel) + 10
+        val wsHov = mouseX >= leftX && mouseX <= leftX + wsBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, wsBtnW, 14, wsLabel, wsHov)
         y += 20
 
         // Separator
@@ -325,7 +440,24 @@ class OptionsScreen(
             client?.setScreen(HudPositionScreen(this))
             return true
         }
-        y += 20
+        y += 18
+
+        // Grid Layout toggle + Pixel Art toggle
+        val gridLabel: String = if (ModConfig.gridLayout) Translations.tr("List Display") else Translations.tr("Square Display")
+        val gridBtnW = textRenderer.getWidth(gridLabel) + 10
+        if (mouseX >= leftX && mouseX <= leftX + gridBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleGridLayout()
+            return true
+        }
+
+        val paLabel: String = if (ModConfig.usePixelArt) Translations.tr("3D Models") else Translations.tr("2D Model")
+        val paBtnW = textRenderer.getWidth(paLabel) + 10
+        val paStart = leftX + gridBtnW + 6
+        if (mouseX >= paStart && mouseX <= paStart + paBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.togglePixelArt()
+            return true
+        }
+        y += 18
 
         // Size preset buttons
         val sizeLabel: String = Translations.tr("Size")
@@ -356,6 +488,94 @@ class OptionsScreen(
         val miracleToggleW = textRenderer.getWidth("Miracle: OFF") + 10
         if (mouseX >= vx && mouseX <= vx + miracleToggleW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleMiracleHud()
+            return true
+        }
+        vx += miracleToggleW + 6
+
+        val huntToggleW = textRenderer.getWidth("Hunt: OFF") + 10
+        if (mouseX >= vx && mouseX <= vx + huntToggleW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleHuntHud()
+            return true
+        }
+        y += 18
+
+        // Full Clear toggle
+        val fcBtnW = textRenderer.getWidth("${Translations.tr("Full Clear")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + fcBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleFullClear()
+            return true
+        }
+
+        // Merged HUD toggle
+        val mhStart = leftX + fcBtnW + 6
+        val mhBtnW = textRenderer.getWidth("${Translations.tr("Merged HUD")}: OFF") + 10
+        if (mouseX >= mhStart && mouseX <= mhStart + mhBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleMergedHud()
+            return true
+        }
+        y += 18
+
+        // Auto Hide toggle
+        val ahBtnW = textRenderer.getWidth("${Translations.tr("Auto Hide")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + ahBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleAutoHideOnComplete()
+            return true
+        }
+
+        // Midnight Reset toggle
+        val mrStart = leftX + ahBtnW + 6
+        val mrBtnW = textRenderer.getWidth("${Translations.tr("Midnight Reset")}: OFF") + 10
+        if (mouseX >= mrStart && mouseX <= mrStart + mrBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleMidnightReset()
+            return true
+        }
+        y += 20
+
+        // Raid section
+        y += 9 // separator
+        y += 14 // Raid label
+
+        // Raid Notification toggle
+        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Notification")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleRaidNotification()
+            return true
+        }
+        y += 18
+
+        // Volume slider
+        val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
+        val volSliderX = leftX + volLabelW
+        val volSliderW = rightX - volSliderX
+        if (mouseY >= y && mouseY <= y + 10 && mouseX >= volSliderX && mouseX <= volSliderX + volSliderW) {
+            draggingSlider = "raidVol"
+            updateSliderValue(mouseX, volSliderX, volSliderW)
+            return true
+        }
+        y += 14
+
+        // Start Sound button
+        val ssName = ModConfig.raidStartSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val ssLabel = "${Translations.tr("Start Sound")}: $ssName"
+        val ssBtnW = textRenderer.getWidth(ssLabel) + 10
+        if (mouseX >= leftX && mouseX <= leftX + ssBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            client?.setScreen(SoundPickerScreen(this, ModConfig.raidStartSound) { selected ->
+                ModConfig.setRaidStartSound(selected)
+            })
+            return true
+        }
+        y += 18
+
+        // Warning Sound button
+        val wsName = ModConfig.raidWarningSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val wsLabel = "${Translations.tr("Warning Sound")}: $wsName"
+        val wsBtnW = textRenderer.getWidth(wsLabel) + 10
+        if (mouseX >= leftX && mouseX <= leftX + wsBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            client?.setScreen(SoundPickerScreen(this, ModConfig.raidWarningSound) { selected ->
+                ModConfig.setRaidWarningSound(selected)
+            })
             return true
         }
         y += 20
@@ -429,6 +649,7 @@ class OptionsScreen(
             "g"       -> ModConfig.setColor(ModConfig.hudColorR, value, ModConfig.hudColorB)
             "b"       -> ModConfig.setColor(ModConfig.hudColorR, ModConfig.hudColorG, value)
             "opacity" -> ModConfig.setOpacity(value * 100 / 255)
+            "raidVol" -> ModConfig.setRaidNotifVolume(value * 100 / 255)
         }
     }
 
@@ -442,6 +663,10 @@ class OptionsScreen(
             if (draggingSlider == "opacity") {
                 val opSliderX = leftX + 30
                 updateSliderValue(mouseX, opSliderX, rightX - opSliderX)
+            } else if (draggingSlider == "raidVol") {
+                val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
+                val volSliderX = leftX + volLabelW
+                updateSliderValue(mouseX, volSliderX, rightX - volSliderX)
             } else {
                 val sliderStartX = leftX + 16 + 8 + 12
                 updateSliderValue(mouseX, sliderStartX, rightX - sliderStartX)

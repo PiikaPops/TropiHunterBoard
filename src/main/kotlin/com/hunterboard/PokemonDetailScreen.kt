@@ -233,7 +233,7 @@ class PokemonDetailScreen(
         context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
             if (backHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
-        val displayName: String = species.translatedName.string
+        val displayName: String = Translations.dualSpeciesName(species.name)
         context.drawText(textRenderer, displayName,
             panelX + (panelWidth - textRenderer.getWidth(displayName)) / 2, panelTop + 6, 0xFFFFFFFF.toInt(), true)
 
@@ -382,7 +382,7 @@ class PokemonDetailScreen(
         if (modelWidget != null) {
             try {
                 modelRenderX = leftX
-                modelRenderY = y - 10
+                modelRenderY = y - 4
                 modelWidget!!.x = modelRenderX
                 modelWidget!!.y = modelRenderY
                 modelWidget!!.render(context, mouseX, mouseY, delta)
@@ -391,7 +391,7 @@ class PokemonDetailScreen(
 
         // Shiny toggle button
         shinyBtnX = leftX + (MODEL_SIZE - shinyBtnW) / 2
-        shinyBtnY = y - 10 + MODEL_SIZE + 2
+        shinyBtnY = y - 4 + MODEL_SIZE + 2
         val shinyHovered = mouseX >= shinyBtnX && mouseX <= shinyBtnX + shinyBtnW &&
                            mouseY >= shinyBtnY && mouseY <= shinyBtnY + shinyBtnH
         val shinyBg = when {
@@ -886,15 +886,7 @@ class PokemonDetailScreen(
                 } catch (_: Exception) {}
             }
         }
-        if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
-            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
-            if (resolved.isNotEmpty()) {
-                val lines = mutableListOf<Text>()
-                lines.add(Text.literal(Translations.biomeName(hoveredBiomeDetail!!)).styled { it.withBold(true).withColor(0xFFAA00) })
-                for (name in resolved) { lines.add(Text.literal("  $name").styled { it.withColor(0xCCCCCC) }) }
-                context.drawTooltip(textRenderer, lines, mouseX, mouseY)
-            }
-        }
+        // Biome tooltip is rendered after footer for proper Z-ordering
 
         // Scrollbar
         sbTrackX = panelX + panelWidth - 5
@@ -916,6 +908,17 @@ class PokemonDetailScreen(
         val hint: String = Translations.tr("ESC / Click Back to return")
         context.drawText(textRenderer, hint,
             panelX + (panelWidth - textRenderer.getWidth(hint)) / 2, panelBottom - 10, 0xFF555555.toInt(), true)
+
+        // Biome tooltip (rendered last, on top of everything)
+        if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
+            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
+            if (resolved.isNotEmpty()) {
+                context.matrices.push()
+                context.matrices.translate(0f, 0f, 400f)
+                renderBiomeTooltip(context, resolved, hoveredBiomeDetail!!, mouseX, mouseY)
+                context.matrices.pop()
+            }
+        }
 
         updateHoverState(mouseX, mouseY, panelX, panelWidth, contentTop, contentBottom)
     }
@@ -1620,6 +1623,68 @@ class PokemonDetailScreen(
         }
         if (currentLine.isNotEmpty()) lines.add(currentLine)
         return lines
+    }
+
+    private fun renderBiomeTooltip(
+        context: DrawContext,
+        biomes: List<String>,
+        detail: BiomeDetail,
+        mouseX: Int,
+        mouseY: Int
+    ) {
+        val lineHeight = 10
+        val padding = 6
+        val titleText = Translations.biomeName(detail)
+        val titleColor = 0xFFFFAA00.toInt()
+        val biomeColor = 0xFFCCCCCC.toInt()
+        val bgColor = 0xF0100010.toInt()
+        val borderColor = 0xFF5000A0.toInt()
+        val screenMargin = 4
+        val maxAvailableHeight = height - screenMargin * 2
+        val colGap = 12
+
+        var numCols = 1
+        while (numCols < 4) {
+            val rowsPerCol = (biomes.size + numCols - 1) / numCols
+            val h = padding + (rowsPerCol + 1) * lineHeight + padding
+            if (h <= maxAvailableHeight) break
+            numCols++
+        }
+
+        val rowsPerCol = (biomes.size + numCols - 1) / numCols
+        val columns = (0 until numCols).map { col ->
+            val start = col * rowsPerCol
+            biomes.subList(start, minOf(start + rowsPerCol, biomes.size))
+        }
+
+        val colWidths = columns.mapIndexed { i, col ->
+            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth("  $it") } ?: 0
+            if (i == 0) maxOf(textRenderer.getWidth(titleText), biomeMaxW) else biomeMaxW
+        }
+
+        val tooltipW = colWidths.sum() + colGap * (numCols - 1) + padding * 2
+        val tooltipH = padding + (rowsPerCol + 1) * lineHeight + padding
+
+        var tx = mouseX + 12
+        var ty = mouseY - 12
+        if (tx + tooltipW > width - screenMargin) tx = mouseX - tooltipW - 4
+        ty = ty.coerceIn(screenMargin, (height - tooltipH - screenMargin).coerceAtLeast(screenMargin))
+        tx = tx.coerceIn(screenMargin, (width - tooltipW - screenMargin).coerceAtLeast(screenMargin))
+
+        context.fill(tx, ty, tx + tooltipW, ty + tooltipH, bgColor)
+        drawBorder(context, tx, ty, tooltipW, tooltipH, borderColor)
+
+        context.drawText(textRenderer, titleText, tx + padding, ty + padding, titleColor, true)
+
+        var colX = tx + padding
+        for ((i, col) in columns.withIndex()) {
+            var textY = ty + padding + lineHeight
+            for (name in col) {
+                context.drawText(textRenderer, "  $name", colX, textY, biomeColor, true)
+                textY += lineHeight
+            }
+            colX += colWidths[i] + colGap
+        }
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

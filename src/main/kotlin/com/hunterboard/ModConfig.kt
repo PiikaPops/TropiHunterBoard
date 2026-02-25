@@ -23,7 +23,7 @@ object ModConfig {
     var rank: Int = 3
         private set
 
-    // HUD size preset: 0=Small, 1=Normal, 2=Large
+    // HUD size preset: 0=Small, 1=Normal, 2=Large, 3=Extra Large
     var hudSizePreset: Int = 1
         private set
 
@@ -51,6 +51,44 @@ object ModConfig {
     var showMiracleHud: Boolean = true
         private set
 
+    // Full Clear mode (transparent background + no borders)
+    var fullClearMode: Boolean = false
+        private set
+
+    // Grid layout (false = list, true = grid)
+    var gridLayout: Boolean = false
+        private set
+
+    // Merged HUD mode (3 HUDs stacked in one panel)
+    var mergedHudMode: Boolean = false
+        private set
+
+    // Use pixel art sprites instead of 3D models
+    var usePixelArt: Boolean = false
+        private set
+
+    // Show/hide Hunt HUD independently
+    var showHuntHud: Boolean = true
+        private set
+
+    // Auto-hide HUD when all hunts are completed
+    var autoHideOnComplete: Boolean = true
+        private set
+
+    // Reset board data at midnight (Europe/Paris)
+    var midnightReset: Boolean = true
+        private set
+
+    // Raid notification sounds
+    var raidStartSound: String = "minecraft:block.bell.use"
+        private set
+    var raidWarningSound: String = "minecraft:block.bell.use"
+        private set
+    var raidNotification: Boolean = true
+        private set
+    var raidNotifVolume: Int = 100
+        private set
+
     val RANKS = listOf(
         "Dresseur" to 3,
         "Super" to 4,
@@ -69,6 +107,11 @@ object ModConfig {
     fun bgColor(): Int {
         val alpha = (hudOpacity * 255 / 100).coerceIn(0, 255)
         return (alpha shl 24)
+    }
+
+    /** Scale factor for all HUDs based on size preset */
+    fun hudScale(): Float = when (hudSizePreset) {
+        0 -> 0.80f; 1 -> 1.00f; 2 -> 1.30f; 3 -> 1.60f; else -> 1.00f
     }
 
     fun setColor(r: Int, g: Int, b: Int) {
@@ -139,6 +182,64 @@ object ModConfig {
         save()
     }
 
+    fun toggleFullClear() {
+        fullClearMode = !fullClearMode
+        save()
+    }
+
+    fun toggleGridLayout() {
+        gridLayout = !gridLayout
+        save()
+    }
+
+    fun toggleMergedHud() {
+        mergedHudMode = !mergedHudMode
+        save()
+    }
+
+    fun togglePixelArt() {
+        usePixelArt = !usePixelArt
+        save()
+    }
+
+    fun toggleHuntHud() {
+        showHuntHud = !showHuntHud
+        save()
+    }
+
+    fun toggleAutoHideOnComplete() {
+        autoHideOnComplete = !autoHideOnComplete
+        save()
+    }
+
+    fun toggleMidnightReset() {
+        midnightReset = !midnightReset
+        save()
+    }
+
+    fun setRaidStartSound(soundId: String) {
+        raidStartSound = soundId
+        save()
+    }
+
+    fun setRaidWarningSound(soundId: String) {
+        raidWarningSound = soundId
+        save()
+    }
+
+    fun toggleRaidNotification() {
+        raidNotification = !raidNotification
+        save()
+    }
+
+    fun setRaidNotifVolume(value: Int) {
+        raidNotifVolume = value.coerceIn(0, 100)
+        save()
+    }
+
+    /** Notification volume as a float 0.0-1.0 */
+    fun raidNotifVolumeF(): Float = raidNotifVolume / 100f
+
     fun resetToDefaults() {
         hudColorR = 0xFF
         hudColorG = 0xAA
@@ -154,6 +255,17 @@ object ModConfig {
         miraclePosY = -1
         showRaidHud = true
         showMiracleHud = true
+        fullClearMode = false
+        gridLayout = false
+        mergedHudMode = false
+        usePixelArt = false
+        showHuntHud = true
+        autoHideOnComplete = true
+        midnightReset = true
+        raidStartSound = "minecraft:block.bell.use"
+        raidWarningSound = "minecraft:block.bell.use"
+        raidNotification = true
+        raidNotifVolume = 100
         save()
     }
 
@@ -187,6 +299,17 @@ object ModConfig {
                 miraclePosY = data.miraclePosY
                 showRaidHud = data.showRaidHud
                 showMiracleHud = data.showMiracleHud
+                fullClearMode = data.fullClearMode
+                gridLayout = data.gridLayout
+                mergedHudMode = data.mergedHudMode
+                usePixelArt = data.usePixelArt
+                showHuntHud = data.showHuntHud
+                autoHideOnComplete = data.autoHideOnComplete
+                midnightReset = data.midnightReset
+                raidStartSound = data.raidStartSound
+                raidWarningSound = data.raidWarningSound
+                raidNotification = data.raidNotification
+                raidNotifVolume = data.raidNotifVolume.coerceIn(0, 100)
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -197,7 +320,13 @@ object ModConfig {
     private fun save() {
         try {
             SAVE_PATH.parent.toFile().mkdirs()
-            val data = ConfigData(hudColorR, hudColorG, hudColorB, hudOpacity, hudSizePreset, rank, hudPosX, hudPosY, raidTimerPosX, raidTimerPosY, miraclePosX, miraclePosY, showRaidHud, showMiracleHud)
+            val data = ConfigData(
+                hudColorR, hudColorG, hudColorB, hudOpacity, hudSizePreset, rank,
+                hudPosX, hudPosY, raidTimerPosX, raidTimerPosY, miraclePosX, miraclePosY,
+                showRaidHud, showMiracleHud, fullClearMode, gridLayout, mergedHudMode, usePixelArt,
+                showHuntHud, autoHideOnComplete, midnightReset,
+                raidStartSound, raidWarningSound, raidNotification, raidNotifVolume
+            )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
             HunterBoard.LOGGER.warn("Failed to save config: ${e.message}")
@@ -219,6 +348,17 @@ object ModConfig {
         val miraclePosX: Int = -1,
         val miraclePosY: Int = -1,
         val showRaidHud: Boolean = true,
-        val showMiracleHud: Boolean = true
+        val showMiracleHud: Boolean = true,
+        val fullClearMode: Boolean = false,
+        val gridLayout: Boolean = false,
+        val mergedHudMode: Boolean = false,
+        val usePixelArt: Boolean = false,
+        val showHuntHud: Boolean = true,
+        val autoHideOnComplete: Boolean = true,
+        val midnightReset: Boolean = true,
+        val raidStartSound: String = "minecraft:block.bell.use",
+        val raidWarningSound: String = "minecraft:block.bell.use",
+        val raidNotification: Boolean = true,
+        val raidNotifVolume: Int = 100
     )
 }

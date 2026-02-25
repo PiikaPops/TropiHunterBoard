@@ -9,10 +9,28 @@ import net.minecraft.util.Identifier
 
 object Translations {
 
+    // Language override for pokemon/move names: null = follow game, "en" = English, "fr" = French
+    var nameLanguageOverride: String? = null
+
     fun isFrench(): Boolean {
         return try {
             MinecraftClient.getInstance().options.language == "fr_fr"
         } catch (_: Exception) { false }
+    }
+
+    /** Effective language for pokemon/move names */
+    fun effectiveNameLanguage(): String {
+        return nameLanguageOverride ?: if (isFrench()) "fr" else "en"
+    }
+
+    /** Toggle between FR and EN for pokemon/move names */
+    fun toggleNameLanguage() {
+        nameLanguageOverride = if (effectiveNameLanguage() == "fr") "en" else "fr"
+    }
+
+    /** Label for the language toggle button */
+    fun nameLanguageLabel(): String {
+        return if (effectiveNameLanguage() == "fr") "FR" else "ENG"
     }
 
     fun tr(key: String): String {
@@ -22,12 +40,64 @@ object Translations {
 
     fun pokemonName(speciesId: String): String {
         if (speciesId.isEmpty()) return speciesId
+        val lang = effectiveNameLanguage()
         return try {
-            PokemonSpecies.getByName(speciesId)?.translatedName?.string
-                ?: speciesId.replaceFirstChar { it.uppercase() }
+            if (lang == "en") {
+                CobblemonLangLoader.getEnglishSpeciesName(speciesId)
+                    ?: PokemonSpecies.getByName(speciesId)?.name?.replaceFirstChar { it.uppercase() }
+                    ?: speciesId.replaceFirstChar { it.uppercase() }
+            } else {
+                CobblemonLangLoader.getFrenchSpeciesName(speciesId)
+                    ?: PokemonSpecies.getByName(speciesId)?.translatedName?.string
+                    ?: speciesId.replaceFirstChar { it.uppercase() }
+            }
         } catch (_: Exception) {
             speciesId.replaceFirstChar { it.uppercase() }
         }
+    }
+
+    /** Get species display name using override language */
+    fun speciesDisplayName(species: com.cobblemon.mod.common.pokemon.Species): String {
+        val lang = effectiveNameLanguage()
+        return try {
+            if (lang == "en") {
+                CobblemonLangLoader.getEnglishSpeciesName(species.name)
+                    ?: species.name.replaceFirstChar { it.uppercase() }
+            } else {
+                CobblemonLangLoader.getFrenchSpeciesName(species.name)
+                    ?: species.translatedName.string
+            }
+        } catch (_: Exception) {
+            species.translatedName.string
+        }
+    }
+
+    /** Get move display name using override language */
+    fun moveDisplayName(move: com.cobblemon.mod.common.api.moves.MoveTemplate): String {
+        val lang = effectiveNameLanguage()
+        return try {
+            if (lang == "en") {
+                CobblemonLangLoader.getEnglishMoveName(move.name)
+                    ?: move.name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            } else {
+                CobblemonLangLoader.getFrenchMoveName(move.name)
+                    ?: move.displayName.string
+            }
+        } catch (_: Exception) {
+            move.displayName.string
+        }
+    }
+
+    /** Dual-language name: "Nom FR (English Name)" or "English Name (Nom FR)" depending on game language */
+    fun dualSpeciesName(speciesId: String): String {
+        CobblemonLangLoader.ensureLoaded()
+        val enName = CobblemonLangLoader.getEnglishSpeciesName(speciesId)
+            ?: speciesId.replaceFirstChar { it.uppercase() }
+        val frName = CobblemonLangLoader.getFrenchSpeciesName(speciesId)
+            ?: PokemonSpecies.getByName(speciesId)?.translatedName?.string
+            ?: speciesId.replaceFirstChar { it.uppercase() }
+        if (enName.equals(frName, ignoreCase = true)) return enName
+        return if (isFrench()) "$frName ($enName)" else "$enName ($frName)"
     }
 
     fun ballName(ballId: String): String {
@@ -348,6 +418,30 @@ object Translations {
 
         // Egg groups
         "Egg Groups" to "Groupes d'œufs",
+
+        // New options
+        "Full Clear" to "Transparence totale",
+        "Square Display" to "Affichage carré",
+        "List Display" to "Affichage liste",
+        "Merged HUD" to "ATH Fusionnée",
+        "2D Model" to "Modèle 2D",
+        "3D Models" to "Modèles 3D",
+        "Auto Hide" to "Masquer auto.",
+        "Midnight Reset" to "Reset à Minuit",
+        "Click on a hunting board" to "Cliquez sur un tableau de chasse",
+        "Raid in 5 min!" to "Raid dans 5 min !",
+        "Raid Notification" to "Notif. Raid",
+        "Start Sound" to "Son Début",
+        "Warning Sound" to "Son Alerte",
+        "Volume" to "Volume",
+        "Search sound..." to "Rechercher son...",
+        "Select" to "Sélectionner",
+        "Donate to _Popichu" to "Faire un don à _Popichu",
+        "Generous Souls" to "Âmes Généreuses",
+        "Thank you for your support!" to "Merci pour votre soutien !",
+        "Loading..." to "Chargement...",
+        "No donors yet" to "Aucun donateur pour le moment",
+        "donors" to "donateurs",
 
         // Shared
         "Unknown" to "Inconnu",

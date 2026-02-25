@@ -11,7 +11,9 @@ import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
+import net.minecraft.util.Util
 import org.lwjgl.glfw.GLFW
+import java.net.URI
 
 class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
@@ -26,7 +28,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     private var hoveredBiomeDetail: BiomeDetail? = null
 
     // Option button bounds
-    private val optBtnSize = 40
+    private val optBtnSize = 24
     private var optBtnX = 0
     private var optBtnY = 0
 
@@ -36,16 +38,36 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     private var chatBtnW = 0
     private val chatBtnH = 14
 
+    // Donate button bounds
+    private var donateBtnX = 0
+    private var donateBtnY = 0
+    private var donateBtnW = 0
+    private val donateBtnH = 16
+
+    // Donors button bounds
+    private var donorsBtnX = 0
+    private var donorsBtnY = 0
+    private var donorsBtnW = 0
+    private val donorsBtnH = 16
+
     // Toggle button bounds per card (index -> bounds)
     private val TOGGLE_SIZE = 20
     private data class ToggleBounds(val x: Int, val y: Int, val index: Int)
     private var toggleButtons: MutableList<ToggleBounds> = mutableListOf()
+
+    // Clickable pokemon name/icon bounds per card
+    private data class PokemonClickBounds(val x: Int, val y: Int, val w: Int, val h: Int, val index: Int)
+    private var pokemonClickAreas: MutableList<PokemonClickBounds> = mutableListOf()
 
     // Cached ball ItemStacks
     private var cachedBallStacks: Map<String, ItemStack> = emptyMap()
 
     // Cached card heights (avoid recalculating every frame)
     private var cachedCardHeights: List<Int> = emptyList()
+
+    // Cached sprite identifiers for pixel art mode
+    private var cachedSpriteIds: List<Identifier?> = emptyList()
+    private var lastSpriteLoadedCount: Int = -1
 
     // Scrollbar drag state
     private var isScrollbarDragging = false
@@ -64,6 +86,11 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         buildModelWidgets()
         buildBallCache()
         buildCardHeightCache()
+        buildSpriteCache()
+    }
+
+    private fun buildSpriteCache() {
+        cachedSpriteIds = BoardState.targets.map { SpriteHelper.getSpriteIdentifier(it.speciesId) }
     }
 
     private fun buildCardHeightCache() {
@@ -129,6 +156,11 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // Rebuild sprite cache when new sprites finish downloading
+        if (ModConfig.usePixelArt && SpriteHelper.loadedCount != lastSpriteLoadedCount) {
+            buildSpriteCache()
+            lastSpriteLoadedCount = SpriteHelper.loadedCount
+        }
         hoveredBiomeDetail = null
         // Dark overlay
         context.fill(0, 0, width, height, 0xAA000000.toInt())
@@ -148,9 +180,9 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
 
-        // Options button (top-right of screen, MC-style)
-        optBtnX = width - optBtnSize - 4
-        optBtnY = 4
+        // Options button (attached to panel top-right corner, outside)
+        optBtnX = panelX + panelWidth + 2
+        optBtnY = panelTop
         val optHovered = mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
                          mouseY >= optBtnY && mouseY <= optBtnY + optBtnSize
         val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
@@ -200,6 +232,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
         var hoveredBallName: String? = null
         toggleButtons.clear()
+        pokemonClickAreas.clear()
 
         // Respect rank: only show up to maxHunts targets
         val visibleTargets = BoardState.targets.take(ModConfig.maxHunts())
@@ -247,30 +280,34 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 // Bottom edge shadow
                 context.fill(cardX, y + cardHeight - 1, cardX + cardWidth, y + cardHeight, 0xFF0A0A0A.toInt())
 
-                // 3D Model
-                if (index < modelWidgets.size) {
+                // Pokemon icon: sprite or 3D model
+                val iconX = cardX + 4
+                val iconY = y - 2
+                val spriteId = if (ModConfig.usePixelArt) cachedSpriteIds.getOrNull(index) else null
+                if (spriteId != null) {
+                    val scaledSize = (MODEL_SIZE * 1.4).toInt()
+                    val spriteOffset = (scaledSize - MODEL_SIZE) / 2
+                    context.drawTexture(spriteId, iconX - spriteOffset, iconY - spriteOffset, 0f, 0f, scaledSize, scaledSize, scaledSize, scaledSize)
+                } else if (index < modelWidgets.size) {
                     val widget = modelWidgets[index]
                     if (widget != null) {
                         try {
-                            widget.x = cardX + 4
-                            widget.y = y - 2
+                            widget.x = iconX
+                            widget.y = iconY
                             widget.render(context, mouseX, mouseY, delta)
                         } catch (_: Exception) {}
                     }
                 }
 
-                // Red cross overlay on caught Pokemon model (rendered in front of 3D model)
+                // Red cross overlay on caught Pokemon (rendered in front)
                 if (target.isCaught) {
                     context.matrices.push()
                     context.matrices.translate(0.0, 0.0, 200.0)
-                    val crossX = cardX + 4
-                    val crossY = y - 2
-                    val crossSize = MODEL_SIZE
-                    for (i in 0 until crossSize step 2) {
-                        val px1 = crossX + i
-                        val py1 = crossY + i
+                    for (i in 0 until MODEL_SIZE step 2) {
+                        val px1 = iconX + i
+                        val py1 = iconY + i
                         context.fill(px1, py1, px1 + 3, py1 + 3, 0xCCFF3333.toInt())
-                        val px2 = crossX + crossSize - i - 3
+                        val px2 = iconX + MODEL_SIZE - i - 3
                         context.fill(px2, py1, px2 + 3, py1 + 3, 0xCCFF3333.toInt())
                     }
                     context.matrices.pop()
@@ -283,7 +320,21 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 val statusIcon = if (target.isCaught) "\u2713 " else ""
                 val pokeName: String = Translations.pokemonName(target.speciesId)
                 val nameText = "$statusIcon$pokeName"
-                context.drawText(textRenderer, nameText, textContentX, textY, nameColor, true)
+                // Underline name on hover to indicate clickable
+                val nameTextW = textRenderer.getWidth(nameText)
+                val pokeClickX = cardX + 4
+                val pokeClickW = (textContentX + nameTextW) - pokeClickX
+                val pokeClickY = y
+                val pokeClickH = MODEL_SIZE
+                val nameHovered = mouseX >= pokeClickX && mouseX <= pokeClickX + pokeClickW &&
+                        mouseY >= pokeClickY && mouseY <= pokeClickY + pokeClickH &&
+                        mouseY >= contentTop && mouseY <= contentBottom
+                val displayNameColor = if (nameHovered) ModConfig.accentColor() else nameColor
+                context.drawText(textRenderer, nameText, textContentX, textY, displayNameColor, true)
+                if (nameHovered) {
+                    context.fill(textContentX, textY + 10, textContentX + nameTextW, textY + 11, ModConfig.accentColor())
+                }
+                pokemonClickAreas.add(PokemonClickBounds(pokeClickX, pokeClickY, pokeClickW, pokeClickH, index))
 
                 // Ball icon next to name
                 val ballStack = cachedBallStacks[target.ballId]
@@ -504,23 +555,39 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             sbThumbHeight = 0
         }
 
-        // Ball tooltip
-        if (hoveredBallName != null) {
-            context.drawTooltip(textRenderer, listOf(Text.literal(hoveredBallName)), mouseX, mouseY)
-        }
+        // Donors button (bottom-left of screen)
+        val donorsText = "\u2605 ${Translations.tr("Generous Souls")}"
+        donorsBtnW = textRenderer.getWidth(donorsText) + 16
+        donorsBtnX = 6 + (width * 15 / 100)
+        donorsBtnY = height - donorsBtnH - 6
+        val donorsHovered = mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&
+                            mouseY >= donorsBtnY && mouseY <= donorsBtnY + donorsBtnH
+        val gBase = if (donorsHovered) 0xFF8B7320.toInt() else 0xFF6B5710.toInt()
+        val gLight = if (donorsHovered) 0xFFFFD700.toInt() else 0xFFB8860B.toInt()
+        val gDark = if (donorsHovered) 0xFF5A4A0A.toInt() else 0xFF3A2F05.toInt()
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gBase)
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + 1, gLight)
+        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + 1, donorsBtnY + donorsBtnH, gLight)
+        context.fill(donorsBtnX, donorsBtnY + donorsBtnH - 1, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
+        context.fill(donorsBtnX + donorsBtnW - 1, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
+        context.drawText(textRenderer, donorsText, donorsBtnX + 8, donorsBtnY + 4, 0xFFFFE066.toInt(), true)
 
-        // Biome tooltip
-        if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
-            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
-            if (resolved.isNotEmpty()) {
-                val lines = mutableListOf<Text>()
-                lines.add(Text.literal(Translations.biomeName(hoveredBiomeDetail!!)).styled { it.withBold(true).withColor(0xFFAA00) })
-                for (name in resolved) {
-                    lines.add(Text.literal("  $name").styled { it.withColor(0xCCCCCC) })
-                }
-                context.drawTooltip(textRenderer, lines, mouseX, mouseY)
-            }
-        }
+        // Donate button (bottom-right, shifted 15% left)
+        val donateText: String = Translations.tr("Donate to _Popichu")
+        donateBtnW = textRenderer.getWidth(donateText) + 16
+        donateBtnX = width - donateBtnW - 6 - (width * 15 / 100)
+        donateBtnY = height - donateBtnH - 6
+        val donateHovered = mouseX >= donateBtnX && mouseX <= donateBtnX + donateBtnW &&
+                            mouseY >= donateBtnY && mouseY <= donateBtnY + donateBtnH
+        val dBase = if (donateHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
+        val dLight = if (donateHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
+        val dDark = if (donateHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
+        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dBase)
+        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + 1, dLight)
+        context.fill(donateBtnX, donateBtnY, donateBtnX + 1, donateBtnY + donateBtnH, dLight)
+        context.fill(donateBtnX, donateBtnY + donateBtnH - 1, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
+        context.fill(donateBtnX + donateBtnW - 1, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
+        context.drawText(textRenderer, donateText, donateBtnX + 8, donateBtnY + 4, 0xFFFFFFFF.toInt(), true)
 
         // Footer
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
@@ -528,6 +595,23 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val hint: String = Translations.tr("I / ESC to close  \u2022  Scroll to navigate")
         val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
         context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+
+        // Tooltips rendered last (on top of everything)
+        context.matrices.push()
+        context.matrices.translate(0f, 0f, 400f)
+
+        if (hoveredBallName != null) {
+            context.drawTooltip(textRenderer, listOf(Text.literal(hoveredBallName)), mouseX, mouseY)
+        }
+
+        if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
+            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
+            if (resolved.isNotEmpty()) {
+                renderBiomeTooltip(context, resolved, hoveredBiomeDetail!!, mouseX, mouseY)
+            }
+        }
+
+        context.matrices.pop()
     }
 
     private fun calculateCardContentHeight(spawns: List<SpawnEntry>, maxTextW: Int): Int {
@@ -587,6 +671,21 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            // Donors button
+            if (mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&
+                mouseY >= donorsBtnY.toDouble() && mouseY <= (donorsBtnY + donorsBtnH).toDouble()) {
+                DonorsFetcher.fetchIfNeeded()
+                client?.setScreen(DonorsScreen(this))
+                return true
+            }
+
+            // Donate button
+            if (mouseX >= donateBtnX && mouseX <= donateBtnX + donateBtnW &&
+                mouseY >= donateBtnY.toDouble() && mouseY <= (donateBtnY + donateBtnH).toDouble()) {
+                try { Util.getOperatingSystem().open(URI("https://www.paypal.com/paypalme/Popiipops")) } catch (_: Exception) {}
+                return true
+            }
+
             // Options button
             if (mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
                 mouseY >= optBtnY.toDouble() && mouseY <= (optBtnY + optBtnSize).toDouble()) {
@@ -621,6 +720,23 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     scrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
                 }
                 return true
+            }
+
+            // Pokemon name/icon click → open detail screen
+            for (poke in pokemonClickAreas) {
+                if (mouseX >= poke.x && mouseX <= poke.x + poke.w &&
+                    mouseY >= poke.y && mouseY <= poke.y + poke.h &&
+                    mouseY >= sbContentTop && mouseY <= sbContentBottom) {
+                    val visibleTargets = BoardState.targets.take(ModConfig.maxHunts())
+                    if (poke.index in visibleTargets.indices) {
+                        val target = visibleTargets[poke.index]
+                        val species = PokemonSpecies.getByName(target.speciesId)
+                        if (species != null) {
+                            client?.setScreen(PokemonDetailScreen(species, this))
+                            return true
+                        }
+                    }
+                }
             }
 
             // Toggle buttons
@@ -742,5 +858,73 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         context.fill(x, y + h - 1, x + w, y + h, color)
         context.fill(x, y, x + 1, y + h, color)
         context.fill(x + w - 1, y, x + w, y + h, color)
+    }
+
+    private fun renderBiomeTooltip(
+        context: DrawContext,
+        biomes: List<String>,
+        detail: BiomeDetail,
+        mouseX: Int,
+        mouseY: Int
+    ) {
+        val lineHeight = 10
+        val padding = 6
+        val titleText = Translations.biomeName(detail)
+        val titleColor = 0xFFFFAA00.toInt()
+        val biomeColor = 0xFFCCCCCC.toInt()
+        val bgColor = 0xF0100010.toInt()
+        val borderColor = 0xFF5000A0.toInt()
+        val screenMargin = 4
+        val maxAvailableHeight = height - screenMargin * 2
+        val colGap = 12
+
+        // Calculate how many columns are needed to fit on screen
+        // Each column has (biomes.size / numCols) rows + 1 title row
+        var numCols = 1
+        while (numCols < 4) {
+            val rowsPerCol = (biomes.size + numCols - 1) / numCols
+            val h = padding + (rowsPerCol + 1) * lineHeight + padding
+            if (h <= maxAvailableHeight) break
+            numCols++
+        }
+
+        // Split biomes into columns
+        val rowsPerCol = (biomes.size + numCols - 1) / numCols
+        val columns = (0 until numCols).map { col ->
+            val start = col * rowsPerCol
+            biomes.subList(start, minOf(start + rowsPerCol, biomes.size))
+        }
+
+        // Calculate column widths
+        val colWidths = columns.mapIndexed { i, col ->
+            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth("  $it") } ?: 0
+            if (i == 0) maxOf(textRenderer.getWidth(titleText), biomeMaxW) else biomeMaxW
+        }
+
+        val tooltipW = colWidths.sum() + colGap * (numCols - 1) + padding * 2
+        val tooltipH = padding + (rowsPerCol + 1) * lineHeight + padding
+
+        var tx = mouseX + 12
+        var ty = mouseY - 12
+        if (tx + tooltipW > width - screenMargin) tx = mouseX - tooltipW - 4
+        ty = ty.coerceIn(screenMargin, (height - tooltipH - screenMargin).coerceAtLeast(screenMargin))
+        tx = tx.coerceIn(screenMargin, (width - tooltipW - screenMargin).coerceAtLeast(screenMargin))
+
+        context.fill(tx, ty, tx + tooltipW, ty + tooltipH, bgColor)
+        drawBorder(context, tx, ty, tooltipW, tooltipH, borderColor)
+
+        // Title
+        context.drawText(textRenderer, titleText, tx + padding, ty + padding, titleColor, true)
+
+        // Render each column
+        var colX = tx + padding
+        for ((i, col) in columns.withIndex()) {
+            var textY = ty + padding + lineHeight
+            for (name in col) {
+                context.drawText(textRenderer, "  $name", colX, textY, biomeColor, true)
+                textY += lineHeight
+            }
+            colX += colWidths[i] + colGap
+        }
     }
 }
