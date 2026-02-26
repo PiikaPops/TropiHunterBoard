@@ -1,18 +1,20 @@
 package com.hunterboard
 
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
+import kotlin.math.roundToInt
 
 class OptionsScreen(
     private val parent: Screen
 ) : Screen(Text.literal("Options")) {
 
     // Slider drag state
-    private var draggingSlider: String? = null // "r", "g", "b", "opacity"
+    private var draggingSlider: String? = null // "r", "g", "b", "opacity", "raidVol", "huntSize", "raidSize", "miracleSize", "mergedSize"
 
     // Layout bounds (computed in render)
     private var sliderX = 0
@@ -22,8 +24,25 @@ class OptionsScreen(
     private lateinit var hexField: TextFieldWidget
     private var updatingFromSlider = false
 
-    // Size preset labels (index matches ModConfig.hudSizePreset)
+    // Size preset labels (index matches size preset 0-3)
     private val SIZE_LABELS = arrayOf("Small", "Normal", "Large", "Extra Large")
+
+    // Step slider geometry cache (for drag handling)
+    private var stepSliderBars = mutableMapOf<String, Pair<Int, Int>>() // sliderId -> (barX, barW)
+
+    // Scroll state
+    private var scrollOffset = 0
+    private var contentHeight = 0
+    private var contentTop = 0
+    private var contentBottom = 0
+
+    // Scrollbar
+    private var isScrollbarDragging = false
+    private var scrollbarDragStartY = 0
+    private var scrollbarDragStartOffset = 0
+    private var sbTrackX = 0
+    private var sbThumbY = 0
+    private var sbThumbHeight = 0
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
@@ -75,6 +94,15 @@ class OptionsScreen(
         val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
         context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
 
+        // Reset button (in title bar, not scrollable)
+        val resetLabel: String = Translations.tr("Reset")
+        val resetBtnW = textRenderer.getWidth(resetLabel) + 8
+        val resetBtnX = panelX + panelWidth - resetBtnW - 22
+        val resetBtnY = panelTop + 4
+        val resetHovered = mouseX >= resetBtnX && mouseX <= resetBtnX + resetBtnW &&
+                           mouseY >= resetBtnY && mouseY <= resetBtnY + 14
+        renderButton(context, resetBtnX, resetBtnY, resetBtnW, 14, resetLabel, resetHovered)
+
         context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
         context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
@@ -84,19 +112,21 @@ class OptionsScreen(
         sliderX = leftX + 80
         sliderW = contentW - 80
 
-        var y = panelTop + 28
+        contentTop = panelTop + 22
+        contentBottom = panelBottom - 16
+        val contentAreaHeight = contentBottom - contentTop
+
+        // Clamp scroll
+        val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+        scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+
+        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+
+        var y = contentTop + 6 - scrollOffset
 
         // ========== HUD SECTION ==========
         val hudLabel: String = Translations.tr("HUD")
         context.drawText(textRenderer, hudLabel, leftX, y, ModConfig.accentColor(), true)
-
-        val resetLabel: String = Translations.tr("Reset")
-        val resetBtnW = textRenderer.getWidth(resetLabel) + 8
-        val resetBtnX = panelX + panelWidth - resetBtnW - 22
-        val resetBtnY = panelTop + 4
-        val resetHovered = mouseX >= resetBtnX && mouseX <= resetBtnX + resetBtnW &&
-                           mouseY >= resetBtnY && mouseY <= resetBtnY + 14
-        renderButton(context, resetBtnX, resetBtnY, resetBtnW, 14, resetLabel, resetHovered)
         y += 14
 
         // Mode + Position on same row
@@ -128,28 +158,15 @@ class OptionsScreen(
         renderButton(context, paStart, y, paBtnW, 14, paLabel, paHov)
         y += 18
 
-        // Size preset buttons (Small / Normal / Large)
-        val sizeLabel: String = Translations.tr("Size")
-        context.drawText(textRenderer, sizeLabel, leftX, y + 4, 0xFFBBBBBB.toInt(), true)
-        var sx = leftX + textRenderer.getWidth(sizeLabel) + 8
-        for ((i, key) in SIZE_LABELS.withIndex()) {
-            val label: String = Translations.tr(key)
-            val btnW = textRenderer.getWidth(label) + 10
-            val isSelected = i == ModConfig.hudSizePreset
-            val isHov = mouseX >= sx && mouseX <= sx + btnW && mouseY >= y && mouseY <= y + 14
-            val bg = when {
-                isSelected -> (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt()
-                isHov -> 0xFF252525.toInt()
-                else -> 0xFF1A1A1A.toInt()
-            }
-            context.fill(sx, y, sx + btnW, y + 14, bg)
-            val bc = if (isSelected) ModConfig.accentColor() else if (isHov) 0xFF666666.toInt() else 0xFF444444.toInt()
-            drawBorder(context, sx, y, btnW, 14, bc)
-            val tc = if (isSelected) ModConfig.accentColor() else if (isHov) 0xFFDDDDDD.toInt() else 0xFF888888.toInt()
-            context.drawText(textRenderer, label, sx + 5, y + 3, tc, true)
-            sx += btnW + 3
+        // Size step sliders
+        if (ModConfig.mergedHudMode) {
+            y = renderStepSlider(context, Translations.tr("Size"), leftX, y, contentW, ModConfig.hudSizePreset, mouseX, mouseY, "mergedSize")
+        } else {
+            y = renderStepSlider(context, Translations.tr("Hunt"), leftX, y, contentW, ModConfig.huntSizePreset, mouseX, mouseY, "huntSize")
+            y = renderStepSlider(context, "Raid", leftX, y, contentW, ModConfig.raidSizePreset, mouseX, mouseY, "raidSize")
+            y = renderStepSlider(context, "Miracle", leftX, y, contentW, ModConfig.miracleSizePreset, mouseX, mouseY, "miracleSize")
         }
-        y += 20
+        y += 4
 
         // ========== HUD VISIBILITY ==========
         y += 2
@@ -213,7 +230,7 @@ class OptionsScreen(
             if (ModConfig.mergedHudMode) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 18
 
-        // Auto Hide + Midnight Reset toggles
+        // Auto Hide toggle
         val ahLabel = "${Translations.tr("Auto Hide")}: ${if (ModConfig.autoHideOnComplete) "ON" else "OFF"}"
         val ahBtnW = textRenderer.getWidth("${Translations.tr("Auto Hide")}: OFF") + 10
         val ahHov = mouseX >= leftX && mouseX <= leftX + ahBtnW && mouseY >= y && mouseY <= y + 14
@@ -223,62 +240,18 @@ class OptionsScreen(
             if (ahHov || ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF444444.toInt())
         context.drawText(textRenderer, ahLabel, leftX + 5, y + 3,
             if (ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF666666.toInt(), true)
-
-        val mrStart = leftX + ahBtnW + 6
-        val mrLabel = "${Translations.tr("Midnight Reset")}: ${if (ModConfig.midnightReset) "ON" else "OFF"}"
-        val mrBtnW = textRenderer.getWidth("${Translations.tr("Midnight Reset")}: OFF") + 10
-        val mrHov = mouseX >= mrStart && mouseX <= mrStart + mrBtnW && mouseY >= y && mouseY <= y + 14
-        context.fill(mrStart, y, mrStart + mrBtnW, y + 14,
-            if (ModConfig.midnightReset) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, mrStart, y, mrBtnW, 14,
-            if (mrHov || ModConfig.midnightReset) ModConfig.accentColor() else 0xFF444444.toInt())
-        context.drawText(textRenderer, mrLabel, mrStart + 5, y + 3,
-            if (ModConfig.midnightReset) ModConfig.accentColor() else 0xFF666666.toInt(), true)
-        y += 20
-
-        // ========== RAID SECTION ==========
-        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
-        y += 8
-        context.drawText(textRenderer, "Raid", leftX, y, ModConfig.accentColor(), true)
-        y += 14
-
-        // Raid Notification toggle
-        val rnLabel = "${Translations.tr("Raid Notification")}: ${if (ModConfig.raidNotification) "ON" else "OFF"}"
-        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Notification")}: OFF") + 10
-        val rnHov = mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y && mouseY <= y + 14
-        context.fill(leftX, y, leftX + rnBtnW, y + 14,
-            if (ModConfig.raidNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, leftX, y, rnBtnW, 14,
-            if (rnHov || ModConfig.raidNotification) ModConfig.accentColor() else 0xFF444444.toInt())
-        context.drawText(textRenderer, rnLabel, leftX + 5, y + 3,
-            if (ModConfig.raidNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 18
 
-        // Volume slider
-        val volLabel = "${Translations.tr("Volume")}: ${ModConfig.raidNotifVolume}%"
-        context.drawText(textRenderer, volLabel, leftX, y + 1, 0xFFBBBBBB.toInt(), true)
-        val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
-        val volSliderX = leftX + volLabelW
-        val volSliderW = rightX - volSliderX
-        y = renderSlider(context, null, volSliderX, y, volSliderW, (ModConfig.raidNotifVolume * 255 / 100), ModConfig.accentColor(), mouseX, mouseY, "raidVol")
-        y += 4
-
-        // Start Sound button
-        val ssName = ModConfig.raidStartSound.substringAfter(":").replace(".", " ").replace("_", " ")
-            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        val ssLabel = "${Translations.tr("Start Sound")}: $ssName"
-        val ssBtnW = textRenderer.getWidth(ssLabel) + 10
-        val ssHov = mouseX >= leftX && mouseX <= leftX + ssBtnW && mouseY >= y && mouseY <= y + 14
-        renderButton(context, leftX, y, ssBtnW, 14, ssLabel, ssHov)
-        y += 18
-
-        // Warning Sound button
-        val wsName = ModConfig.raidWarningSound.substringAfter(":").replace(".", " ").replace("_", " ")
-            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        val wsLabel = "${Translations.tr("Warning Sound")}: $wsName"
-        val wsBtnW = textRenderer.getWidth(wsLabel) + 10
-        val wsHov = mouseX >= leftX && mouseX <= leftX + wsBtnW && mouseY >= y && mouseY <= y + 14
-        renderButton(context, leftX, y, wsBtnW, 14, wsLabel, wsHov)
+        // Hide in Battle toggle
+        val hbLabel = "${Translations.tr("Hide in Battle")}: ${if (ModConfig.hideHudInBattle) "ON" else "OFF"}"
+        val hbBtnW = textRenderer.getWidth("${Translations.tr("Hide in Battle")}: OFF") + 10
+        val hbHov = mouseX >= leftX && mouseX <= leftX + hbBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + hbBtnW, y + 14,
+            if (ModConfig.hideHudInBattle) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, hbBtnW, 14,
+            if (hbHov || ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, hbLabel, leftX + 5, y + 3,
+            if (ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 20
 
         // Separator
@@ -307,6 +280,7 @@ class OptionsScreen(
         context.drawText(textRenderer, "#", leftX, y + 2, 0xFFBBBBBB.toInt(), true)
         hexField.x = leftX + 10
         hexField.y = y
+        hexField.visible = y >= contentTop - 12 && y <= contentBottom
         if (draggingSlider != null || !hexField.isFocused) {
             val currentHex = "%02X%02X%02X".format(ModConfig.hudColorR, ModConfig.hudColorG, ModConfig.hudColorB)
             if (hexField.text != currentHex) {
@@ -328,6 +302,86 @@ class OptionsScreen(
         val opSliderW = rightX - opSliderX
         y = renderSlider(context, null, opSliderX, y, opSliderW, (ModConfig.hudOpacity * 255 / 100), 0xFFBBBBBB.toInt(), mouseX, mouseY, "opacity")
         y += 4
+
+        // Separator
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        y += 8
+
+        // ========== RAID & MIRACLES SECTION ==========
+        val sectionLabel: String = Translations.tr("Raid & Miracles")
+        context.drawText(textRenderer, sectionLabel, leftX, y, ModConfig.accentColor(), true)
+        y += 14
+
+        // Raid Notification toggle + Miracle Notification toggle
+        val rnLabel = "${Translations.tr("Raid Sound")}: ${if (ModConfig.raidNotification) "ON" else "OFF"}"
+        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Sound")}: OFF") + 10
+        val rnHov = mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + rnBtnW, y + 14,
+            if (ModConfig.raidNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, rnBtnW, 14,
+            if (rnHov || ModConfig.raidNotification) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, rnLabel, leftX + 5, y + 3,
+            if (ModConfig.raidNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+
+        val mnStart = leftX + rnBtnW + 6
+        val mnLabel = "${Translations.tr("Miracle Sound")}: ${if (ModConfig.miracleNotification) "ON" else "OFF"}"
+        val mnBtnW = textRenderer.getWidth("${Translations.tr("Miracle Sound")}: OFF") + 10
+        val mnHov = mouseX >= mnStart && mouseX <= mnStart + mnBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(mnStart, y, mnStart + mnBtnW, y + 14,
+            if (ModConfig.miracleNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, mnStart, y, mnBtnW, 14,
+            if (mnHov || ModConfig.miracleNotification) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, mnLabel, mnStart + 5, y + 3,
+            if (ModConfig.miracleNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Raid Sound Repeat toggle (5x vs 1x)
+        val rpLabel = "${Translations.tr("Repeat")}: ${if (ModConfig.raidSoundRepeat) "5x" else "1x"}"
+        val rpBtnW = textRenderer.getWidth("${Translations.tr("Repeat")}: 5x") + 10
+        val rpHov = mouseX >= leftX && mouseX <= leftX + rpBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + rpBtnW, y + 14,
+            if (ModConfig.raidSoundRepeat) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, rpBtnW, 14,
+            if (rpHov || ModConfig.raidSoundRepeat) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, rpLabel, leftX + 5, y + 3,
+            if (ModConfig.raidSoundRepeat) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Volume slider (shared)
+        val volLabel = "${Translations.tr("Volume")}: ${ModConfig.raidNotifVolume}%"
+        context.drawText(textRenderer, volLabel, leftX, y + 1, 0xFFBBBBBB.toInt(), true)
+        val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
+        val volSliderX = leftX + volLabelW
+        val volSliderW = rightX - volSliderX
+        y = renderSlider(context, null, volSliderX, y, volSliderW, (ModConfig.raidNotifVolume * 255 / 100), ModConfig.accentColor(), mouseX, mouseY, "raidVol")
+        y += 4
+
+        // Raid Start Sound button
+        val ssName = ModConfig.raidStartSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val ssLabel = "${Translations.tr("Start Sound")}: $ssName"
+        val ssBtnW = textRenderer.getWidth(ssLabel) + 10
+        val ssHov = mouseX >= leftX && mouseX <= leftX + ssBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, ssBtnW, 14, ssLabel, ssHov)
+        y += 18
+
+        // Raid Warning Sound button
+        val wsName = ModConfig.raidWarningSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val wsLabel = "${Translations.tr("Warning Sound")}: $wsName"
+        val wsBtnW = textRenderer.getWidth(wsLabel) + 10
+        val wsHov = mouseX >= leftX && mouseX <= leftX + wsBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, wsBtnW, 14, wsLabel, wsHov)
+        y += 18
+
+        // Miracle Sound button
+        val msName = ModConfig.miracleSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val msLabel = "${Translations.tr("Miracle Notif Sound")}: $msName"
+        val msBtnW = textRenderer.getWidth(msLabel) + 10
+        val msHov = mouseX >= leftX && mouseX <= leftX + msBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, msBtnW, 14, msLabel, msHov)
+        y += 20
 
         // Separator
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
@@ -366,6 +420,23 @@ class OptionsScreen(
         val huntsCount = ModConfig.maxHunts()
         val huntsText = "$huntsCount ${Translations.tr("hunts displayed")}"
         context.drawText(textRenderer, huntsText, leftX + 4, y, 0xFF999999.toInt(), true)
+        y += 14
+
+        // Track content height for scrolling
+        contentHeight = y - (contentTop + 6 - scrollOffset) + 8
+
+        context.disableScissor()
+
+        // Scrollbar
+        if (contentHeight > contentAreaHeight && contentAreaHeight > 0) {
+            sbTrackX = panelX + panelWidth - 5
+            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, 0xFF1A1A1A.toInt())
+            sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
+            sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+        } else {
+            sbThumbHeight = 0
+        }
 
         // Footer
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
@@ -374,7 +445,65 @@ class OptionsScreen(
         val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
         context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
 
+        // Version mention
+        val modVersion = FabricLoader.getInstance().getModContainer(HunterBoard.MOD_ID)
+            .map { it.metadata.version.friendlyString }.orElse("?")
+        val versionText = "HunterBoard $modVersion"
+        val versionX = (width - textRenderer.getWidth(versionText)) / 2
+        context.drawText(textRenderer, versionText, versionX, height - 12, 0xFFCCCCCC.toInt(), true)
+
         super.render(context, mouseX, mouseY, delta)
+    }
+
+    /** Render a step slider with 4 discrete stops (0-3) */
+    private fun renderStepSlider(
+        context: DrawContext, label: String, x: Int, y: Int, w: Int,
+        currentStep: Int, mouseX: Int, mouseY: Int, sliderId: String
+    ): Int {
+        val sliderH = 12
+        // Fixed label width so all sliders align (widest label among Hunt/Raid/Miracle/Size)
+        val fixedLabelW = listOf("Hunt", "Raid", "Miracle", "Size").maxOf { textRenderer.getWidth(Translations.tr(it)) } + 6
+        val barX = x + fixedLabelW
+        val barW = w - fixedLabelW
+        val steps = 4
+        val step = currentStep.coerceIn(0, 3)
+
+        // Cache bar geometry for drag handling
+        stepSliderBars[sliderId] = Pair(barX, barW)
+
+        // Label (left-aligned)
+        context.drawText(textRenderer, label, x, y + 2, 0xFFBBBBBB.toInt(), true)
+
+        // Track
+        context.fill(barX, y + 5, barX + barW, y + 7, 0xFF222222.toInt())
+
+        // Step markers
+        for (i in 0 until steps) {
+            val cx = barX + i * barW / (steps - 1)
+            val markerColor = if (i == step) ModConfig.accentColor() else 0xFF555555.toInt()
+            context.fill(cx - 1, y + 3, cx + 1, y + 9, markerColor)
+        }
+
+        // Thumb
+        val thumbX = barX + step * barW / (steps - 1) - 3
+        val isActive = draggingSlider == sliderId
+        val isHov = isActive || (mouseX >= barX - 4 && mouseX <= barX + barW + 4 && mouseY >= y && mouseY <= y + sliderH)
+        context.fill(thumbX, y + 1, thumbX + 7, y + 11, if (isHov) ModConfig.accentColor() else 0xFFAAAAAA.toInt())
+        drawBorder(context, thumbX, y + 1, 7, 10, if (isHov) 0xFFFFFFFF.toInt() else 0xFF666666.toInt())
+
+        // Step label centered on the entire bar
+        val stepLabel = Translations.tr(SIZE_LABELS[step])
+        val stepLabelW = textRenderer.getWidth(stepLabel)
+        val labelCenterX = barX + (barW - stepLabelW) / 2
+        context.drawText(textRenderer, stepLabel, labelCenterX, y + 2, 0xFF888888.toInt(), true)
+
+        return y + sliderH + 2
+    }
+
+    /** Convert mouse X to step index (0-3) for a step slider */
+    private fun mouseToStep(mouseX: Double, barX: Int, barW: Int): Int {
+        val ratio = ((mouseX - barX) / barW).coerceIn(0.0, 1.0)
+        return (ratio * 3).roundToInt().coerceIn(0, 3)
     }
 
     private fun renderSlider(
@@ -407,6 +536,7 @@ class OptionsScreen(
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
         val panelTop = 25
+        val panelBottom = height - 25
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
@@ -415,12 +545,7 @@ class OptionsScreen(
             close(); return true
         }
 
-        val leftX = panelX + 12
-        val rightX = panelX + panelWidth - 12
-
-        var y = panelTop + 28
-
-        // Reset button
+        // Reset button (in title bar)
         val resetLabel: String = Translations.tr("Reset")
         val resetBtnW = textRenderer.getWidth(resetLabel) + 8
         val resetBtnX = panelX + panelWidth - resetBtnW - 22
@@ -434,6 +559,33 @@ class OptionsScreen(
             MiracleOverlay.loadPosition()
             return true
         }
+
+        // Scrollbar click
+        val cTop = panelTop + 22
+        val cBottom = panelBottom - 16
+        if (sbThumbHeight > 0 && mouseX >= sbTrackX && mouseX <= sbTrackX + 6 &&
+            mouseY >= cTop && mouseY <= cBottom) {
+            val contentAreaHeight = cBottom - cTop
+            val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+            if (mouseY >= sbThumbY && mouseY <= sbThumbY + sbThumbHeight) {
+                isScrollbarDragging = true
+                scrollbarDragStartY = mouseY.toInt()
+                scrollbarDragStartOffset = scrollOffset
+            } else {
+                val ratio = (mouseY - cTop).toFloat() / contentAreaHeight
+                scrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
+            }
+            return true
+        }
+
+        // Ignore clicks outside content area
+        if (mouseY < cTop || mouseY > cBottom) return super.mouseClicked(mouseX, mouseY, button)
+
+        val leftX = panelX + 12
+        val rightX = panelX + panelWidth - 12
+        val contentW = rightX - leftX
+
+        var y = cTop + 6 - scrollOffset
 
         y += 14 // HUD label
 
@@ -473,19 +625,19 @@ class OptionsScreen(
         }
         y += 18
 
-        // Size preset buttons
-        val sizeLabel: String = Translations.tr("Size")
-        var sx = leftX + textRenderer.getWidth(sizeLabel) + 8
-        for ((i, key) in SIZE_LABELS.withIndex()) {
-            val label: String = Translations.tr(key)
-            val btnW = textRenderer.getWidth(label) + 10
-            if (mouseX >= sx && mouseX <= sx + btnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
-                ModConfig.setHudSizePreset(i)
-                return true
-            }
-            sx += btnW + 3
+        // Size step sliders
+        if (ModConfig.mergedHudMode) {
+            if (handleStepSliderClick(mouseX, mouseY, y, "mergedSize") { ModConfig.setHudSizePreset(it) }) return true
+            y += 14
+        } else {
+            if (handleStepSliderClick(mouseX, mouseY, y, "huntSize") { ModConfig.setHuntSizePreset(it) }) return true
+            y += 14
+            if (handleStepSliderClick(mouseX, mouseY, y, "raidSize") { ModConfig.setRaidSizePreset(it) }) return true
+            y += 14
+            if (handleStepSliderClick(mouseX, mouseY, y, "miracleSize") { ModConfig.setMiracleSizePreset(it) }) return true
+            y += 14
         }
-        y += 20
+        y += 6
 
         // HUD Visibility toggles
         y += 2
@@ -535,24 +687,72 @@ class OptionsScreen(
             ModConfig.toggleAutoHideOnComplete()
             return true
         }
+        y += 18
 
-        // Midnight Reset toggle
-        val mrStart = leftX + ahBtnW + 6
-        val mrBtnW = textRenderer.getWidth("${Translations.tr("Midnight Reset")}: OFF") + 10
-        if (mouseX >= mrStart && mouseX <= mrStart + mrBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
-            ModConfig.toggleMidnightReset()
+        // Hide in Battle toggle
+        val hbBtnW = textRenderer.getWidth("${Translations.tr("Hide in Battle")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + hbBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleHideHudInBattle()
             return true
         }
         y += 20
 
-        // Raid section
+        // Color section
         y += 9 // separator
-        y += 14 // Raid label
+        y += 14 // color label
 
-        // Raid Notification toggle
-        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Notification")}: OFF") + 10
+        // Color sliders
+        val previewW = 16
+        val sliderStartX = leftX + previewW + 8
+        val sliderEndX = rightX
+        val slW = sliderEndX - sliderStartX
+
+        val sliderId = checkSliderClick(mouseX, mouseY, sliderStartX, y, slW, 3)
+        if (sliderId != null) {
+            draggingSlider = arrayOf("r", "g", "b")[sliderId]
+            updateSliderValue(mouseX, sliderStartX + 12, slW - 12)
+            return true
+        }
+        y += 36
+        y += 16 // hex field
+
+        y += 14 // transparency label
+
+        // Opacity slider
+        val opSliderX = leftX + 30
+        val opSliderW = rightX - opSliderX
+        if (mouseY >= y && mouseY <= y + 10 && mouseX >= opSliderX && mouseX <= opSliderX + opSliderW) {
+            draggingSlider = "opacity"
+            updateSliderValue(mouseX, opSliderX, opSliderW)
+            return true
+        }
+        y += 12
+        y += 5
+        y += 8
+
+        // Raid & Miracles section
+        y += 14 // section label
+
+        // Raid Sound toggle
+        val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Sound")}: OFF") + 10
         if (mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleRaidNotification()
+            return true
+        }
+
+        // Miracle Sound toggle
+        val mnStart = leftX + rnBtnW + 6
+        val mnBtnW = textRenderer.getWidth("${Translations.tr("Miracle Sound")}: OFF") + 10
+        if (mouseX >= mnStart && mouseX <= mnStart + mnBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleMiracleNotification()
+            return true
+        }
+        y += 18
+
+        // Repeat toggle
+        val rpBtnW = textRenderer.getWidth("${Translations.tr("Repeat")}: 5x") + 10
+        if (mouseX >= leftX && mouseX <= leftX + rpBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleRaidSoundRepeat()
             return true
         }
         y += 18
@@ -592,40 +792,22 @@ class OptionsScreen(
             })
             return true
         }
+        y += 18
+
+        // Miracle Sound button
+        val msName = ModConfig.miracleSound.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val msLabel = "${Translations.tr("Miracle Notif Sound")}: $msName"
+        val msBtnW = textRenderer.getWidth(msLabel) + 10
+        if (mouseX >= leftX && mouseX <= leftX + msBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            client?.setScreen(SoundPickerScreen(this, ModConfig.miracleSound) { selected ->
+                ModConfig.setMiracleSound(selected)
+            })
+            return true
+        }
         y += 20
 
         y += 9 // separator
-
-        y += 14 // color label
-
-        // Color sliders
-        val previewW = 16
-        val sliderStartX = leftX + previewW + 8
-        val sliderEndX = rightX
-        val slW = sliderEndX - sliderStartX
-
-        val sliderId = checkSliderClick(mouseX, mouseY, sliderStartX, y, slW, 3)
-        if (sliderId != null) {
-            draggingSlider = arrayOf("r", "g", "b")[sliderId]
-            updateSliderValue(mouseX, sliderStartX + 12, slW - 12)
-            return true
-        }
-        y += 36
-        y += 16 // hex field
-
-        y += 14 // transparency label
-
-        // Opacity slider
-        val opSliderX = leftX + 30
-        val opSliderW = rightX - opSliderX
-        if (mouseY >= y && mouseY <= y + 10 && mouseX >= opSliderX && mouseX <= opSliderX + opSliderW) {
-            draggingSlider = "opacity"
-            updateSliderValue(mouseX, opSliderX, opSliderW)
-            return true
-        }
-        y += 12
-        y += 5
-        y += 8
 
         y += 14 // rank label
 
@@ -645,6 +827,22 @@ class OptionsScreen(
         }
 
         return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    /** Handle click on a step slider. Returns true if the click was consumed. */
+    private fun handleStepSliderClick(
+        mouseX: Double, mouseY: Double, y: Int,
+        sliderId: String, setter: (Int) -> Unit
+    ): Boolean {
+        val bar = stepSliderBars[sliderId] ?: return false
+        val (barX, barW) = bar
+        if (mouseY >= y && mouseY <= y + 12 && mouseX >= barX - 4 && mouseX <= barX + barW + 4) {
+            val step = mouseToStep(mouseX, barX, barW)
+            setter(step)
+            draggingSlider = sliderId
+            return true
+        }
+        return false
     }
 
     private fun checkSliderClick(mouseX: Double, mouseY: Double, x: Int, startY: Int, w: Int, count: Int): Int? {
@@ -668,11 +866,35 @@ class OptionsScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (isScrollbarDragging && button == 0) {
+            val contentAreaHeight = contentBottom - contentTop
+            val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+            val trackRange = contentAreaHeight - sbThumbHeight
+            if (trackRange > 0) {
+                val scrollDelta = ((mouseY.toInt() - scrollbarDragStartY).toFloat() / trackRange * maxScroll).toInt()
+                scrollOffset = (scrollbarDragStartOffset + scrollDelta).coerceIn(0, maxScroll)
+            }
+            return true
+        }
         if (draggingSlider != null && button == 0) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val leftX = panelX + 12
             val rightX = panelX + panelWidth - 12
+
+            // Step sliders (size presets)
+            val stepBar = stepSliderBars[draggingSlider]
+            if (stepBar != null) {
+                val (barX, barW) = stepBar
+                val step = mouseToStep(mouseX, barX, barW)
+                when (draggingSlider) {
+                    "mergedSize" -> ModConfig.setHudSizePreset(step)
+                    "huntSize" -> ModConfig.setHuntSizePreset(step)
+                    "raidSize" -> ModConfig.setRaidSizePreset(step)
+                    "miracleSize" -> ModConfig.setMiracleSizePreset(step)
+                }
+                return true
+            }
 
             if (draggingSlider == "opacity") {
                 val opSliderX = leftX + 30
@@ -691,8 +913,17 @@ class OptionsScreen(
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
         if (button == 0 && draggingSlider != null) { draggingSlider = null; return true }
         return super.mouseReleased(mouseX, mouseY, button)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        val contentAreaHeight = contentBottom - contentTop
+        if (contentAreaHeight <= 0) return true
+        val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
+        scrollOffset = (scrollOffset - (verticalAmount * 20).toInt()).coerceIn(0, maxScroll)
+        return true
     }
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {

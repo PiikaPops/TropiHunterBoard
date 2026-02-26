@@ -14,6 +14,7 @@ import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.sound.PositionedSoundInstance
+import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
 import net.minecraft.registry.Registries
 import net.minecraft.sound.SoundEvent
@@ -23,7 +24,7 @@ import org.lwjgl.glfw.GLFW
 
 class PokemonDetailScreen(
     private val species: Species,
-    private val parent: Screen,
+    private val parent: Screen?,
     private val allSpecies: List<Species>? = null,
     private val initialFormName: String? = null
 ) : Screen(Text.literal("Pokemon Detail")) {
@@ -50,6 +51,11 @@ class PokemonDetailScreen(
     private var abilityHoverStartTime = 0L
     private var tooltipAbility: PotentialAbility? = null
 
+    // Item drop hover tooltip state
+    private var hoveredDropIndex = -1
+    private var dropHoverStartTime = 0L
+    private var tooltipDropItem: Identifier? = null
+
     // Cached row bounds for hover detection
     private data class MoveRowBounds(val y: Int, val h: Int, val move: MoveTemplate)
     private var moveRowBounds = mutableListOf<MoveRowBounds>()
@@ -57,6 +63,8 @@ class PokemonDetailScreen(
     private var moveClickBounds = mutableListOf<MoveClickBound>()
     private data class AbilityRowBounds(val x: Int, val y: Int, val w: Int, val h: Int, val ability: PotentialAbility)
     private var abilityRowBounds = mutableListOf<AbilityRowBounds>()
+    private data class DropRowBounds(val x: Int, val y: Int, val w: Int, val h: Int, val itemId: Identifier)
+    private var dropRowBounds = mutableListOf<DropRowBounds>()
 
     // Model click bounds
     private var modelRenderX = 0
@@ -239,7 +247,7 @@ class PokemonDetailScreen(
         context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
             if (backHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
-        val displayName: String = Translations.dualSpeciesName(species.name)
+        val displayName: String = try { Translations.dualSpeciesName(species.name) } catch (_: Exception) { species.name.replaceFirstChar { it.uppercase() } }
         context.drawText(textRenderer, displayName,
             panelX + (panelWidth - textRenderer.getWidth(displayName)) / 2, panelTop + 6, 0xFFFFFFFF.toInt(), true)
 
@@ -381,6 +389,7 @@ class PokemonDetailScreen(
         moveRowBounds.clear()
         moveClickBounds.clear()
         abilityRowBounds.clear()
+        dropRowBounds.clear()
 
         // ========== ROW 1: Model + Info (left) | Base Stats (right) ==========
 
@@ -446,13 +455,19 @@ class PokemonDetailScreen(
                 val pa = ability as? PotentialAbility ?: continue
                 val isHidden = pa is HiddenAbility
                 val abilityName: String = Text.translatable(pa.template.displayName).string
-                val color = if (isHidden) 0xFFFFDD55.toInt() else 0xFFCCCCCC.toInt()
+                val abilityHovered = abilityRowBounds.size < 20 && hoveredAbilityIndex >= 0 &&
+                    abilityRowBounds.size == hoveredAbilityIndex
+                val baseColor = if (isHidden) 0xFFFFDD55.toInt() else 0xFFCCCCCC.toInt()
+                val color = if (abilityHovered) ModConfig.accentColor() else baseColor
                 context.drawText(textRenderer, abilityName, infoX + 4, leftY, color, true)
                 var totalW = textRenderer.getWidth(abilityName)
                 if (isHidden) {
                     val tagX = infoX + 4 + totalW + 4
                     context.drawText(textRenderer, "(H)", tagX, leftY, 0xFFAA8833.toInt(), true)
                     totalW += 4 + textRenderer.getWidth("(H)")
+                }
+                if (abilityHovered) {
+                    context.fill(infoX + 4, leftY + 9, infoX + 4 + textRenderer.getWidth(abilityName), leftY + 10, ModConfig.accentColor())
                 }
                 abilityRowBounds.add(AbilityRowBounds(infoX + 4, leftY, totalW, 10, pa))
                 leftY += 10
@@ -578,7 +593,7 @@ class PokemonDetailScreen(
         y += 6
 
         // ========== EVOLUTION (left) | DROPPED ITEMS (right) ==========
-        val evoTree = EvolutionData.getEvolutionTree(species)
+        val evoTree = try { EvolutionData.getEvolutionTree(species) } catch (_: Exception) { null }
         val hasEvo = evoTree != null
         val megaForms = try {
             species.forms.filter { form ->
@@ -596,7 +611,9 @@ class PokemonDetailScreen(
                 val evoLabel: String = Translations.tr("Evolution")
                 context.drawText(textRenderer, evoLabel, leftX, evoEndY, 0xFFFFAA00.toInt(), true)
                 evoEndY += 13
-                evoEndY = renderEvolutionChain(context, evoTree!!, leftX + 4, evoEndY, halfW - 12, mouseX, mouseY, contentTop, contentBottom)
+                try {
+                    evoEndY = renderEvolutionChain(context, evoTree!!, leftX + 4, evoEndY, halfW - 12, mouseX, mouseY, contentTop, contentBottom)
+                } catch (_: Exception) {}
             }
 
             // Mega evolutions section
@@ -606,17 +623,19 @@ class PokemonDetailScreen(
                 context.drawText(textRenderer, megaHeader, leftX + 4, evoEndY, 0xFFFFAA00.toInt(), true)
                 evoEndY += 12
                 for (form in megaForms) {
-                    val mLabel = PokemonEntry.megaLabel(form.name)
-                    val fullName = "$mLabel ${species.translatedName.string}"
-                    val nameW = textRenderer.getWidth(fullName)
-                    val inView = evoEndY >= contentTop && evoEndY <= contentBottom
-                    val isHov = inView && mouseX >= leftX + 8 && mouseX <= leftX + 8 + nameW &&
-                                mouseY >= evoEndY && mouseY <= evoEndY + 10
-                    val color = if (isHov) 0xFFFFDD55.toInt() else 0xFFCC99FF.toInt()
-                    context.drawText(textRenderer, fullName, leftX + 8, evoEndY, color, true)
-                    val ulColor = if (isHov) 0xFFFFDD55.toInt() else 0xFF664499.toInt()
-                    context.fill(leftX + 8, evoEndY + 9, leftX + 8 + nameW, evoEndY + 10, ulColor)
-                    megaClickBounds.add(MegaClickBound(leftX + 8, evoEndY, nameW, 10, form))
+                    try {
+                        val mLabel = PokemonEntry.megaLabel(form.name)
+                        val fullName = "$mLabel ${species.translatedName.string}"
+                        val nameW = textRenderer.getWidth(fullName)
+                        val inView = evoEndY >= contentTop && evoEndY <= contentBottom
+                        val isHov = inView && mouseX >= leftX + 8 && mouseX <= leftX + 8 + nameW &&
+                                    mouseY >= evoEndY && mouseY <= evoEndY + 10
+                        val color = if (isHov) 0xFFFFDD55.toInt() else 0xFFCC99FF.toInt()
+                        context.drawText(textRenderer, fullName, leftX + 8, evoEndY, color, true)
+                        val ulColor = if (isHov) 0xFFFFDD55.toInt() else 0xFF664499.toInt()
+                        context.fill(leftX + 8, evoEndY + 9, leftX + 8 + nameW, evoEndY + 10, ulColor)
+                        megaClickBounds.add(MegaClickBound(leftX + 8, evoEndY, nameW, 10, form))
+                    } catch (_: Exception) {}
                     evoEndY += 12
                 }
             }
@@ -624,7 +643,7 @@ class PokemonDetailScreen(
             // Dropped Items on the right
             val dropsLabel: String = Translations.tr("Dropped Items")
             context.drawText(textRenderer, dropsLabel, midX, row2StartY, 0xFFFFAA00.toInt(), true)
-            val dropY = renderDroppedItems(context, midX, row2StartY + 13, halfW)
+            val dropY = renderDroppedItems(context, midX, row2StartY + 13, halfW, mouseX, mouseY)
 
             // Vertical separator
             context.fill(panelX + 10 + halfW, row2StartY, panelX + 10 + halfW + 1,
@@ -635,7 +654,7 @@ class PokemonDetailScreen(
             // No evolution, no mega — Dropped Items takes full width
             val dropsLabel: String = Translations.tr("Dropped Items")
             context.drawText(textRenderer, dropsLabel, leftX, y, 0xFFFFAA00.toInt(), true)
-            y = renderDroppedItems(context, leftX, y + 13, panelWidth - 20) + 4
+            y = renderDroppedItems(context, leftX, y + 13, panelWidth - 20, mouseX, mouseY) + 4
         }
 
         // Separator
@@ -648,7 +667,7 @@ class PokemonDetailScreen(
         var spawnY = y + 13
         val fullContentW = panelWidth - 20
 
-        val spawns = getEffectiveSpawns()
+        val spawns = try { getEffectiveSpawns() } catch (_: Exception) { emptyList() }
         if (spawns.isNotEmpty()) {
             val lvMin = spawns.minOf { it.lvMin }
             val lvMax = spawns.maxOf { it.lvMax }
@@ -892,6 +911,26 @@ class PokemonDetailScreen(
                 } catch (_: Exception) {}
             }
         }
+        // Item drop tooltip
+        if (tooltipDropItem != null) {
+            val now = System.currentTimeMillis()
+            if (now - dropHoverStartTime >= HOVER_DELAY_MS) {
+                try {
+                    val item = Registries.ITEM.get(tooltipDropItem!!)
+                    val stack = ItemStack(item)
+                    val tooltipLines = stack.getTooltip(Item.TooltipContext.DEFAULT, client?.player, net.minecraft.item.tooltip.TooltipType.Default.BASIC)
+                    if (tooltipLines.size > 1) {
+                        val lines = mutableListOf<Text>()
+                        lines.add(Text.literal(stack.name.string).styled { it.withBold(true) })
+                        for (i in 1 until tooltipLines.size) {
+                            lines.add(tooltipLines[i])
+                        }
+                        context.drawTooltip(textRenderer, lines, mouseX, mouseY)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         // Biome tooltip is rendered after footer for proper Z-ordering
 
         // Scrollbar
@@ -931,7 +970,7 @@ class PokemonDetailScreen(
 
     // ==================== Dropped Items Rendering ====================
 
-    private fun renderDroppedItems(context: DrawContext, startX: Int, startY: Int, maxWidth: Int): Int {
+    private fun renderDroppedItems(context: DrawContext, startX: Int, startY: Int, maxWidth: Int, mouseX: Int, mouseY: Int): Int {
         var dropY = startY
         try {
             val entries = species.drops.entries
@@ -948,10 +987,19 @@ class PokemonDetailScreen(
                             context.drawItem(stack, startX + 4, dropY - 4)
                         }
                         val textStartX = startX + 24
+                        val itemNameStr = item.name.string
+                        val nameW = textRenderer.getWidth(itemNameStr)
+                        val hovered = mouseX >= textStartX && mouseX <= textStartX + nameW &&
+                                      mouseY >= dropY && mouseY < dropY + 10
+                        val nameColor = if (hovered) ModConfig.accentColor() else 0xFFCCCCCC.toInt()
+                        context.drawText(textRenderer, "$itemNameStr ${entry.percentage.toInt()}%",
+                            textStartX, dropY, nameColor, true)
+                        if (hovered) {
+                            context.fill(textStartX, dropY + 9, textStartX + nameW, dropY + 10, ModConfig.accentColor())
+                        }
+                        dropRowBounds.add(DropRowBounds(textStartX, dropY, nameW, 10, entry.item))
                         val qty = entry.quantityRange
                         val qtyText = if (qty != null && qty.first != qty.last) "${qty.first}-${qty.last}" else "${entry.quantity}"
-                        context.drawText(textRenderer, "${item.name.string} ${entry.percentage.toInt()}%",
-                            textStartX, dropY, 0xFFCCCCCC.toInt(), true)
                         val qtyLabel: String = Translations.tr("Qty:")
                         context.drawText(textRenderer, "$qtyLabel $qtyText",
                             textStartX, dropY + 10, 0xFF999999.toInt(), true)
@@ -1232,6 +1280,26 @@ class PokemonDetailScreen(
             tooltipAbility = null
             hoveredAbilityIndex = -1
         }
+        // Item drop hover detection
+        var foundDrop: Identifier? = null
+        var foundDropIndex = -1
+        for ((i, row) in dropRowBounds.withIndex()) {
+            if (mouseX >= row.x && mouseX <= row.x + row.w &&
+                mouseY >= row.y && mouseY < row.y + row.h &&
+                mouseY >= contentTop && mouseY <= contentBottom) {
+                foundDrop = row.itemId
+                foundDropIndex = i
+                break
+            }
+        }
+        if (foundDropIndex != hoveredDropIndex) {
+            hoveredDropIndex = foundDropIndex
+            dropHoverStartTime = System.currentTimeMillis()
+            tooltipDropItem = foundDrop
+        } else if (foundDrop == null) {
+            tooltipDropItem = null
+            hoveredDropIndex = -1
+        }
     }
 
     // ==================== Type Chart ====================
@@ -1485,6 +1553,26 @@ class PokemonDetailScreen(
                     mouseY >= mc.y.toDouble() && mouseY < (mc.y + mc.h).toDouble() &&
                     mouseY >= contentTop2.toDouble() && mouseY <= contentBottom2.toDouble()) {
                     client?.setScreen(MoveDetailScreen(mc.move, this))
+                    return true
+                }
+            }
+
+            // Ability clicks → AbilityDetailScreen
+            for (row in abilityRowBounds) {
+                if (mouseX >= row.x && mouseX <= row.x + row.w &&
+                    mouseY >= row.y.toDouble() && mouseY < (row.y + row.h).toDouble() &&
+                    mouseY >= contentTop2.toDouble() && mouseY <= contentBottom2.toDouble()) {
+                    client?.setScreen(AbilityDetailScreen(row.ability.template, this))
+                    return true
+                }
+            }
+
+            // Drop clicks → ItemDropDetailScreen
+            for (row in dropRowBounds) {
+                if (mouseX >= row.x && mouseX <= row.x + row.w &&
+                    mouseY >= row.y.toDouble() && mouseY < (row.y + row.h).toDouble() &&
+                    mouseY >= contentTop2.toDouble() && mouseY <= contentBottom2.toDouble()) {
+                    client?.setScreen(ItemDropDetailScreen(row.itemId, this))
                     return true
                 }
             }

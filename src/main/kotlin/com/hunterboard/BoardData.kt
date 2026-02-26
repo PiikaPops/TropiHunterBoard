@@ -32,6 +32,8 @@ object BoardState {
     var lastUpdated: Long = 0
         private set
     var hudVisible: Boolean = true
+    var showBravo: Boolean = false
+    var bravoStartTime: Long = 0L
     var displayCount: Int = 6
         private set
     var displayMode: Int = 0
@@ -65,6 +67,7 @@ object BoardState {
     fun updateBoard(newTargets: List<HuntTarget>) {
         targets = newTargets
         waitingForBoard = false
+        showBravo = false
         val totalReward = newTargets.filter { !it.isCaught }.sumOf { it.reward }
         reward = "${totalReward}$"
         lastUpdated = System.currentTimeMillis()
@@ -77,8 +80,10 @@ object BoardState {
     }
 
     fun markTargetCaught(speciesId: String, ballId: String) {
+        var matched = false
         val newTargets = targets.map { target ->
-            if (!target.isCaught && target.speciesId == speciesId && target.ballId == ballId) {
+            if (!matched && !target.isCaught && target.speciesId == speciesId && target.ballId == ballId) {
+                matched = true
                 target.copy(isCaught = true)
             } else {
                 target
@@ -90,9 +95,10 @@ object BoardState {
             reward = "${totalReward}$"
             save()
             HunterBoard.LOGGER.info("Auto-validated: $speciesId caught with $ballId")
-            // Auto-hide HUD when all targets are caught
-            if (ModConfig.autoHideOnComplete && remainingCount() == 0) {
-                hudVisible = false
+            // Show bravo when all targets for the player's grade are caught
+            if (ModConfig.autoHideOnComplete && targets.take(ModConfig.maxHunts()).all { it.isCaught }) {
+                showBravo = true
+                bravoStartTime = System.currentTimeMillis()
             }
         }
     }
@@ -109,9 +115,14 @@ object BoardState {
         save()
         val status = if (newTargets[index].isCaught) "caught" else "uncaught"
         HunterBoard.LOGGER.info("Manual toggle: ${target.pokemonName} -> $status")
-        // Auto-hide/show based on remaining count
+        // Show/hide bravo based on remaining count
         if (ModConfig.autoHideOnComplete) {
-            hudVisible = remainingCount() > 0
+            if (targets.take(ModConfig.maxHunts()).all { it.isCaught }) {
+                showBravo = true
+                bravoStartTime = System.currentTimeMillis()
+            } else {
+                showBravo = false
+            }
         }
     }
 
@@ -119,6 +130,7 @@ object BoardState {
         targets = emptyList()
         reward = ""
         waitingForBoard = true
+        showBravo = false
         lastUpdated = System.currentTimeMillis()
         hudVisible = true
         save()
@@ -140,6 +152,12 @@ object BoardState {
                 displayCount = data.displayCount
                 displayMode = data.displayMode
                 HunterBoard.LOGGER.info("Loaded ${targets.size} hunt targets from disk")
+                // Show bravo if all hunts were already completed when loading
+                if (ModConfig.autoHideOnComplete && targets.isNotEmpty() &&
+                    targets.take(ModConfig.maxHunts()).all { it.isCaught }) {
+                    showBravo = true
+                    bravoStartTime = System.currentTimeMillis()
+                }
             }
         } catch (e: Exception) {
             HunterBoard.LOGGER.warn("Failed to load board data: ${e.message}")

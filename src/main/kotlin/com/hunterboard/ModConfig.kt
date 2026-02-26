@@ -24,7 +24,15 @@ object ModConfig {
         private set
 
     // HUD size preset: 0=Small, 1=Normal, 2=Large, 3=Extra Large
+    // hudSizePreset is the global preset used in merged mode
     var hudSizePreset: Int = 1
+        private set
+    // Independent size presets per HUD (used in non-merged mode)
+    var huntSizePreset: Int = 1
+        private set
+    var raidSizePreset: Int = 1
+        private set
+    var miracleSizePreset: Int = 1
         private set
 
     // HUD position (-1 = auto bottom-right)
@@ -75,8 +83,8 @@ object ModConfig {
     var autoHideOnComplete: Boolean = true
         private set
 
-    // Reset board data at midnight (Europe/Paris)
-    var midnightReset: Boolean = true
+    // Hide HUDs during Pokémon battles
+    var hideHudInBattle: Boolean = true
         private set
 
     // Raid notification sounds
@@ -87,6 +95,16 @@ object ModConfig {
     var raidNotification: Boolean = true
         private set
     var raidNotifVolume: Int = 100
+        private set
+
+    // Raid sound repeat (true = 5x, false = 1x)
+    var raidSoundRepeat: Boolean = true
+        private set
+
+    // Miracle notification sounds
+    var miracleNotification: Boolean = true
+        private set
+    var miracleSound: String = "minecraft:entity.player.levelup"
         private set
 
     val RANKS = listOf(
@@ -109,8 +127,14 @@ object ModConfig {
         return (alpha shl 24)
     }
 
-    /** Scale factor for all HUDs based on size preset */
-    fun hudScale(): Float = when (hudSizePreset) {
+    /** Scale factor for merged HUD based on global size preset */
+    fun hudScale(): Float = sizeToScale(hudSizePreset)
+
+    /** Scale factor per individual HUD */
+    fun raidScale(): Float = sizeToScale(raidSizePreset)
+    fun miracleScale(): Float = sizeToScale(miracleSizePreset)
+
+    private fun sizeToScale(preset: Int): Float = when (preset) {
         0 -> 0.80f; 1 -> 1.00f; 2 -> 1.30f; 3 -> 1.60f; else -> 1.00f
     }
 
@@ -133,6 +157,25 @@ object ModConfig {
 
     fun setHudSizePreset(value: Int) {
         hudSizePreset = value.coerceIn(0, 3)
+        // Sync individual presets when setting global
+        huntSizePreset = hudSizePreset
+        raidSizePreset = hudSizePreset
+        miracleSizePreset = hudSizePreset
+        save()
+    }
+
+    fun setHuntSizePreset(value: Int) {
+        huntSizePreset = value.coerceIn(0, 3)
+        save()
+    }
+
+    fun setRaidSizePreset(value: Int) {
+        raidSizePreset = value.coerceIn(0, 3)
+        save()
+    }
+
+    fun setMiracleSizePreset(value: Int) {
+        miracleSizePreset = value.coerceIn(0, 3)
         save()
     }
 
@@ -212,8 +255,8 @@ object ModConfig {
         save()
     }
 
-    fun toggleMidnightReset() {
-        midnightReset = !midnightReset
+    fun toggleHideHudInBattle() {
+        hideHudInBattle = !hideHudInBattle
         save()
     }
 
@@ -224,6 +267,21 @@ object ModConfig {
 
     fun setRaidWarningSound(soundId: String) {
         raidWarningSound = soundId
+        save()
+    }
+
+    fun toggleMiracleNotification() {
+        miracleNotification = !miracleNotification
+        save()
+    }
+
+    fun setMiracleSound(soundId: String) {
+        miracleSound = soundId
+        save()
+    }
+
+    fun toggleRaidSoundRepeat() {
+        raidSoundRepeat = !raidSoundRepeat
         save()
     }
 
@@ -246,6 +304,9 @@ object ModConfig {
         hudColorB = 0x00
         hudOpacity = 80
         hudSizePreset = 1
+        huntSizePreset = 1
+        raidSizePreset = 1
+        miracleSizePreset = 1
         rank = 3
         hudPosX = -1
         hudPosY = -1
@@ -261,11 +322,13 @@ object ModConfig {
         usePixelArt = false
         showHuntHud = true
         autoHideOnComplete = true
-        midnightReset = true
         raidStartSound = "minecraft:block.bell.use"
         raidWarningSound = "minecraft:block.bell.use"
         raidNotification = true
         raidNotifVolume = 100
+        raidSoundRepeat = true
+        miracleNotification = true
+        miracleSound = "minecraft:entity.player.levelup"
         save()
     }
 
@@ -291,6 +354,9 @@ object ModConfig {
                 hudOpacity = data.hudOpacity.coerceIn(0, 100)
                 rank = data.rank.coerceIn(0, 3)
                 hudSizePreset = data.hudSizePreset.coerceIn(0, 3)
+                huntSizePreset = data.huntSizePreset.coerceIn(0, 3)
+                raidSizePreset = data.raidSizePreset.coerceIn(0, 3)
+                miracleSizePreset = data.miracleSizePreset.coerceIn(0, 3)
                 hudPosX = data.hudPosX
                 hudPosY = data.hudPosY
                 raidTimerPosX = data.raidTimerPosX
@@ -305,11 +371,14 @@ object ModConfig {
                 usePixelArt = data.usePixelArt
                 showHuntHud = data.showHuntHud
                 autoHideOnComplete = data.autoHideOnComplete
-                midnightReset = data.midnightReset
                 raidStartSound = data.raidStartSound
                 raidWarningSound = data.raidWarningSound
                 raidNotification = data.raidNotification
                 raidNotifVolume = data.raidNotifVolume.coerceIn(0, 100)
+                raidSoundRepeat = data.raidSoundRepeat
+                miracleNotification = data.miracleNotification
+                miracleSound = data.miracleSound
+                hideHudInBattle = data.hideHudInBattle
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -321,11 +390,13 @@ object ModConfig {
         try {
             SAVE_PATH.parent.toFile().mkdirs()
             val data = ConfigData(
-                hudColorR, hudColorG, hudColorB, hudOpacity, hudSizePreset, rank,
+                hudColorR, hudColorG, hudColorB, hudOpacity, hudSizePreset,
+                huntSizePreset, raidSizePreset, miracleSizePreset, rank,
                 hudPosX, hudPosY, raidTimerPosX, raidTimerPosY, miraclePosX, miraclePosY,
                 showRaidHud, showMiracleHud, fullClearMode, gridLayout, mergedHudMode, usePixelArt,
-                showHuntHud, autoHideOnComplete, midnightReset,
-                raidStartSound, raidWarningSound, raidNotification, raidNotifVolume
+                showHuntHud, autoHideOnComplete,
+                raidStartSound, raidWarningSound, raidNotification, raidNotifVolume, raidSoundRepeat,
+                miracleNotification, miracleSound, hideHudInBattle
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -340,6 +411,9 @@ object ModConfig {
         val hudColorB: Int = 0x00,
         val hudOpacity: Int = 80,
         val hudSizePreset: Int = 1,
+        val huntSizePreset: Int = 1,
+        val raidSizePreset: Int = 1,
+        val miracleSizePreset: Int = 1,
         val rank: Int = 3,
         val hudPosX: Int = -1,
         val hudPosY: Int = -1,
@@ -355,10 +429,13 @@ object ModConfig {
         val usePixelArt: Boolean = false,
         val showHuntHud: Boolean = true,
         val autoHideOnComplete: Boolean = true,
-        val midnightReset: Boolean = true,
         val raidStartSound: String = "minecraft:block.bell.use",
         val raidWarningSound: String = "minecraft:block.bell.use",
         val raidNotification: Boolean = true,
-        val raidNotifVolume: Int = 100
+        val raidNotifVolume: Int = 100,
+        val raidSoundRepeat: Boolean = true,
+        val miracleNotification: Boolean = true,
+        val miracleSound: String = "minecraft:entity.player.levelup",
+        val hideHudInBattle: Boolean = true
     )
 }

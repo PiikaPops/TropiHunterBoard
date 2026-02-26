@@ -3,12 +3,9 @@ package com.hunterboard
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.time.LocalDate
-import java.time.ZoneId
 
 @Environment(EnvType.CLIENT)
 object HunterBoard : ClientModInitializer {
@@ -17,6 +14,9 @@ object HunterBoard : ClientModInitializer {
 
     override fun onInitializeClient() {
         LOGGER.info("HunterBoard initializing...")
+
+        // Register mod sounds
+        ModSounds.register()
 
         // Register keybindings (B to toggle HUD)
         KeyBindings.register()
@@ -43,8 +43,8 @@ object HunterBoard : ClientModInitializer {
         // Register auto-catch detection
         CatchDetector.register()
 
-        // Register midnight reset checker
-        registerMidnightReset()
+        // Register clear warning overlay
+        ClearWarningOverlay.register()
 
         // Check for updates on Modrinth
         UpdateChecker.register()
@@ -52,29 +52,4 @@ object HunterBoard : ClientModInitializer {
         LOGGER.info("HunterBoard initialized!")
     }
 
-    private var lastCheckedDate: LocalDate? = null
-    private var midnightTickSkip = 0
-
-    private fun registerMidnightReset() {
-        ClientTickEvents.END_CLIENT_TICK.register { client ->
-            if (client.world == null || !ModConfig.midnightReset) return@register
-            if (++midnightTickSkip < 1200) return@register // check every ~60 seconds
-            midnightTickSkip = 0
-
-            try {
-                val today = LocalDate.now(ZoneId.of("Europe/Paris"))
-                if (lastCheckedDate == null) {
-                    lastCheckedDate = today
-                    return@register
-                }
-                if (today != lastCheckedDate) {
-                    lastCheckedDate = today
-                    if (BoardState.hasTargets()) {
-                        BoardState.resetBoard()
-                        LOGGER.info("Midnight reset triggered")
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-    }
 }

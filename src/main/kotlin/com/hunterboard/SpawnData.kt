@@ -87,6 +87,9 @@ object SpawnData {
             for (detail in details) {
                 if (detail !is PokemonSpawnDetail) continue
                 val species = detail.pokemon.species?.lowercase() ?: continue
+                val form = try {
+                    detail.pokemon.aspects.firstOrNull()?.lowercase() ?: ""
+                } catch (_: Exception) { "" }
 
                 val biomeDetails = mutableListOf<BiomeDetail>()
                 var time = "any"
@@ -172,7 +175,11 @@ object SpawnData {
                     presets = presetList,
                     weightMultipliers = multipliers
                 )
-                map.getOrPut(species) { mutableListOf() }.add(entry)
+                if (form.isNotEmpty()) {
+                    map.getOrPut("$species $form") { mutableListOf() }.add(entry)
+                } else {
+                    map.getOrPut(species) { mutableListOf() }.add(entry)
+                }
             }
 
             spawnMap = map
@@ -335,9 +342,10 @@ object SpawnData {
             presets = presetList.toList(),
             weightMultipliers = multipliers
         )
-        map.getOrPut(species) { mutableListOf() }.add(entry)
         if (form.isNotEmpty()) {
             map.getOrPut("$species $form") { mutableListOf() }.add(entry)
+        } else {
+            map.getOrPut(species) { mutableListOf() }.add(entry)
         }
     }
 
@@ -435,9 +443,10 @@ object SpawnData {
                 presets = presetList.toList(),
                 weightMultipliers = multipliers
             )
-            map.getOrPut(species) { mutableListOf() }.add(entry)
             if (form.isNotEmpty()) {
                 map.getOrPut("$species $form") { mutableListOf() }.add(entry)
+            } else {
+                map.getOrPut(species) { mutableListOf() }.add(entry)
             }
         }
     }

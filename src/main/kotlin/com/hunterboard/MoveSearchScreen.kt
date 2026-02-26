@@ -32,6 +32,10 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
     private var pokemonTabW = 0
     private var movesTabX = 0
     private var movesTabW = 0
+    private var abilitiesTabX = 0
+    private var abilitiesTabW = 0
+    private var itemsTabX = 0
+    private var itemsTabW = 0
     private val tabY get() = 25 + 20
     private val tabH = 12
 
@@ -137,13 +141,19 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
         context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
-        // Tabs: Pokémon | Capacités
+        // Tabs: Pokémon | Capacités | Talents | Objets
         val pokemonLabel: String = Translations.tr("Pokémon")
         val movesLabel: String = Translations.tr("Moves")
+        val abilitiesLabel: String = Translations.tr("Abilities")
+        val itemsLabel: String = Translations.tr("Items")
         pokemonTabW = textRenderer.getWidth(pokemonLabel) + 8
         movesTabW = textRenderer.getWidth(movesLabel) + 8
+        abilitiesTabW = textRenderer.getWidth(abilitiesLabel) + 8
+        itemsTabW = textRenderer.getWidth(itemsLabel) + 8
         pokemonTabX = panelX + 8
         movesTabX = pokemonTabX + pokemonTabW + 2
+        abilitiesTabX = movesTabX + movesTabW + 2
+        itemsTabX = abilitiesTabX + abilitiesTabW + 2
         val tY = panelTop + 20
 
         // Pokemon tab (inactive)
@@ -155,6 +165,16 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, 0xFF2A2200.toInt())
         drawBorder(context, movesTabX, tY, movesTabW, tabH, ModConfig.accentColor())
         context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, ModConfig.accentColor(), true)
+
+        // Abilities tab (inactive)
+        val abiTabHovered = mouseX in abilitiesTabX..(abilitiesTabX + abilitiesTabW) && mouseY in tY..(tY + tabH)
+        context.fill(abilitiesTabX, tY, abilitiesTabX + abilitiesTabW, tY + tabH, if (abiTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        context.drawText(textRenderer, abilitiesLabel, abilitiesTabX + 4, tY + 2, if (abiTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+
+        // Items tab (inactive)
+        val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
+        context.fill(itemsTabX, tY, itemsTabX + itemsTabW, tY + tabH, if (itemTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        context.drawText(textRenderer, itemsLabel, itemsTabX + 4, tY + 2, if (itemTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
 
         // Language toggle button (right side of tab row)
         val langLabel = Translations.nameLanguageLabel()
@@ -317,6 +337,20 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             if (mouseX >= pokemonTabX && mouseX <= pokemonTabX + pokemonTabW &&
                 mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
                 client?.setScreen(PokemonSearchScreen())
+                return true
+            }
+
+            // Abilities tab click
+            if (mouseX >= abilitiesTabX && mouseX <= abilitiesTabX + abilitiesTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(AbilitySearchScreen())
+                return true
+            }
+
+            // Items tab click
+            if (mouseX >= itemsTabX && mouseX <= itemsTabX + itemsTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(ItemDropSearchScreen())
                 return true
             }
 

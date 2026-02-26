@@ -4,6 +4,9 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.sound.SoundEvent
+import net.minecraft.sound.SoundEvents
+import net.minecraft.util.Identifier
 
 object MiracleOverlay {
 
@@ -71,6 +74,7 @@ object MiracleOverlay {
             val keyword = matchBoostKeyword(boostName) ?: return
             boostDisplayNames[keyword] = boostName
             addOrExtend(keyword)
+            playMiracleSound()
             return
         }
         // Duration extension: set exact remaining time from message
@@ -82,6 +86,7 @@ object MiracleOverlay {
             val totalMs = parseTimeMs(extendMatch.groupValues[2])
             if (totalMs > 0) activeBoosts[keyword] = System.currentTimeMillis() + totalMs
             else addOrExtend(keyword)
+            playMiracleSound()
             return
         }
         // /miracle list line: set exact remaining time
@@ -110,6 +115,7 @@ object MiracleOverlay {
     private fun render(context: DrawContext) {
         val client = MinecraftClient.getInstance()
         if (client.player == null) return
+        if (ModConfig.hideHudInBattle && BattleHelper.isInBattle()) { renderedW = 0; renderedH = 0; return }
         if (!BoardState.hudVisible) { renderedW = 0; renderedH = 0; return }
         if (!ModConfig.showMiracleHud) { renderedW = 0; renderedH = 0; return }
 
@@ -147,7 +153,7 @@ object MiracleOverlay {
         // In merged mode, skip standalone panel rendering
         if (ModConfig.mergedHudMode) { renderedW = 0; renderedH = 0; return }
 
-        val scale = ModConfig.hudScale()
+        val scale = ModConfig.miracleScale()
         val maxLineW = lines.maxOf { tr.getWidth(it.first) }
         val panelW = maxOf(tr.getWidth(title), maxLineW) + padH * 2
         val panelH = padV + titleH + lines.size * lineH + padV
@@ -212,6 +218,30 @@ object MiracleOverlay {
             textY += lineH
         }
         return 11 + cachedLines.size * lineH
+    }
+
+    private fun playMiracleSound() {
+        if (!ModConfig.miracleNotification) return
+        val volume = ModConfig.raidNotifVolumeF()
+        if (volume <= 0f) return
+        val soundId = ModConfig.miracleSound
+        if (soundId.startsWith("custom:")) {
+            val filename = soundId.removePrefix("custom:")
+            Thread {
+                CustomSoundPlayer.play(filename, volume, 1.0f)
+            }.also { it.isDaemon = true }.start()
+        } else {
+            MinecraftClient.getInstance().execute {
+                try {
+                    val id = Identifier.of(soundId)
+                    val soundEvent = SoundEvent.of(id)
+                    MinecraftClient.getInstance().player?.playSound(soundEvent, volume, 1.0f)
+                } catch (_: Exception) {
+                    MinecraftClient.getInstance().player
+                        ?.playSound(SoundEvents.ENTITY_PLAYER_LEVELUP, volume, 1.0f)
+                }
+            }
+        }
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

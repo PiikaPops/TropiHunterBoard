@@ -1,0 +1,53 @@
+{
+  "999_social_credit_siren": {
+    "sounds": ["hunterboard:999-social-credit-siren"]
+  },
+  "ack": {
+    "sounds": ["hunterboard:ack"]
+  },
+  "among_us_role_reveal": {
+    "sounds": ["hunterboard:among-us-role-reveal"]
+  },
+  "anime_wow": {
+    "sounds": ["hunterboard:anime-wow"]
+  },
+  "bone_crack": {
+    "sounds": ["hunterboard:bone-crack"]
+  },
+  "boom": {
+    "sounds": ["hunterboard:boom"]
+  },
+  "coucou": {
+    "sounds": ["hunterboard:coucou"]
+  },
+  "dry_fart": {
+    "sounds": ["hunterboard:dry-fart"]
+  },
+  "girl_uwu": {
+    "sounds": ["hunterboard:girl-uwu"]
+  },
+  "lego_breaking": {
+    "sounds": ["hunterboard:lego-breaking"]
+  },
+  "metal_pipe": {
+    "sounds": ["hunterboard:metal-pipe"]
+  },
+  "miaou": {
+    "sounds": ["hunterboard:miaou"]
+  },
+  "nya": {
+    "sounds": ["hunterboard:nya"]
+  },
+  "quack": {
+    "sounds": ["hunterboard:quack"]
+  },
+  "rizz": {
+    "sounds": ["hunterboard:rizz"]
+  },
+  "undertakers_bell": {
+    "sounds": ["hunterboard:undertakers-bell"]
+  },
+  "special_rickroll": {
+    "sounds": ["hunterboard:special/rickroll"]
+  }
+}

@@ -76,6 +76,11 @@ object HuntOverlay {
     private const val BIOME_CHECK_INTERVAL_MS = 3_000L
     private const val BIOME_HIGHLIGHT_COLOR = 0xFF55FF55.toInt()
 
+    // Bravo GIF frames (6 frames, 40ms each = 240ms loop)
+    private val bravoFrames = Array(6) { Identifier.of("hunterboard", "img/cat-clap/frame_$it.png") }
+    private const val BRAVO_FRAME_MS = 40L
+    private const val BRAVO_GIF_SIZE = 10
+
     // Colors
     private fun BG_COLOR() = ModConfig.bgColor()
     private fun BORDER_COLOR() = ModConfig.accentColor()
@@ -105,12 +110,18 @@ object HuntOverlay {
     }
 
     private fun render(context: DrawContext) {
+        // Hide HUD during Pokémon battles
+        if (ModConfig.hideHudInBattle && !forceVisible && BattleHelper.isInBattle()) return
+
         val showHuntContent = ModConfig.showHuntHud || forceVisible
 
         // In non-merged mode, if hunt is hidden, nothing to do
         if (!showHuntContent && !ModConfig.mergedHudMode) return
 
         if (!BoardState.hudVisible && !forceVisible) return
+
+        // Bravo flag: show congratulations instead of target list (but keep header + merged content)
+        val isBravo = BoardState.showBravo && ModConfig.autoHideOnComplete && !forceVisible
 
         // Check merged content availability
         val hasMergedContent = ModConfig.mergedHudMode && (RaidTimerOverlay.isActive() || MiracleOverlay.isActive())
@@ -136,14 +147,15 @@ object HuntOverlay {
         val mode = if (hasHuntData) BoardState.displayMode else 0
         val allTargets = if (hasHuntData) BoardState.targets else emptyList()
         val displayTargets = if (hasHuntData) allTargets.take(ModConfig.maxHunts()) else emptyList()
-        val layout = SIZE_PRESETS[ModConfig.hudSizePreset.coerceIn(0, 3)]
+        val effectiveHuntSize = if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset
+        val layout = SIZE_PRESETS[effectiveHuntSize.coerceIn(0, 3)]
 
         // Rebuild caches if board data, display settings, or size changed
         if (hasHuntData && (BoardState.lastUpdated != lastBoardUpdate
             || mode != cachedDisplayMode
             || BoardState.displayCount != cachedDisplayCount
             || ModConfig.rank != cachedRank
-            || ModConfig.hudSizePreset != cachedSizePreset
+            || effectiveHuntSize != cachedSizePreset
             || ModConfig.gridLayout != cachedGridLayout
             || ModConfig.usePixelArt != cachedUsePixelArt
             || (ModConfig.usePixelArt && SpriteHelper.loadedCount != cachedSpriteLoadedCount))
@@ -161,7 +173,7 @@ object HuntOverlay {
             cachedDisplayMode = mode
             cachedDisplayCount = BoardState.displayCount
             cachedRank = ModConfig.rank
-            cachedSizePreset = ModConfig.hudSizePreset
+            cachedSizePreset = effectiveHuntSize
             cachedGridLayout = ModConfig.gridLayout
             cachedUsePixelArt = ModConfig.usePixelArt
             cachedSpriteLoadedCount = SpriteHelper.loadedCount
@@ -209,7 +221,10 @@ object HuntOverlay {
             gridCellW = MODEL_SIZE + 14
             gridCellH = MODEL_SIZE + 18
             panelW = cachedPanelWidth
-            huntContentH = if (ModConfig.gridLayout) {
+            huntContentH = if (isBravo) {
+                // Bravo mode: header + one text line + padding
+                headerH + 12 + PADDING
+            } else if (ModConfig.gridLayout) {
                 headerH + gridRows * gridCellH + PADDING + footerH
             } else {
                 headerH + displayTargets.size * ROW_HEIGHT + PADDING + footerH
@@ -298,7 +313,24 @@ object HuntOverlay {
             currentY = contentStartY + headerH
         }
 
-        if (ModConfig.gridLayout) {
+        if (isBravo) {
+            // Bravo mode: "Congrats! [cat]" centered
+            val bravoText = Translations.tr("Congrats!")
+            val bravoTextW = textRenderer.getWidth(bravoText)
+            val topLineW = bravoTextW + 2 + BRAVO_GIF_SIZE
+
+            val elapsed = System.currentTimeMillis() - BoardState.bravoStartTime
+            val frameIndex = ((elapsed / BRAVO_FRAME_MS) % bravoFrames.size).toInt()
+
+            val topLineX = x + (panelW - topLineW) / 2
+            val lineY = currentY + PADDING / 2
+            val bravoColor = 0xFF55FF55.toInt()
+            context.drawText(textRenderer, bravoText, topLineX, lineY, bravoColor, true)
+            try {
+                context.drawTexture(bravoFrames[frameIndex], topLineX + bravoTextW + 2, lineY - 1, 0f, 0f,
+                    BRAVO_GIF_SIZE, BRAVO_GIF_SIZE, BRAVO_GIF_SIZE, BRAVO_GIF_SIZE)
+            } catch (_: Exception) {}
+        } else if (ModConfig.gridLayout) {
             // ========== GRID RENDERING ==========
             val isLastRow = { r: Int -> r == gridRows - 1 }
             for ((index, target) in displayTargets.withIndex()) {
@@ -424,13 +456,15 @@ object HuntOverlay {
             }
         }
 
-        // Footer
+        // Footer (skip in bravo mode)
+        if (!isBravo) {
         if (mode <= 2) {
             val remainText = "${cachedRemaining}/${cachedTotal} | ${cachedReward}$"
             context.drawText(textRenderer, remainText, x, currentY + 2, cachedFooterColor, true)
         } else {
             val remainText = "${cachedRemaining}/${cachedTotal}"
             context.drawText(textRenderer, remainText, x + (panelW - textRenderer.getWidth(remainText)) / 2, currentY + 1, cachedFooterColor, true)
+        }
         }
 
         } // end if (hasHuntData)
@@ -470,7 +504,7 @@ object HuntOverlay {
         mode: Int
     ): Int {
         if (targets.isEmpty()) return 80
-        val layout = SIZE_PRESETS[ModConfig.hudSizePreset.coerceIn(0, 3)]
+        val layout = SIZE_PRESETS[(if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset).coerceIn(0, 3)]
         val MODEL_SIZE = layout.modelSize
         val PADDING = layout.padding
 
@@ -567,7 +601,7 @@ object HuntOverlay {
     private fun renderPlaceholder(context: DrawContext) {
         val client = MinecraftClient.getInstance()
         val textRenderer = client.textRenderer
-        val layout = SIZE_PRESETS[ModConfig.hudSizePreset.coerceIn(0, 3)]
+        val layout = SIZE_PRESETS[(if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset).coerceIn(0, 3)]
         val PADDING = layout.padding
 
         val text = Translations.tr("Click on a hunting board")

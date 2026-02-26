@@ -70,7 +70,7 @@ object RaidTimerOverlay {
     private fun handleChat(text: String) {
         if (RAID_TRIGGER_REGEX.containsMatchIn(text)) {
             notifDisplayUntil = System.currentTimeMillis() + 6_000L
-            playNotificationSound(ModConfig.raidStartSound, 5, 0.8f)
+            playRaidStartSound()
         }
     }
 
@@ -82,6 +82,7 @@ object RaidTimerOverlay {
     private fun render(context: DrawContext) {
         val client = MinecraftClient.getInstance()
         if (client.player == null) return
+        if (ModConfig.hideHudInBattle && BattleHelper.isInBattle()) { renderedW = 0; renderedH = 0; return }
         if (!BoardState.hudVisible) { renderedW = 0; renderedH = 0; return }
         if (!ModConfig.showRaidHud) { renderedW = 0; renderedH = 0; return }
 
@@ -114,8 +115,7 @@ object RaidTimerOverlay {
             if (sinceSec in 0..29 && notifiedRaidTime != lastRaid.toLocalTime()) {
                 notifiedRaidTime = lastRaid.toLocalTime()
                 notifDisplayUntil = System.currentTimeMillis() + 6_000L
-                // Play sound 5 times every 0.5s when raid starts
-                playNotificationSound(ModConfig.raidStartSound, 5, 0.8f)
+                playRaidStartSound()
             }
         }
 
@@ -125,7 +125,8 @@ object RaidTimerOverlay {
             if (notified5MinWarning != upcomingTime) {
                 notified5MinWarning = upcomingTime
                 warningDisplayUntil = System.currentTimeMillis() + 6_000L
-                playNotificationSound(ModConfig.raidWarningSound, 3, 1.2f)
+                val warnTimes = if (ModConfig.raidSoundRepeat) 3 else 1
+                playNotificationSound(ModConfig.raidWarningSound, warnTimes, 1.2f)
             }
         }
 
@@ -178,7 +179,7 @@ object RaidTimerOverlay {
         // In merged mode, skip standalone panel rendering
         if (ModConfig.mergedHudMode) { renderedW = 0; renderedH = 0; return }
 
-        val scale = ModConfig.hudScale()
+        val scale = ModConfig.raidScale()
         val panelW = maxOf(textRenderer.getWidth(labelText), textRenderer.getWidth(countdown)) + 12
         val panelH = 22
         val scaledW = (panelW * scale).toInt()
@@ -244,6 +245,16 @@ object RaidTimerOverlay {
         context.drawText(tr, cachedLabelText, labelX, y, accentColor, true)
         context.drawText(tr, cachedCountdown, countdownX, y + 10, if (cachedUrgent) 0xFFFF5533.toInt() else 0xFFFFFFFF.toInt(), true)
         return 22
+    }
+
+    private fun playRaidStartSound() {
+        // Easter egg: 1/2048 chance to play the special sound instead
+        if (kotlin.random.Random.nextInt(2048) == 0) {
+            playNotificationSound("hunterboard:special_rickroll", 1, 1.0f)
+        } else {
+            val times = if (ModConfig.raidSoundRepeat) 5 else 1
+            playNotificationSound(ModConfig.raidStartSound, times, 0.8f)
+        }
     }
 
     private fun playNotificationSound(soundId: String, times: Int, pitch: Float) {

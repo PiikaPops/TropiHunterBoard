@@ -2,6 +2,7 @@ package com.hunterboard
 
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.pokemon.Species
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.gui.widget.TextFieldWidget
@@ -28,6 +29,29 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
     // History toggle
     private var showingHistory = false
+
+    // Type icons (36x36 PNG, rendered as 10x10)
+    private val typeIcons = mapOf(
+        "normal" to Identifier.of("hunterboard", "img/types/normal.png"),
+        "fire" to Identifier.of("hunterboard", "img/types/fire.png"),
+        "water" to Identifier.of("hunterboard", "img/types/water.png"),
+        "grass" to Identifier.of("hunterboard", "img/types/grass.png"),
+        "electric" to Identifier.of("hunterboard", "img/types/electric.png"),
+        "ice" to Identifier.of("hunterboard", "img/types/ice.png"),
+        "fighting" to Identifier.of("hunterboard", "img/types/fighting.png"),
+        "poison" to Identifier.of("hunterboard", "img/types/poison.png"),
+        "ground" to Identifier.of("hunterboard", "img/types/ground.png"),
+        "flying" to Identifier.of("hunterboard", "img/types/flying.png"),
+        "psychic" to Identifier.of("hunterboard", "img/types/psychic.png"),
+        "bug" to Identifier.of("hunterboard", "img/types/bug.png"),
+        "rock" to Identifier.of("hunterboard", "img/types/rock.png"),
+        "ghost" to Identifier.of("hunterboard", "img/types/ghost.png"),
+        "dragon" to Identifier.of("hunterboard", "img/types/dragon.png"),
+        "dark" to Identifier.of("hunterboard", "img/types/dark.png"),
+        "steel" to Identifier.of("hunterboard", "img/types/steel.png"),
+        "fairy" to Identifier.of("hunterboard", "img/types/fairy.png")
+    )
+    private val typeIconSize = 10
 
     // Options button
     private val OPTIONS_ICON = Identifier.of("hunterboard", "img/option.png")
@@ -66,14 +90,42 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var langBtnW = 0
     private val langBtnH = 12
 
-    // Tab bounds for Pokemon/Moves toggle
+    // Tab bounds for Pokemon/Moves/Abilities toggle
     private var movesTabX = 0
     private var movesTabW = 0
+    private var abilitiesTabX = 0
+    private var abilitiesTabW = 0
+    private var itemsTabX = 0
+    private var itemsTabW = 0
     private val tabH = 12
+
+    // Sort / filter
+    private enum class SortMode { POKEDEX, ALPHABETICAL, TYPE }
+    private var sortMode: SortMode = SortMode.POKEDEX
+    private var showSortDropdown = false
+    private var selectedTypeFilter: String? = null
+    private var showTypeSubMenu = false
+    private var sortBtnX = 0
+    private var sortBtnY = 0
+    private var sortBtnW = 0
+    private val sortBtnH = 12
+    private val allTypes = listOf(
+        "normal", "fire", "water", "grass", "electric", "ice",
+        "fighting", "poison", "ground", "flying", "psychic", "bug",
+        "rock", "ghost", "dragon", "dark", "steel", "fairy"
+    )
 
     override fun init() {
         super.init()
         SpawnData.ensureLoaded()
+        // Pre-warm ability index in background so it's ready when switching to Abilities tab
+        if (!AbilityData.reverseIndexReady) {
+            Thread { AbilityData.buildReverseIndex() }.also { it.isDaemon = true }.start()
+        }
+        // Pre-warm drop index
+        if (!DropData.reverseIndexReady) {
+            Thread { DropData.buildReverseIndex() }.also { it.isDaemon = true }.start()
+        }
 
         if (allSpeciesSorted == null) {
             allSpeciesSorted = PokemonSpecies.species
@@ -96,8 +148,6 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             allEntriesSorted = entries
         }
 
-        refreshList()
-
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
         val panelTop = 25
@@ -108,13 +158,15 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         searchField.setChangedListener { updateSearch() }
         addDrawableChild(searchField)
         setInitialFocus(searchField)
+
+        refreshList()
     }
 
     private fun refreshList() {
         if (showingHistory) {
             filteredList = SearchHistory.getSpeciesList().map { PokemonEntry.Regular(it) }
         } else {
-            filteredList = allEntriesSorted ?: emptyList()
+            updateSearch()
         }
     }
 
@@ -123,26 +175,54 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val query = searchField.text.lowercase().trim()
         scrollOffset = 0
 
-        if (query.isEmpty()) {
-            filteredList = allEntriesSorted ?: emptyList()
-            return
-        }
+        var list = allEntriesSorted ?: emptyList()
 
-        filteredList = (allEntriesSorted ?: emptyList()).filter { entry ->
-            when (entry) {
-                is PokemonEntry.Regular -> {
-                    val displayName = Translations.speciesDisplayName(entry.species).lowercase()
-                    entry.species.name.contains(query) || displayName.contains(query)
-                }
-                is PokemonEntry.Mega -> {
-                    val displayName = Translations.speciesDisplayName(entry.species).lowercase()
-                    val mLabel = PokemonEntry.megaLabel(entry.form.name).lowercase()
-                    val fullName = "$mLabel $displayName"
-                    entry.species.name.contains(query) ||
-                    displayName.contains(query) ||
-                    fullName.contains(query)
+        // Text filter
+        if (query.isNotEmpty()) {
+            list = list.filter { entry ->
+                when (entry) {
+                    is PokemonEntry.Regular -> {
+                        val displayName = Translations.speciesDisplayName(entry.species).lowercase()
+                        entry.species.name.contains(query) || displayName.contains(query)
+                    }
+                    is PokemonEntry.Mega -> {
+                        val displayName = Translations.speciesDisplayName(entry.species).lowercase()
+                        val mLabel = PokemonEntry.megaLabel(entry.form.name).lowercase()
+                        val fullName = "$mLabel $displayName"
+                        entry.species.name.contains(query) ||
+                        displayName.contains(query) ||
+                        fullName.contains(query)
+                    }
                 }
             }
+        }
+
+        // Type filter
+        val typeF = selectedTypeFilter
+        if (typeF != null) {
+            list = list.filter { entry ->
+                try {
+                    val sp = when (entry) {
+                        is PokemonEntry.Regular -> entry.species
+                        is PokemonEntry.Mega -> entry.species
+                    }
+                    val primary = sp.primaryType.name.lowercase()
+                    val secondary = sp.secondaryType?.name?.lowercase()
+                    primary == typeF || secondary == typeF
+                } catch (_: Exception) { false }
+            }
+        }
+
+        // Sort
+        filteredList = when (sortMode) {
+            SortMode.POKEDEX -> list
+            SortMode.ALPHABETICAL -> list.sortedBy { entry ->
+                when (entry) {
+                    is PokemonEntry.Regular -> Translations.speciesDisplayName(entry.species).lowercase()
+                    is PokemonEntry.Mega -> Translations.speciesDisplayName(entry.species).lowercase()
+                }
+            }
+            SortMode.TYPE -> list
         }
     }
 
@@ -205,17 +285,23 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         }
         context.drawText(textRenderer, btnLabel, btnX + 4, btnY + 2, if (btnHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
-        // Gold separator
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, 0xFFFFAA00.toInt())
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
+        // Separator (uses accent color)
+        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
+        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt())
 
-        // Tabs: Pokémon | Capacités
+        // Tabs: Pokémon | Capacités | Talents | Objets
         val pokemonLabel: String = Translations.tr("Pokémon")
         val movesLabel: String = Translations.tr("Moves")
+        val abilitiesLabel: String = Translations.tr("Abilities")
+        val itemsLabel: String = Translations.tr("Items")
         val pokTabW = textRenderer.getWidth(pokemonLabel) + 8
         movesTabW = textRenderer.getWidth(movesLabel) + 8
+        abilitiesTabW = textRenderer.getWidth(abilitiesLabel) + 8
+        itemsTabW = textRenderer.getWidth(itemsLabel) + 8
         val pokTabX = panelX + 8
         movesTabX = pokTabX + pokTabW + 2
+        abilitiesTabX = movesTabX + movesTabW + 2
+        itemsTabX = abilitiesTabX + abilitiesTabW + 2
         val tY = panelTop + 20
 
         // Pokemon tab (active)
@@ -228,6 +314,16 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, if (movTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
         context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, if (movTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
 
+        // Abilities tab (inactive)
+        val abiTabHovered = mouseX in abilitiesTabX..(abilitiesTabX + abilitiesTabW) && mouseY in tY..(tY + tabH)
+        context.fill(abilitiesTabX, tY, abilitiesTabX + abilitiesTabW, tY + tabH, if (abiTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        context.drawText(textRenderer, abilitiesLabel, abilitiesTabX + 4, tY + 2, if (abiTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+
+        // Items tab (inactive)
+        val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
+        context.fill(itemsTabX, tY, itemsTabX + itemsTabW, tY + tabH, if (itemTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        context.drawText(textRenderer, itemsLabel, itemsTabX + 4, tY + 2, if (itemTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+
         // Language toggle button (right side of tab row)
         val langLabel = Translations.nameLanguageLabel()
         langBtnW = textRenderer.getWidth(langLabel) + 8
@@ -237,6 +333,20 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
         drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
         context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+
+        // Sort button (left of language button)
+        val sortLabel = when (sortMode) {
+            SortMode.POKEDEX -> "#"
+            SortMode.ALPHABETICAL -> "A-Z"
+            SortMode.TYPE -> selectedTypeFilter?.let { Translations.formatTypeName(it).take(3) } ?: "Type"
+        }
+        sortBtnW = textRenderer.getWidth(sortLabel) + 8
+        sortBtnX = langBtnX - sortBtnW - 4
+        sortBtnY = tY
+        val sortHovered = mouseX in sortBtnX..(sortBtnX + sortBtnW) && mouseY in sortBtnY..(sortBtnY + sortBtnH)
+        context.fill(sortBtnX, sortBtnY, sortBtnX + sortBtnW, sortBtnY + sortBtnH, if (sortHovered || showSortDropdown) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
+        context.drawText(textRenderer, sortLabel, sortBtnX + 4, sortBtnY + 2, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
         // Results area (higher when search bar is hidden in history mode)
         val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
@@ -273,6 +383,22 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFFFFFFF.toInt()
                             context.drawText(textRenderer, displayName, panelX + 18, y + 3, nameColor, true)
 
+                            // Type icons after name
+                            var iconX = panelX + 18 + textRenderer.getWidth(displayName) + 3
+                            try {
+                                val primary = entry.species.primaryType.name.lowercase()
+                                typeIcons[primary]?.let {
+                                    context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    iconX += typeIconSize + 1
+                                }
+                                val secondary = entry.species.secondaryType?.name?.lowercase()
+                                if (secondary != null) {
+                                    typeIcons[secondary]?.let {
+                                        context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+
                             val dexText = "#${entry.species.nationalPokedexNumber}"
                             val dexWidth = textRenderer.getWidth(dexText)
                             context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, y + 3, 0xFF777777.toInt(), true)
@@ -290,6 +416,23 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                             val displayName = "$mLabel ${Translations.speciesDisplayName(entry.species)}"
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFCC99FF.toInt()
                             context.drawText(textRenderer, displayName, panelX + 18 + prefixW, y + 3, nameColor, true)
+
+                            // Type icons after name (use form types if available)
+                            var iconX = panelX + 18 + prefixW + textRenderer.getWidth(displayName) + 3
+                            try {
+                                val form = entry.form
+                                val primary = (try { form.primaryType } catch (_: Exception) { null } ?: entry.species.primaryType).name.lowercase()
+                                typeIcons[primary]?.let {
+                                    context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    iconX += typeIconSize + 1
+                                }
+                                val secondary = (try { form.secondaryType } catch (_: Exception) { null } ?: entry.species.secondaryType)?.name?.lowercase()
+                                if (secondary != null) {
+                                    typeIcons[secondary]?.let {
+                                        context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    }
+                                }
+                            } catch (_: Exception) {}
 
                             val dexText = "#${entry.species.nationalPokedexNumber}"
                             val dexWidth = textRenderer.getWidth(dexText)
@@ -360,13 +503,43 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(donateBtnX, donateBtnY + donateBtnH - 1, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
         context.fill(donateBtnX + donateBtnW - 1, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
         context.drawText(textRenderer, donateText, donateBtnX + 8, donateBtnY + 4, 0xFFFFFFFF.toInt(), true)
+
+        // Version mention
+        val modVersion = FabricLoader.getInstance().getModContainer(HunterBoard.MOD_ID)
+            .map { it.metadata.version.friendlyString }.orElse("?")
+        val versionText = "HunterBoard $modVersion"
+        val versionX = (width - textRenderer.getWidth(versionText)) / 2
+        context.drawText(textRenderer, versionText, versionX, height - 12, 0xFFCCCCCC.toInt(), true)
+
+        // Sort dropdown (rendered last to be on top of everything)
+        if (showSortDropdown) {
+            renderSortDropdown(context, mouseX, mouseY)
+        }
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            // Sort dropdown / type sub-menu clicks (handle first, before anything else)
+            if (showSortDropdown) {
+                val handled = handleSortDropdownClick(mouseX, mouseY)
+                if (handled) return true
+                // Click was outside dropdown → close it
+                showSortDropdown = false
+                showTypeSubMenu = false
+                return true
+            }
+
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
+
+            // Sort button click
+            if (mouseX >= sortBtnX && mouseX <= sortBtnX + sortBtnW &&
+                mouseY >= sortBtnY.toDouble() && mouseY <= (sortBtnY + sortBtnH).toDouble()) {
+                showSortDropdown = !showSortDropdown
+                showTypeSubMenu = false
+                return true
+            }
 
             // Close button ✕
             val closeX = panelX + panelWidth - 12
@@ -423,6 +596,20 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             if (mouseX >= movesTabX && mouseX <= movesTabX + movesTabW &&
                 mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
                 client?.setScreen(MoveSearchScreen())
+                return true
+            }
+
+            // Abilities tab click
+            if (mouseX >= abilitiesTabX && mouseX <= abilitiesTabX + abilitiesTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(AbilitySearchScreen())
+                return true
+            }
+
+            // Items tab click
+            if (mouseX >= itemsTabX && mouseX <= itemsTabX + itemsTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(ItemDropSearchScreen())
                 return true
             }
 
@@ -532,6 +719,138 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             "ultra-rare" -> 0xFFBB66FF.toInt()
             else -> 0xFF888888.toInt()
         }
+    }
+
+    private fun handleSortDropdownClick(mouseX: Double, mouseY: Double): Boolean {
+        val dropX = sortBtnX
+        val dropY = sortBtnY + sortBtnH + 2
+        val itemH = 14
+        val options = listOf("Pokédex (#)" to SortMode.POKEDEX, "A-Z" to SortMode.ALPHABETICAL, "Type" to SortMode.TYPE)
+        val dropW = options.maxOf { textRenderer.getWidth(Translations.tr(it.first)) } + 20
+        val dropH = options.size * itemH + 4
+
+        // Type sub-menu click (single column to the right)
+        if (showTypeSubMenu) {
+            val subItemH = 14
+            val subX = dropX + dropW + 2
+            val subY = dropY
+            val typeMaxW = allTypes.maxOf { textRenderer.getWidth(Translations.formatTypeName(it)) } + typeIconSize + 4
+            val allLabelW = textRenderer.getWidth(Translations.tr("All types"))
+            val subW = maxOf(typeMaxW, allLabelW) + 12
+            val subH = (allTypes.size + 1) * subItemH + 4
+
+            if (mouseX >= subX && mouseX <= subX + subW && mouseY >= subY && mouseY <= subY + subH) {
+                val relY = mouseY - subY - 2
+                val row = (relY / subItemH).toInt()
+                if (row < 0) return true
+                if (row == 0) {
+                    selectedTypeFilter = null
+                    showSortDropdown = false; showTypeSubMenu = false
+                    updateSearch(); return true
+                }
+                val typeIdx = row - 1
+                if (typeIdx in allTypes.indices) {
+                    selectedTypeFilter = allTypes[typeIdx]
+                    sortMode = SortMode.TYPE
+                    showSortDropdown = false; showTypeSubMenu = false
+                    updateSearch(); return true
+                }
+                return true
+            }
+        }
+
+        // Main dropdown click
+        if (mouseX >= dropX && mouseX <= dropX + dropW && mouseY >= dropY && mouseY <= dropY + dropH) {
+            for ((i, pair) in options.withIndex()) {
+                val (_, mode) = pair
+                val iy = dropY + 2 + i * itemH
+                if (mouseY >= iy && mouseY <= iy + itemH) {
+                    if (mode == SortMode.TYPE) {
+                        sortMode = SortMode.TYPE
+                        showTypeSubMenu = !showTypeSubMenu
+                    } else {
+                        sortMode = mode
+                        selectedTypeFilter = null
+                        showSortDropdown = false
+                        showTypeSubMenu = false
+                        updateSearch()
+                    }
+                    return true
+                }
+            }
+            return true
+        }
+
+        return false
+    }
+
+    private fun renderSortDropdown(context: DrawContext, mouseX: Int, mouseY: Int) {
+        // Push Z to render on top of everything
+        context.matrices.push()
+        context.matrices.translate(0f, 0f, 200f)
+
+        val dropX = sortBtnX
+        val dropY = sortBtnY + sortBtnH + 2
+        val itemH = 14
+        val options = listOf("Pokédex (#)" to SortMode.POKEDEX, "A-Z" to SortMode.ALPHABETICAL, "Type" to SortMode.TYPE)
+        val dropW = options.maxOf { textRenderer.getWidth(Translations.tr(it.first)) } + 20
+        val dropH = options.size * itemH + 4
+
+        // Background + border
+        context.fill(dropX, dropY, dropX + dropW, dropY + dropH, 0xFF1A1A1A.toInt())
+        drawBorder(context, dropX, dropY, dropW, dropH, 0xFF555555.toInt())
+
+        for ((i, pair) in options.withIndex()) {
+            val (label, mode) = pair
+            val iy = dropY + 2 + i * itemH
+            val hovered = mouseX in dropX..(dropX + dropW) && mouseY in iy..(iy + itemH)
+            val active = sortMode == mode
+            if (hovered) context.fill(dropX + 1, iy, dropX + dropW - 1, iy + itemH, 0xFF252525.toInt())
+            val color = if (active) ModConfig.accentColor() else if (hovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt()
+            context.drawText(textRenderer, Translations.tr(label), dropX + 6, iy + 3, color, true)
+            if (mode == SortMode.TYPE) {
+                val arrow = if (showTypeSubMenu) "\u25BE" else "\u25B8"
+                context.drawText(textRenderer, arrow, dropX + dropW - 10, iy + 3, color, true)
+            }
+        }
+
+        // Type sub-menu (single column to the right of the dropdown)
+        if (showTypeSubMenu) {
+            val subItemH = 14
+            val subX = dropX + dropW + 2
+            val subY = dropY
+            val typeMaxW = allTypes.maxOf { textRenderer.getWidth(Translations.formatTypeName(it)) } + typeIconSize + 4
+            val allLabelW = textRenderer.getWidth(Translations.tr("All types"))
+            val subW = maxOf(typeMaxW, allLabelW) + 12
+            val subH = (allTypes.size + 1) * subItemH + 4
+
+            context.fill(subX, subY, subX + subW, subY + subH, 0xFF1A1A1A.toInt())
+            drawBorder(context, subX, subY, subW, subH, 0xFF555555.toInt())
+
+            // "All types" option
+            val allLabel = Translations.tr("All types")
+            val allY = subY + 2
+            val allHovered = mouseX in subX..(subX + subW) && mouseY in allY..(allY + subItemH)
+            val allActive = selectedTypeFilter == null
+            if (allHovered) context.fill(subX + 1, allY, subX + subW - 1, allY + subItemH, 0xFF252525.toInt())
+            context.drawText(textRenderer, allLabel, subX + 6, allY + 3,
+                if (allActive) ModConfig.accentColor() else if (allHovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt(), true)
+
+            // Type entries
+            for ((i, typeName) in allTypes.withIndex()) {
+                val ty = subY + 2 + (i + 1) * subItemH
+                val hovered = mouseX in subX..(subX + subW) && mouseY in ty..(ty + subItemH)
+                val active = selectedTypeFilter == typeName
+                if (hovered) context.fill(subX + 1, ty, subX + subW - 1, ty + subItemH, 0xFF252525.toInt())
+                typeIcons[typeName]?.let {
+                    context.drawTexture(it, subX + 4, ty + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                }
+                val color = if (active) ModConfig.accentColor() else if (hovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt()
+                context.drawText(textRenderer, Translations.formatTypeName(typeName), subX + 4 + typeIconSize + 4, ty + 3, color, true)
+            }
+        }
+
+        context.matrices.pop()
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

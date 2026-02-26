@@ -266,7 +266,7 @@ class MoveDetailScreen(
         var y = startY
 
         for (learner in group) {
-            val species = PokemonSpecies.getByName(learner.speciesName)
+            val species = safeGetByName(learner.speciesName)
             val displayName = species?.translatedName?.string
                 ?: learner.speciesName.replaceFirstChar { it.uppercase() }
             val levelSuffix = if (method == "level-up" && learner.level > 0) " (${learner.level})" else ""
@@ -333,7 +333,7 @@ class MoveDetailScreen(
         var col = 0
 
         for (learner in group) {
-            val species = PokemonSpecies.getByName(learner.speciesName)
+            val species = safeGetByName(learner.speciesName)
             val displayName = species?.translatedName?.string
                 ?: learner.speciesName.replaceFirstChar { it.uppercase() }
             val levelSuffix = if (method == "level-up" && learner.level > 0) " (${learner.level})" else ""
@@ -373,7 +373,7 @@ class MoveDetailScreen(
     private fun getOrCreateWidget(speciesName: String): ModelWidget? {
         if (speciesName in modelWidgetCache) return modelWidgetCache[speciesName]
         return try {
-            val species = PokemonSpecies.getByName(speciesName)
+            val species = safeGetByName(speciesName)
                 ?: run { modelWidgetCache[speciesName] = null; return null }
             val widget = ModelWidget(
                 pX = 0, pY = 0,
@@ -459,7 +459,7 @@ class MoveDetailScreen(
             for (bound in pokemonBounds) {
                 if (mouseX >= bound.x && mouseX <= bound.x + bound.w &&
                     mouseY >= bound.y.toDouble() && mouseY <= (bound.y + bound.h).toDouble()) {
-                    val species = PokemonSpecies.getByName(bound.speciesName)
+                    val species = safeGetByName(bound.speciesName)
                     if (species != null) {
                         client?.setScreen(PokemonDetailScreen(species, this))
                         return true
@@ -541,6 +541,13 @@ class MoveDetailScreen(
     private fun getCategoryColor(name: String): Int = when (name.lowercase()) {
         "physical" -> 0xFFFF6644.toInt(); "special" -> 0xFF6688FF.toInt()
         "status" -> 0xFFAABBCC.toInt(); else -> 0xFFCCCCCC.toInt()
+    }
+
+    private fun safeGetByName(name: String): com.cobblemon.mod.common.pokemon.Species? {
+        return try {
+            PokemonSpecies.species.find { it.resourceIdentifier.path == name }
+                ?: PokemonSpecies.getByName(name)
+        } catch (_: Exception) { null }
     }
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {

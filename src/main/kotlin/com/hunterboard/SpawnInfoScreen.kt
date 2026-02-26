@@ -3,6 +3,7 @@ package com.hunterboard
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
+import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.client.gui.screen.Screen
@@ -602,6 +603,13 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
         context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
 
+        // Version mention
+        val modVersion = FabricLoader.getInstance().getModContainer(HunterBoard.MOD_ID)
+            .map { it.metadata.version.friendlyString }.orElse("?")
+        val versionText = "HunterBoard $modVersion"
+        val versionX = (width - textRenderer.getWidth(versionText)) / 2
+        context.drawText(textRenderer, versionText, versionX, height - 12, 0xFFCCCCCC.toInt(), true)
+
         // Tooltips rendered last (on top of everything)
         context.matrices.push()
         context.matrices.translate(0f, 0f, 400f)
@@ -717,7 +725,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     .filter { !it.isCaught }
                     .joinToString(" ") { Translations.pokemonName(it.speciesId) }
                 if (uncaughtNames.isNotEmpty()) {
-                    val message = "[Chasse] $uncaughtNames"
+                    val message = "[*Chasse*] $uncaughtNames"
                     client?.setScreen(ChatScreen(message))
                 }
                 return true

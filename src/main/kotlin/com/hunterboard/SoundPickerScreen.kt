@@ -52,7 +52,9 @@ class SoundPickerScreen(
 
     override fun init() {
         super.init()
-        allSounds = Registries.SOUND_EVENT.ids.toList().sortedBy { it.toString() }
+        allSounds = Registries.SOUND_EVENT.ids
+            .filter { it.namespace != HunterBoard.MOD_ID || !it.path.startsWith("special_") }
+            .toList().sortedBy { it.toString() }
         filteredSounds = allSounds
         customSounds = CustomSoundPlayer.listSounds()
         filteredCustom = customSounds

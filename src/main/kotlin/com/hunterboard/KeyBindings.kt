@@ -71,8 +71,16 @@ object KeyBindings {
             if (searchKey.wasPressed()) {
                 val mc = MinecraftClient.getInstance()
                 if (mc.currentScreen == null) {
-                    SpawnData.ensureLoaded()
-                    mc.setScreen(PokemonSearchScreen())
+                    // During battle: open opponent's detail screen
+                    if (BattleHelper.isInBattle()) {
+                        val species = BattleHelper.getOpponentSpecies()
+                        if (species != null) {
+                            mc.setScreen(PokemonDetailScreen(species, null))
+                        }
+                    } else {
+                        SpawnData.ensureLoaded()
+                        mc.setScreen(PokemonSearchScreen())
+                    }
                 }
             }
 
