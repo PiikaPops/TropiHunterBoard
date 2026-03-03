@@ -25,7 +25,10 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         private set
     private var allEntriesSorted: List<PokemonEntry>? = null
     private var scrollOffset = 0
-    private val rowHeight = 16
+    private val rowHeightNormal = 16
+    private val rowHeightSprite = 20
+    private var showSprites = false
+    private val rowHeight: Int get() = if (showSprites) rowHeightSprite else rowHeightNormal
 
     // History toggle
     private var showingHistory = false
@@ -109,6 +112,10 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var sortBtnY = 0
     private var sortBtnW = 0
     private val sortBtnH = 12
+    private var spriteBtnX = 0
+    private var spriteBtnY = 0
+    private var spriteBtnW = 0
+    private val spriteBtnH = 12
     private val allTypes = listOf(
         "normal", "fire", "water", "grass", "electric", "ice",
         "fighting", "poison", "ground", "flying", "psychic", "bug",
@@ -348,6 +355,17 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         drawBorder(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
         context.drawText(textRenderer, sortLabel, sortBtnX + 4, sortBtnY + 2, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
 
+        // Sprite toggle button (left of sort button)
+        val spriteLabel = if (showSprites) "\u25A3" else "\u25A2" // filled/empty square icon
+        spriteBtnW = textRenderer.getWidth(spriteLabel) + 8
+        spriteBtnX = sortBtnX - spriteBtnW - 4
+        spriteBtnY = tY
+        val spriteHovered = mouseX in spriteBtnX..(spriteBtnX + spriteBtnW) && mouseY in spriteBtnY..(spriteBtnY + spriteBtnH)
+        val spriteActive = showSprites
+        context.fill(spriteBtnX, spriteBtnY, spriteBtnX + spriteBtnW, spriteBtnY + spriteBtnH, if (spriteHovered || spriteActive) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, spriteBtnX, spriteBtnY, spriteBtnW, spriteBtnH, if (spriteActive) ModConfig.accentColor() else if (spriteHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
+        context.drawText(textRenderer, spriteLabel, spriteBtnX + 4, spriteBtnY + 2, if (spriteActive) ModConfig.accentColor() else if (spriteHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+
         // Results area (higher when search bar is hidden in history mode)
         val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
         val resultsBottom = panelBottom - 16
@@ -377,66 +395,96 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                         is PokemonEntry.Regular -> {
                             val spawns = SpawnData.getSpawns(entry.species.name)
                             val rarity = spawns.firstOrNull()?.bucket ?: ""
-                            context.fill(panelX + 10, y + 4, panelX + 14, y + 8, getRarityColor(rarity))
 
+                            // 2D sprite icon (only when toggle is ON)
+                            val spriteId = if (showSprites) SpriteHelper.getSpriteIdentifier(entry.species.name) else null
+                            val spriteSize = if (showSprites) 16 else 12
+                            val textStartX: Int
+                            if (spriteId != null) {
+                                val spriteRenderSize = (spriteSize * 1.3).toInt()
+                                val spriteOffset = (spriteRenderSize - spriteSize) / 2
+                                context.drawTexture(spriteId, panelX + 8 - spriteOffset, y + (rowHeight - spriteSize) / 2 - spriteOffset, 0f, 0f, spriteRenderSize, spriteRenderSize, spriteRenderSize, spriteRenderSize)
+                                textStartX = panelX + 8 + spriteSize + 2
+                            } else {
+                                context.fill(panelX + 10, y + rowHeight / 2 - 2, panelX + 14, y + rowHeight / 2 + 2, getRarityColor(rarity))
+                                textStartX = panelX + 18
+                            }
+
+                            val textY = y + (rowHeight - 9) / 2
+                            val iconY = y + (rowHeight - typeIconSize) / 2
                             val displayName = Translations.speciesDisplayName(entry.species)
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFFFFFFF.toInt()
-                            context.drawText(textRenderer, displayName, panelX + 18, y + 3, nameColor, true)
+                            context.drawText(textRenderer, displayName, textStartX, textY, nameColor, true)
 
                             // Type icons after name
-                            var iconX = panelX + 18 + textRenderer.getWidth(displayName) + 3
+                            var iconX = textStartX + textRenderer.getWidth(displayName) + 3
                             try {
                                 val primary = entry.species.primaryType.name.lowercase()
                                 typeIcons[primary]?.let {
-                                    context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    context.drawTexture(it, iconX, iconY, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
                                     iconX += typeIconSize + 1
                                 }
                                 val secondary = entry.species.secondaryType?.name?.lowercase()
                                 if (secondary != null) {
                                     typeIcons[secondary]?.let {
-                                        context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                        context.drawTexture(it, iconX, iconY, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
                                     }
                                 }
                             } catch (_: Exception) {}
 
                             val dexText = "#${entry.species.nationalPokedexNumber}"
                             val dexWidth = textRenderer.getWidth(dexText)
-                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, y + 3, 0xFF777777.toInt(), true)
+                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, textY, 0xFF777777.toInt(), true)
                         }
                         is PokemonEntry.Mega -> {
-                            // Purple crystal dot marker
-                            context.fill(panelX + 10, y + 4, panelX + 14, y + 8, 0xFF9966FF.toInt())
+                            // 2D sprite icon for mega (use base species sprite)
+                            val spriteId = if (showSprites) SpriteHelper.getSpriteIdentifier(entry.species.name) else null
+                            val spriteSize = if (showSprites) 16 else 12
+                            val megaTextStartX: Int
+                            if (spriteId != null) {
+                                val spriteRenderSize = (spriteSize * 1.3).toInt()
+                                val spriteOffset = (spriteRenderSize - spriteSize) / 2
+                                context.drawTexture(spriteId, panelX + 8 - spriteOffset, y + (rowHeight - spriteSize) / 2 - spriteOffset, 0f, 0f, spriteRenderSize, spriteRenderSize, spriteRenderSize, spriteRenderSize)
+                                megaTextStartX = panelX + 8 + spriteSize + 2
+                            } else {
+                                // Purple crystal dot marker fallback
+                                context.fill(panelX + 10, y + rowHeight / 2 - 2, panelX + 14, y + rowHeight / 2 + 2, 0xFF9966FF.toInt())
+                                megaTextStartX = panelX + 18
+                            }
+
+                            val megaTextY = y + (rowHeight - 9) / 2
+                            val megaIconY = y + (rowHeight - typeIconSize) / 2
 
                             // "↳" indent prefix
                             val prefix = "\u21b3 "
                             val prefixW = textRenderer.getWidth(prefix)
-                            context.drawText(textRenderer, prefix, panelX + 18, y + 3, 0xFF665588.toInt(), true)
+                            context.drawText(textRenderer, prefix, megaTextStartX, megaTextY, 0xFF665588.toInt(), true)
 
                             val mLabel = PokemonEntry.megaLabel(entry.form.name)
                             val displayName = "$mLabel ${Translations.speciesDisplayName(entry.species)}"
                             val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFCC99FF.toInt()
-                            context.drawText(textRenderer, displayName, panelX + 18 + prefixW, y + 3, nameColor, true)
+                            context.drawText(textRenderer, displayName, megaTextStartX + prefixW, megaTextY, nameColor, true)
 
                             // Type icons after name (use form types if available)
-                            var iconX = panelX + 18 + prefixW + textRenderer.getWidth(displayName) + 3
+                            var iconX = megaTextStartX + prefixW + textRenderer.getWidth(displayName) + 3
                             try {
                                 val form = entry.form
                                 val primary = (try { form.primaryType } catch (_: Exception) { null } ?: entry.species.primaryType).name.lowercase()
                                 typeIcons[primary]?.let {
-                                    context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                    context.drawTexture(it, iconX, megaIconY, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
                                     iconX += typeIconSize + 1
                                 }
                                 val secondary = (try { form.secondaryType } catch (_: Exception) { null } ?: entry.species.secondaryType)?.name?.lowercase()
                                 if (secondary != null) {
                                     typeIcons[secondary]?.let {
-                                        context.drawTexture(it, iconX, y + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
+                                        context.drawTexture(it, iconX, megaIconY, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
                                     }
                                 }
                             } catch (_: Exception) {}
 
                             val dexText = "#${entry.species.nationalPokedexNumber}"
                             val dexWidth = textRenderer.getWidth(dexText)
-                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, y + 3, 0xFF665588.toInt(), true)
+                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, megaTextY, 0xFF665588.toInt(), true)
                         }
                     }
                 }
@@ -538,6 +586,14 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                 mouseY >= sortBtnY.toDouble() && mouseY <= (sortBtnY + sortBtnH).toDouble()) {
                 showSortDropdown = !showSortDropdown
                 showTypeSubMenu = false
+                return true
+            }
+
+            // Sprite toggle button click
+            if (mouseX >= spriteBtnX && mouseX <= spriteBtnX + spriteBtnW &&
+                mouseY >= spriteBtnY.toDouble() && mouseY <= (spriteBtnY + spriteBtnH).toDouble()) {
+                showSprites = !showSprites
+                scrollOffset = 0
                 return true
             }
 

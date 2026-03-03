@@ -16,8 +16,8 @@ object RaidTimerOverlay {
 
     private val ZONE = ZoneId.of("Europe/Paris")
 
-    // Chat-triggered raid detection (e.g. "<pseudo> a déclenché un Raid !")
-    private val RAID_TRIGGER_REGEX = Regex(""".+ a déclenché un Raid\s*!""")
+    // Chat-triggered raid detection (e.g. "<pseudo> a déclenché un Raid !" or "un Mega Raid !")
+    private val RAID_TRIGGER_REGEX = Regex(""".+ a déclenché un (Mega )?Raid\s*!""")
 
     // Raid times in Paris local time
     private val RAID_TIMES = listOf(
@@ -44,6 +44,7 @@ object RaidTimerOverlay {
     private var initialized = false
     private var notifiedRaidTime: LocalTime? = null
     private var notifDisplayUntil: Long = 0L
+    private var isMegaRaid = false
 
     // 5-minute warning state
     private var notified5MinWarning: LocalTime? = null
@@ -68,7 +69,9 @@ object RaidTimerOverlay {
     }
 
     private fun handleChat(text: String) {
-        if (RAID_TRIGGER_REGEX.containsMatchIn(text)) {
+        val match = RAID_TRIGGER_REGEX.find(text)
+        if (match != null) {
+            isMegaRaid = match.groupValues[1].isNotEmpty()
             notifDisplayUntil = System.currentTimeMillis() + 6_000L
             playRaidStartSound()
         }
@@ -114,6 +117,7 @@ object RaidTimerOverlay {
             val sinceSec = ChronoUnit.SECONDS.between(lastRaid, now)
             if (sinceSec in 0..29 && notifiedRaidTime != lastRaid.toLocalTime()) {
                 notifiedRaidTime = lastRaid.toLocalTime()
+                isMegaRaid = false // timer-based raids are normal raids
                 notifDisplayUntil = System.currentTimeMillis() + 6_000L
                 playRaidStartSound()
             }
@@ -149,7 +153,8 @@ object RaidTimerOverlay {
 
         // === Notification banner (top-center, shown for 6s) ===
         if (notifDisplayUntil > sysNow) {
-            val notifText = "\u2726  ${Translations.tr("Raid Active!")}  \u2726"
+            val raidLabel = if (isMegaRaid) Translations.tr("Mega Raid Active!") else Translations.tr("Raid Active!")
+            val notifText = "\u2726  $raidLabel  \u2726"
             val nW = textRenderer.getWidth(notifText) + 20
             val nH = 18
             val nX = (screenW - nW) / 2

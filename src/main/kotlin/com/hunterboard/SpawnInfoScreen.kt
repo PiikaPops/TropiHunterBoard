@@ -260,6 +260,87 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 val mainRarity = spawns.firstOrNull()?.bucket ?: ""
                 val mainRarityColor = getRarityColor(mainRarity)
 
+                // Compact card for caught targets
+                if (target.isCaught) {
+                    val compactH = MODEL_SIZE + 12
+                    if (y + compactH < contentTop || y > contentBottom) {
+                        toggleButtons.add(ToggleBounds(-1000, -1000, index))
+                        y += compactH + 5
+                        totalHeight += compactH + 5
+                        continue
+                    }
+                    // Card background (dark red)
+                    context.fill(cardX, y, cardX + cardWidth, y + compactH, 0xFF201414.toInt())
+                    context.fill(cardX, y, cardX + 3, y + compactH, 0xFF663333.toInt())
+                    context.fill(cardX + 3, y, cardX + cardWidth, y + 1, 0xFF282828.toInt())
+                    context.fill(cardX, y + compactH - 1, cardX + cardWidth, y + compactH, 0xFF0A0A0A.toInt())
+
+                    // Pokemon icon
+                    val iconX = cardX + 4
+                    val iconY = y - 2
+                    val spriteId = if (ModConfig.usePixelArt) cachedSpriteIds.getOrNull(index) else null
+                    if (spriteId != null) {
+                        val scaledSize = (MODEL_SIZE * 1.4).toInt()
+                        val spriteOffset = (scaledSize - MODEL_SIZE) / 2
+                        context.drawTexture(spriteId, iconX - spriteOffset, iconY - spriteOffset, 0f, 0f, scaledSize, scaledSize, scaledSize, scaledSize)
+                    } else if (index < modelWidgets.size) {
+                        val widget = modelWidgets[index]
+                        if (widget != null) {
+                            try { widget.x = iconX; widget.y = iconY; widget.render(context, mouseX, mouseY, delta) } catch (_: Exception) {}
+                        }
+                    }
+                    // Red cross overlay on model
+                    context.matrices.push()
+                    context.matrices.translate(0.0, 0.0, 200.0)
+                    for (i in 0 until MODEL_SIZE step 2) {
+                        val px1 = iconX + i; val py1 = iconY + i
+                        context.fill(px1, py1, px1 + 3, py1 + 3, 0xCCFF3333.toInt())
+                        val px2 = iconX + MODEL_SIZE - i - 3
+                        context.fill(px2, py1, px2 + 3, py1 + 3, 0xCCFF3333.toInt())
+                    }
+                    context.matrices.pop()
+
+                    // Strikethrough name
+                    val pokeName: String = Translations.pokemonName(target.speciesId)
+                    val nameText = "\u2713 $pokeName"
+                    val nameTextW = textRenderer.getWidth(nameText)
+                    val pokeClickX = cardX + 4
+                    val pokeClickW = (textContentX + nameTextW) - pokeClickX
+                    val nameHovered = mouseX >= pokeClickX && mouseX <= pokeClickX + pokeClickW &&
+                            mouseY >= y && mouseY <= y + compactH &&
+                            mouseY >= contentTop && mouseY <= contentBottom
+                    val nameColor = if (nameHovered) ModConfig.accentColor() else 0xFFFF5555.toInt()
+                    val textY = y + (compactH - 9) / 2
+                    context.drawText(textRenderer, nameText, textContentX, textY, nameColor, true)
+                    // Strikethrough line
+                    context.fill(textContentX, textY + 4, textContentX + nameTextW, textY + 5, 0xFFFF5555.toInt())
+                    if (nameHovered) {
+                        context.fill(textContentX, textY + 10, textContentX + nameTextW, textY + 11, ModConfig.accentColor())
+                    }
+                    pokemonClickAreas.add(PokemonClickBounds(pokeClickX, y, pokeClickW, compactH, index))
+
+                    // Toggle button
+                    val toggleX = cardX + cardWidth - TOGGLE_SIZE - 6
+                    val toggleY = y + (compactH - TOGGLE_SIZE) / 2
+                    toggleButtons.add(ToggleBounds(toggleX, toggleY, index))
+                    val toggleHovered = mouseX >= toggleX && mouseX <= toggleX + TOGGLE_SIZE &&
+                            mouseY >= toggleY && mouseY <= toggleY + TOGGLE_SIZE &&
+                            mouseY >= contentTop && mouseY <= contentBottom
+                    val toggleBg = if (toggleHovered) 0xFF3A1A1A.toInt() else 0xFF201414.toInt()
+                    context.fill(toggleX, toggleY, toggleX + TOGGLE_SIZE, toggleY + TOGGLE_SIZE, toggleBg)
+                    val toggleBorder = if (toggleHovered) 0xFFFF7777.toInt() else 0xFFCC5555.toInt()
+                    drawBorder(context, toggleX, toggleY, TOGGLE_SIZE, TOGGLE_SIZE, toggleBorder)
+                    val check = "\u2714"
+                    val checkW = textRenderer.getWidth(check)
+                    context.drawText(textRenderer, check,
+                        toggleX + (TOGGLE_SIZE - checkW) / 2, toggleY + (TOGGLE_SIZE - 9) / 2,
+                        0xFFFF5555.toInt(), true)
+
+                    y += compactH + 5
+                    totalHeight += compactH + 5
+                    continue
+                }
+
                 // Use cached card height
                 val cardHeight = cachedCardHeights.getOrElse(index) {
                     val cardContentH = calculateCardContentHeight(spawns, maxTextW)

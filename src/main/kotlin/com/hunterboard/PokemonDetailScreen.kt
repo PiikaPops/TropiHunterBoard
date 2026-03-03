@@ -191,9 +191,9 @@ class PokemonDetailScreen(
                 pX = 0, pY = 0,
                 pWidth = MODEL_SIZE, pHeight = MODEL_SIZE,
                 pokemon = pokemon,
-                baseScale = 3.0f,
+                baseScale = 2.6f,
                 rotationY = 325f,
-                offsetY = -18.0,
+                offsetY = -5.0,
                 playCryOnClick = true
             )
         } catch (_: Exception) {}

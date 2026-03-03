@@ -75,7 +75,8 @@ object KeyBindings {
                     if (BattleHelper.isInBattle()) {
                         val species = BattleHelper.getOpponentSpecies()
                         if (species != null) {
-                            mc.setScreen(PokemonDetailScreen(species, null))
+                            SpawnData.ensureLoaded()
+                            mc.setScreen(PokemonDetailScreen(species, PokemonSearchScreen()))
                         }
                     } else {
                         SpawnData.ensureLoaded()

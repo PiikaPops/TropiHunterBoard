@@ -87,6 +87,14 @@ object ModConfig {
     var hideHudInBattle: Boolean = true
         private set
 
+    // Hide caught targets in HUD
+    var hideCaughtInHud: Boolean = false
+        private set
+
+    // Show battle hunt notification HUD
+    var showBattleHuntHud: Boolean = true
+        private set
+
     // Raid notification sounds
     var raidStartSound: String = "minecraft:block.bell.use"
         private set
@@ -260,6 +268,16 @@ object ModConfig {
         save()
     }
 
+    fun toggleHideCaughtInHud() {
+        hideCaughtInHud = !hideCaughtInHud
+        save()
+    }
+
+    fun toggleBattleHuntHud() {
+        showBattleHuntHud = !showBattleHuntHud
+        save()
+    }
+
     fun setRaidStartSound(soundId: String) {
         raidStartSound = soundId
         save()
@@ -329,6 +347,8 @@ object ModConfig {
         raidSoundRepeat = true
         miracleNotification = true
         miracleSound = "minecraft:entity.player.levelup"
+        hideCaughtInHud = false
+        showBattleHuntHud = true
         save()
     }
 
@@ -379,6 +399,8 @@ object ModConfig {
                 miracleNotification = data.miracleNotification
                 miracleSound = data.miracleSound
                 hideHudInBattle = data.hideHudInBattle
+                hideCaughtInHud = data.hideCaughtInHud
+                showBattleHuntHud = data.showBattleHuntHud
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -396,7 +418,8 @@ object ModConfig {
                 showRaidHud, showMiracleHud, fullClearMode, gridLayout, mergedHudMode, usePixelArt,
                 showHuntHud, autoHideOnComplete,
                 raidStartSound, raidWarningSound, raidNotification, raidNotifVolume, raidSoundRepeat,
-                miracleNotification, miracleSound, hideHudInBattle
+                miracleNotification, miracleSound, hideHudInBattle, hideCaughtInHud,
+                showBattleHuntHud
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -436,6 +459,8 @@ object ModConfig {
         val raidSoundRepeat: Boolean = true,
         val miracleNotification: Boolean = true,
         val miracleSound: String = "minecraft:entity.player.levelup",
-        val hideHudInBattle: Boolean = true
+        val hideHudInBattle: Boolean = true,
+        val hideCaughtInHud: Boolean = false,
+        val showBattleHuntHud: Boolean = true
     )
 }

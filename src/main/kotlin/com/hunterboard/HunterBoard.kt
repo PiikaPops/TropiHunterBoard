@@ -40,6 +40,9 @@ object HunterBoard : ClientModInitializer {
 
         HuntOverlay.register()
 
+        // Register battle hunt notification overlay
+        BattleHuntOverlay.register()
+
         // Register auto-catch detection
         CatchDetector.register()
 

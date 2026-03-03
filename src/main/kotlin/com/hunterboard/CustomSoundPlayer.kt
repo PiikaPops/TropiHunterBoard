@@ -64,7 +64,20 @@ object CustomSoundPlayer {
     }
 
     private fun playWav(file: File, volume: Float) {
-        val audioStream = AudioSystem.getAudioInputStream(file)
+        val rawStream = AudioSystem.getAudioInputStream(file)
+        val srcFormat = rawStream.format
+        // Convert to a format Java Clip always supports (PCM signed 16-bit LE)
+        val targetFormat = AudioFormat(
+            AudioFormat.Encoding.PCM_SIGNED,
+            srcFormat.sampleRate,
+            16,
+            srcFormat.channels,
+            srcFormat.channels * 2,
+            srcFormat.sampleRate,
+            false
+        )
+        val audioStream = if (srcFormat.matches(targetFormat)) rawStream
+                          else AudioSystem.getAudioInputStream(targetFormat, rawStream)
         val clip = AudioSystem.getClip()
         clip.open(audioStream)
         setVolume(clip, volume)
