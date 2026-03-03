@@ -59,13 +59,28 @@ object SpawnData {
     var loadError: String? = null
         private set
 
+    /** Normalize any species name to a canonical key (strips all non-alphanumeric) */
+    private fun normalizeKey(name: String): String =
+        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    /** Store a spawn entry under its normalized key (and optionally form key) */
+    private fun storeSpawn(map: MutableMap<String, MutableList<SpawnEntry>>, species: String, form: String, entry: SpawnEntry) {
+        val baseKey = normalizeKey(species)
+        if (form.isNotEmpty()) {
+            map.getOrPut("$baseKey $form") { mutableListOf() }.add(entry)
+        }
+        // Always store under base key so formless lookups work
+        map.getOrPut(baseKey) { mutableListOf() }.add(entry)
+    }
+
     fun getSpawns(pokemonName: String, formName: String = ""): List<SpawnEntry> {
+        val key = normalizeKey(pokemonName)
         if (formName.isNotEmpty()) {
-            val formKey = "${pokemonName.lowercase()} ${formName.lowercase()}"
+            val formKey = "$key ${formName.lowercase()}"
             val formSpawns = spawnMap[formKey]
             if (!formSpawns.isNullOrEmpty()) return formSpawns
         }
-        return spawnMap[pokemonName.lowercase()] ?: emptyList()
+        return spawnMap[key] ?: emptyList()
     }
 
     fun ensureLoaded() {
@@ -175,11 +190,7 @@ object SpawnData {
                     presets = presetList,
                     weightMultipliers = multipliers
                 )
-                if (form.isNotEmpty()) {
-                    map.getOrPut("$species $form") { mutableListOf() }.add(entry)
-                } else {
-                    map.getOrPut(species) { mutableListOf() }.add(entry)
-                }
+                storeSpawn(map, species, form, entry)
             }
 
             spawnMap = map
@@ -342,11 +353,7 @@ object SpawnData {
             presets = presetList.toList(),
             weightMultipliers = multipliers
         )
-        if (form.isNotEmpty()) {
-            map.getOrPut("$species $form") { mutableListOf() }.add(entry)
-        } else {
-            map.getOrPut(species) { mutableListOf() }.add(entry)
-        }
+        storeSpawn(map, species, form, entry)
     }
 
     private fun parseHerdSpawn(obj: JsonObject, map: MutableMap<String, MutableList<SpawnEntry>>) {
@@ -443,11 +450,7 @@ object SpawnData {
                 presets = presetList.toList(),
                 weightMultipliers = multipliers
             )
-            if (form.isNotEmpty()) {
-                map.getOrPut("$species $form") { mutableListOf() }.add(entry)
-            } else {
-                map.getOrPut(species) { mutableListOf() }.add(entry)
-            }
+            storeSpawn(map, species, form, entry)
         }
     }
 

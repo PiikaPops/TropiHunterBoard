@@ -351,6 +351,9 @@ object Translations {
         "Pokémon dropping this item" to "Pokémon qui droppent cet objet",
         "No Pokémon drops this item" to "Aucun Pokémon ne droppe cet objet",
         "Hide in Battle" to "Cacher en combat",
+        "Hide Caught" to "Cacher chassés",
+        "Battle Hunt HUD" to "HUD combat chasse",
+        "Hunt Pokémon!" to "Pokémon de chasse !",
         "Physical" to "Physique",
         "Special" to "Spéciale",
         "Status" to "Statut",
@@ -419,6 +422,7 @@ object Translations {
         // Raid timer
         "Next Raid" to "Prochain Raid",
         "Raid Active!" to "Raid en cours !",
+        "Mega Raid Active!" to "Mega Raid en cours !",
 
         // Spawn detail labels
         "SkyLight:" to "Lum. ciel :",
@@ -460,6 +464,7 @@ object Translations {
         "Minecraft" to "Minecraft",
         "Custom" to "Personnalisé",
         "Open folder" to "Ouvrir dossier",
+        "Refresh" to "Actualiser",
         "No custom sounds" to "Aucun son personnalisé",
         "Drop .wav or .ogg files in:" to "Déposez des fichiers .wav ou .ogg dans :",
         "Donate to _Popichu" to "Faire un don à _Popichu",
@@ -591,6 +596,40 @@ object Translations {
                 part.startsWith("steps:") -> {
                     val steps = part.removePrefix("steps:")
                     if (isFrench()) "$steps pas" else "$steps steps"
+                }
+                part.startsWith("walked:") -> {
+                    val amount = part.removePrefix("walked:")
+                    if (isFrench()) "Marcher $amount blocs" else "Walk $amount blocks"
+                }
+                part.startsWith("structure:") -> {
+                    val raw = part.removePrefix("structure:")
+                    val isAnti = raw.startsWith("!")
+                    val structName = (if (isAnti) raw.removePrefix("!") else raw)
+                        .removePrefix("#minecraft:").removePrefix("minecraft:")
+                        .replace("_", " ").replaceFirstChar { it.uppercase() }
+                    if (isAnti) {
+                        if (isFrench()) "Hors $structName" else "Outside $structName"
+                    } else {
+                        if (isFrench()) "Dans $structName" else "In $structName"
+                    }
+                }
+                part.startsWith("stat_compare:") -> {
+                    val split = part.removePrefix("stat_compare:").split(":")
+                    val statA = split.getOrElse(0) { "" }.replaceFirstChar { it.uppercase() }
+                    val comp = split.getOrElse(1) { "" }
+                    val statB = split.getOrElse(2) { "" }.replaceFirstChar { it.uppercase() }
+                    val symbol = when (comp.lowercase()) {
+                        "greater_than" -> ">"
+                        "less_than" -> "<"
+                        else -> "="
+                    }
+                    "$statA $symbol $statB"
+                }
+                part.startsWith("stat_equal:") -> {
+                    val split = part.removePrefix("stat_equal:").split(":")
+                    val statA = split.getOrElse(0) { "" }.replaceFirstChar { it.uppercase() }
+                    val statB = split.getOrElse(1) { "" }.replaceFirstChar { it.uppercase() }
+                    "$statA = $statB"
                 }
                 part == "overworld" -> null // skip, not useful info
                 part == "party" -> null // skip

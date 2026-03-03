@@ -12,6 +12,10 @@ object CobblemonLangLoader {
     private var frMoveNames: Map<String, String>? = null
     private var loaded = false
 
+    /** Normalize species key: strip all non-alphanumeric for consistent lookup */
+    private fun normalizeKey(name: String): String =
+        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+
     fun ensureLoaded() {
         if (loaded) return
         loaded = true
@@ -53,7 +57,7 @@ object CobblemonLangLoader {
             when {
                 key.startsWith("cobblemon.species.") && key.endsWith(".name") -> {
                     val speciesId = key.removePrefix("cobblemon.species.").removeSuffix(".name")
-                    species[speciesId] = value.asString
+                    species[normalizeKey(speciesId)] = value.asString
                 }
                 key.startsWith("cobblemon.move.") && key.endsWith(".name") -> {
                     val moveId = key.removePrefix("cobblemon.move.").removeSuffix(".name")
@@ -67,12 +71,12 @@ object CobblemonLangLoader {
 
     fun getEnglishSpeciesName(speciesId: String): String? {
         ensureLoaded()
-        return enSpeciesNames?.get(speciesId.lowercase())
+        return enSpeciesNames?.get(normalizeKey(speciesId))
     }
 
     fun getFrenchSpeciesName(speciesId: String): String? {
         ensureLoaded()
-        return frSpeciesNames?.get(speciesId.lowercase())
+        return frSpeciesNames?.get(normalizeKey(speciesId))
     }
 
     fun getEnglishMoveName(moveId: String): String? {

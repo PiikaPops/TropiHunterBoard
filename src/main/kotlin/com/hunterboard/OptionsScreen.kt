@@ -252,6 +252,29 @@ class OptionsScreen(
             if (hbHov || ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF444444.toInt())
         context.drawText(textRenderer, hbLabel, leftX + 5, y + 3,
             if (ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+
+        val hcStart = leftX + hbBtnW + 6
+        val hcLabel = "${Translations.tr("Hide Caught")}: ${if (ModConfig.hideCaughtInHud) "ON" else "OFF"}"
+        val hcBtnW = textRenderer.getWidth("${Translations.tr("Hide Caught")}: OFF") + 10
+        val hcHov = mouseX >= hcStart && mouseX <= hcStart + hcBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(hcStart, y, hcStart + hcBtnW, y + 14,
+            if (ModConfig.hideCaughtInHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, hcStart, y, hcBtnW, 14,
+            if (hcHov || ModConfig.hideCaughtInHud) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, hcLabel, hcStart + 5, y + 3,
+            if (ModConfig.hideCaughtInHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
+
+        // Battle Hunt HUD toggle
+        val bhLabel = "${Translations.tr("Battle Hunt HUD")}: ${if (ModConfig.showBattleHuntHud) "ON" else "OFF"}"
+        val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
+        val bhHov = mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + bhBtnW, y + 14,
+            if (ModConfig.showBattleHuntHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, bhBtnW, 14,
+            if (bhHov || ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, bhLabel, leftX + 5, y + 3,
+            if (ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 20
 
         // Separator
@@ -693,6 +716,22 @@ class OptionsScreen(
         val hbBtnW = textRenderer.getWidth("${Translations.tr("Hide in Battle")}: OFF") + 10
         if (mouseX >= leftX && mouseX <= leftX + hbBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleHideHudInBattle()
+            return true
+        }
+
+        // Hide Caught toggle
+        val hcStart = leftX + hbBtnW + 6
+        val hcBtnW = textRenderer.getWidth("${Translations.tr("Hide Caught")}: OFF") + 10
+        if (mouseX >= hcStart && mouseX <= hcStart + hcBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleHideCaughtInHud()
+            return true
+        }
+        y += 18
+
+        // Battle Hunt HUD toggle
+        val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleBattleHuntHud()
             return true
         }
         y += 20

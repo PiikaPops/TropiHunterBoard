@@ -147,6 +147,12 @@ object HuntOverlay {
         val mode = if (hasHuntData) BoardState.displayMode else 0
         val allTargets = if (hasHuntData) BoardState.targets else emptyList()
         val displayTargets = if (hasHuntData) allTargets.take(ModConfig.maxHunts()) else emptyList()
+        // Filtered targets for rendering (hide caught when option enabled)
+        val renderTargets: List<Pair<Int, HuntTarget>> = if (hasHuntData && ModConfig.hideCaughtInHud) {
+            displayTargets.mapIndexedNotNull { i, t -> if (!t.isCaught) i to t else null }
+        } else {
+            displayTargets.mapIndexed { i, t -> i to t }
+        }
         val effectiveHuntSize = if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset
         val layout = SIZE_PRESETS[effectiveHuntSize.coerceIn(0, 3)]
 
@@ -216,8 +222,8 @@ object HuntOverlay {
             showHeader = mode <= 2
             headerH = if (showHeader) HEADER_HEIGHT + 6 else HEADER_HEIGHT
             footerH = if (mode <= 2) 14 else 10
-            gridCols = if (displayTargets.size >= 5) 3 else 2
-            gridRows = if (ModConfig.gridLayout) kotlin.math.ceil(displayTargets.size.toFloat() / gridCols).toInt() else 0
+            gridCols = if (renderTargets.size >= 5) 3 else 2
+            gridRows = if (ModConfig.gridLayout) kotlin.math.ceil(renderTargets.size.toFloat() / gridCols).toInt() else 0
             gridCellW = MODEL_SIZE + 14
             gridCellH = MODEL_SIZE + 18
             panelW = cachedPanelWidth
@@ -227,7 +233,7 @@ object HuntOverlay {
             } else if (ModConfig.gridLayout) {
                 headerH + gridRows * gridCellH + PADDING + footerH
             } else {
-                headerH + displayTargets.size * ROW_HEIGHT + PADDING + footerH
+                headerH + renderTargets.size * ROW_HEIGHT + PADDING + footerH
             }
         } else {
             showHeader = false
@@ -333,9 +339,10 @@ object HuntOverlay {
         } else if (ModConfig.gridLayout) {
             // ========== GRID RENDERING ==========
             val isLastRow = { r: Int -> r == gridRows - 1 }
-            for ((index, target) in displayTargets.withIndex()) {
-                val col = index % gridCols
-                val row = index / gridCols
+            for ((renderIdx, pair) in renderTargets.withIndex()) {
+                val (index, target) = pair
+                val col = renderIdx % gridCols
+                val row = renderIdx / gridCols
                 val cellX = x + col * gridCellW
                 val cellY = currentY + row * gridCellH
 
@@ -381,7 +388,8 @@ object HuntOverlay {
             currentY += gridRows * gridCellH
         } else {
             // ========== LIST RENDERING ==========
-            for ((index, target) in displayTargets.withIndex()) {
+            for ((_, pair) in renderTargets.withIndex()) {
+                val (index, target) = pair
                 val inSpawnBiome = cachedBiomeHighlight.getOrElse(index) { false }
                 val color = when {
                     target.isCaught -> CAUGHT_COLOR

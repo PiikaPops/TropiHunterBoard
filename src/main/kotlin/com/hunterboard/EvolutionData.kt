@@ -238,7 +238,7 @@ object EvolutionData {
                         val biome = req.get("biomeCondition")?.asString ?: ""
                         parts.add("biome:$biome")
                     }
-                    "move_learned" -> {
+                    "move_learned", "has_move" -> {
                         val move = req.get("move")?.asString ?: ""
                         parts.add("move:$move")
                     }
@@ -269,9 +269,30 @@ object EvolutionData {
                         val chance = req.get("percentage")?.asFloat
                         if (chance != null) parts.add("random:$chance")
                     }
-                    "has_pokemon_in_party" -> {
+                    "has_pokemon_in_party", "party_member" -> {
                         val pokemon = req.get("target")?.asString ?: ""
                         parts.add("party_pokemon:$pokemon")
+                    }
+                    "structure" -> {
+                        val struct = req.get("structureCondition")?.asString
+                            ?: req.get("structureAnticondition")?.asString ?: ""
+                        val isAnti = req.has("structureAnticondition")
+                        parts.add("structure:${if (isAnti) "!" else ""}$struct")
+                    }
+                    "blocks_traveled" -> {
+                        val amount = req.get("amount")?.asInt
+                        if (amount != null) parts.add("walked:$amount")
+                    }
+                    "stat_compare" -> {
+                        val statA = req.get("stat1")?.asString ?: req.get("statA")?.asString ?: ""
+                        val statB = req.get("stat2")?.asString ?: req.get("statB")?.asString ?: ""
+                        val comp = req.get("comparison")?.asString ?: ""
+                        parts.add("stat_compare:$statA:$comp:$statB")
+                    }
+                    "stat_equal" -> {
+                        val statA = req.get("stat1")?.asString ?: req.get("statA")?.asString ?: ""
+                        val statB = req.get("stat2")?.asString ?: req.get("statB")?.asString ?: ""
+                        parts.add("stat_equal:$statA:$statB")
                     }
                     "recoil_damage" -> {
                         val damage = req.get("damage")?.asInt

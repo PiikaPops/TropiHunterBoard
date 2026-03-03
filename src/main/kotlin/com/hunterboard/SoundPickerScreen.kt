@@ -38,6 +38,12 @@ class SoundPickerScreen(
     private var openFolderBtnW = 0
     private val openFolderBtnH = 12
 
+    // Refresh button bounds
+    private var refreshBtnX = 0
+    private var refreshBtnY = 0
+    private var refreshBtnW = 0
+    private val refreshBtnH = 12
+
     // Scrollbar state
     private var isScrollbarDragging = false
     private var scrollbarDragStartY = 0.0
@@ -191,17 +197,30 @@ class SoundPickerScreen(
         context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
 
         if (activeTab == 1) {
-            // Open folder button — centered, white, prominent
-            val openText = "\u2192 ${Translations.tr("Open folder")} \u2190"
-            openFolderBtnW = textRenderer.getWidth(openText) + 16
-            openFolderBtnX = panelX + (panelWidth - openFolderBtnW) / 2
+            // Open folder + Refresh buttons — side by side, centered
+            val openText = "\u2192 ${Translations.tr("Open folder")}"
+            val refreshText = "\u21bb ${Translations.tr("Refresh")}"
+            openFolderBtnW = textRenderer.getWidth(openText) + 12
+            refreshBtnW = textRenderer.getWidth(refreshText) + 12
+            val totalBtnW = openFolderBtnW + 4 + refreshBtnW
+            openFolderBtnX = panelX + (panelWidth - totalBtnW) / 2
             openFolderBtnY = panelBottom - 13
+            refreshBtnX = openFolderBtnX + openFolderBtnW + 4
+            refreshBtnY = panelBottom - 13
+
             val openHovered = mouseX >= openFolderBtnX && mouseX <= openFolderBtnX + openFolderBtnW &&
                     mouseY >= openFolderBtnY && mouseY <= openFolderBtnY + openFolderBtnH
             context.fill(openFolderBtnX, openFolderBtnY, openFolderBtnX + openFolderBtnW, openFolderBtnY + openFolderBtnH,
                 if (openHovered) 0xFF3A3A3A.toInt() else 0xFF2A2A2A.toInt())
-            context.drawText(textRenderer, openText, openFolderBtnX + 8, openFolderBtnY + 2,
+            context.drawText(textRenderer, openText, openFolderBtnX + 6, openFolderBtnY + 2,
                 if (openHovered) 0xFFFFFFFF.toInt() else 0xFFDDDDDD.toInt(), true)
+
+            val refreshHovered = mouseX >= refreshBtnX && mouseX <= refreshBtnX + refreshBtnW &&
+                    mouseY >= refreshBtnY && mouseY <= refreshBtnY + refreshBtnH
+            context.fill(refreshBtnX, refreshBtnY, refreshBtnX + refreshBtnW, refreshBtnY + refreshBtnH,
+                if (refreshHovered) 0xFF3A3A3A.toInt() else 0xFF2A2A2A.toInt())
+            context.drawText(textRenderer, refreshText, refreshBtnX + 6, refreshBtnY + 2,
+                if (refreshHovered) 0xFFFFFFFF.toInt() else 0xFFDDDDDD.toInt(), true)
         } else {
             val hint: String = Translations.tr("ESC to return")
             val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
@@ -348,6 +367,14 @@ class SoundPickerScreen(
         if (activeTab == 1 && mouseX >= openFolderBtnX && mouseX <= openFolderBtnX + openFolderBtnW &&
             mouseY >= openFolderBtnY.toDouble() && mouseY <= (openFolderBtnY + openFolderBtnH).toDouble()) {
             CustomSoundPlayer.openDirectory()
+            return true
+        }
+
+        // Refresh button (custom tab only)
+        if (activeTab == 1 && mouseX >= refreshBtnX && mouseX <= refreshBtnX + refreshBtnW &&
+            mouseY >= refreshBtnY.toDouble() && mouseY <= (refreshBtnY + refreshBtnH).toDouble()) {
+            customSounds = CustomSoundPlayer.listSounds()
+            updateSearch()
             return true
         }
 

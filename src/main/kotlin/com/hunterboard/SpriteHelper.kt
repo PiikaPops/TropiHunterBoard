@@ -32,8 +32,12 @@ object SpriteHelper {
      * Get a sprite texture identifier for the given species name.
      * Returns null if the sprite isn't available yet (triggers async download).
      */
+    /** Normalize species name to a safe key (strips all non-alphanumeric) */
+    private fun normalizeKey(name: String): String =
+        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+
     fun getSpriteIdentifier(speciesName: String): Identifier? {
-        val key = speciesName.lowercase()
+        val key = normalizeKey(speciesName)
 
         // Check memory cache
         if (spriteCache.containsKey(key)) return spriteCache[key]
@@ -48,7 +52,7 @@ object SpriteHelper {
         if (downloading.add(key)) {
             Thread {
                 try {
-                    downloadSprite(key)
+                    downloadSprite(key, speciesName)
                 } catch (_: Exception) {
                     spriteCache[key] = null
                 } finally {
@@ -60,8 +64,9 @@ object SpriteHelper {
         return null
     }
 
-    private fun downloadSprite(key: String) {
+    private fun downloadSprite(key: String, originalName: String) {
         val species = PokemonSpecies.getByName(key)
+            ?: PokemonSpecies.getByName(originalName.lowercase())
         if (species == null) { spriteCache[key] = null; return }
 
         val dexNum = species.nationalPokedexNumber
