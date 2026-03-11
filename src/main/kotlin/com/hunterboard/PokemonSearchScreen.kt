@@ -15,6 +15,11 @@ import java.net.URI
 
 class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
+    companion object {
+        var savedScrollOffset = 0
+        var savedQuery = ""
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // Skip default blur/background - we draw our own
     }
@@ -27,7 +32,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var scrollOffset = 0
     private val rowHeightNormal = 16
     private val rowHeightSprite = 20
-    private var showSprites = false
+    private var showSprites = ModConfig.wikiShowSprites
     private val rowHeight: Int get() = if (showSprites) rowHeightSprite else rowHeightNormal
 
     // History toggle
@@ -162,11 +167,14 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 37, panelWidth - 20, 16, Text.literal(placeholder))
         searchField.setMaxLength(50)
-        searchField.setChangedListener { updateSearch() }
+        searchField.text = savedQuery
+        lastQuery = savedQuery
+        searchField.setChangedListener { updateSearch(); savedQuery = searchField.text; savedScrollOffset = scrollOffset }
         addDrawableChild(searchField)
         setInitialFocus(searchField)
 
         refreshList()
+        scrollOffset = savedScrollOffset
     }
 
     private fun refreshList() {
@@ -177,10 +185,15 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         }
     }
 
+    private var lastQuery = ""
+
     private fun updateSearch() {
         if (showingHistory) return
         val query = searchField.text.lowercase().trim()
-        scrollOffset = 0
+        if (query != lastQuery) {
+            scrollOffset = 0
+            lastQuery = query
+        }
 
         var list = allEntriesSorted ?: emptyList()
 
@@ -593,6 +606,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             if (mouseX >= spriteBtnX && mouseX <= spriteBtnX + spriteBtnW &&
                 mouseY >= spriteBtnY.toDouble() && mouseY <= (spriteBtnY + spriteBtnH).toDouble()) {
                 showSprites = !showSprites
+                ModConfig.wikiShowSprites = showSprites
                 scrollOffset = 0
                 return true
             }
@@ -756,6 +770,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val contentHeight = filteredList.size * rowHeight + 4
         val maxScroll = maxOf(0, contentHeight - resultsAreaHeight)
         scrollOffset = (scrollOffset - (verticalAmount * 20).toInt()).coerceIn(0, maxScroll)
+        savedScrollOffset = scrollOffset
         return true
     }
 

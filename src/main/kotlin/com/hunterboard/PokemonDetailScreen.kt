@@ -10,6 +10,7 @@ import com.cobblemon.mod.common.pokemon.FormData
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import com.cobblemon.mod.common.pokemon.abilities.HiddenAbility
+import com.mojang.blaze3d.systems.RenderSystem
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
@@ -79,6 +80,15 @@ class PokemonDetailScreen(
     private var shinyBtnY = 0
     private val shinyBtnW = 14
     private val shinyBtnH = 14
+
+    // Cosmetic overlay
+    private var availableCosmetics: List<CosmeticEntry> = emptyList()
+    private var selectedCosmeticIndex = -1
+    private var showCosmeticOverlay = false
+    private var cosmeticBtnX = 0
+    private var cosmeticBtnY = 0
+    private val cosmeticBtnW = 14
+    private val cosmeticBtnH = 14
 
     // Scrollbar drag state
     private var isScrollbarDragging = false
@@ -177,6 +187,11 @@ class PokemonDetailScreen(
             if (idx >= 0) currentFormIndex = idx
         }
 
+        // Load cosmetic items for this species
+        availableCosmetics = try { CosmeticData.getCosmeticsForSpecies(species.name) } catch (_: Exception) { emptyList() }
+        selectedCosmeticIndex = -1
+        showCosmeticOverlay = false
+
         rebuildModel()
     }
 
@@ -185,7 +200,10 @@ class PokemonDetailScreen(
             val formAspects = if (availableForms.isNotEmpty() && currentFormIndex < availableForms.size) {
                 try { availableForms[currentFormIndex].aspects.toSet() } catch (_: Exception) { emptySet() }
             } else emptySet()
-            val aspects = if (isShiny) formAspects + "shiny" else formAspects
+            var aspects = if (isShiny) formAspects + "shiny" else formAspects
+            if (selectedCosmeticIndex in availableCosmetics.indices) {
+                aspects = aspects + availableCosmetics[selectedCosmeticIndex].aspectName
+            }
             val pokemon = RenderablePokemon(species, aspects)
             modelWidget = ModelWidget(
                 pX = 0, pY = 0,
@@ -193,7 +211,7 @@ class PokemonDetailScreen(
                 pokemon = pokemon,
                 baseScale = 2.6f,
                 rotationY = 325f,
-                offsetY = -5.0,
+                offsetY = -15.0,
                 playCryOnClick = true
             )
         } catch (_: Exception) {}
@@ -400,12 +418,28 @@ class PokemonDetailScreen(
                 modelRenderY = y - 4
                 modelWidget!!.x = modelRenderX
                 modelWidget!!.y = modelRenderY
-                modelWidget!!.render(context, mouseX, mouseY, delta)
+                val now = java.time.LocalDate.now()
+                val isAprilFools = now.monthValue == 4 && now.dayOfMonth == 1
+                if (isAprilFools) {
+                    val centerY = (modelRenderY + MODEL_SIZE / 2).toFloat()
+                    context.matrices.push()
+                    context.matrices.translate(0f, centerY, 0f)
+                    context.matrices.scale(1f, -1f, 1f)
+                    context.matrices.translate(0f, -centerY, 0f)
+                    RenderSystem.disableCull()
+                    modelWidget!!.render(context, mouseX, mouseY, delta)
+                    RenderSystem.enableCull()
+                    context.matrices.pop()
+                } else {
+                    modelWidget!!.render(context, mouseX, mouseY, delta)
+                }
             } catch (_: Exception) {}
         }
 
-        // Shiny toggle button
-        shinyBtnX = leftX + (MODEL_SIZE - shinyBtnW) / 2
+        // Shiny + Cosmetic toggle buttons (centered under model)
+        val hasCosmetics = availableCosmetics.isNotEmpty()
+        val totalBtnW = if (hasCosmetics) shinyBtnW + 2 + cosmeticBtnW else shinyBtnW
+        shinyBtnX = leftX + (MODEL_SIZE - totalBtnW) / 2
         shinyBtnY = y - 4 + MODEL_SIZE + 2
         val shinyHovered = mouseX >= shinyBtnX && mouseX <= shinyBtnX + shinyBtnW &&
                            mouseY >= shinyBtnY && mouseY <= shinyBtnY + shinyBtnH
@@ -422,6 +456,30 @@ class PokemonDetailScreen(
         val star = "\u2726"
         val starW = textRenderer.getWidth(star)
         context.drawText(textRenderer, star, shinyBtnX + (shinyBtnW - starW) / 2, shinyBtnY + 3, starColor, true)
+
+        // Cosmetic button (only if cosmetics available)
+        if (hasCosmetics) {
+            cosmeticBtnX = shinyBtnX + shinyBtnW + 2
+            cosmeticBtnY = shinyBtnY
+            val cosmeticActive = selectedCosmeticIndex >= 0
+            val cosmeticHovered = mouseX >= cosmeticBtnX && mouseX <= cosmeticBtnX + cosmeticBtnW &&
+                                  mouseY >= cosmeticBtnY && mouseY <= cosmeticBtnY + cosmeticBtnH
+            val cosmeticBg = when {
+                cosmeticActive && cosmeticHovered -> 0xFF3A3000.toInt()
+                cosmeticActive -> 0xFF2A2200.toInt()
+                cosmeticHovered -> 0xFF303030.toInt()
+                else -> 0xFF1E1E1E.toInt()
+            }
+            context.fill(cosmeticBtnX, cosmeticBtnY, cosmeticBtnX + cosmeticBtnW, cosmeticBtnY + cosmeticBtnH, cosmeticBg)
+            val cosmeticBorder = if (cosmeticActive) 0xFFFFAA00.toInt() else if (cosmeticHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
+            drawBorder(context, cosmeticBtnX, cosmeticBtnY, cosmeticBtnW, cosmeticBtnH, cosmeticBorder)
+            val hatIcon = "\u2666"
+            val hatColor = if (cosmeticActive) 0xFFFFDD00.toInt() else 0xFF888888.toInt()
+            val hatW = textRenderer.getWidth(hatIcon)
+            context.drawText(textRenderer, hatIcon, cosmeticBtnX + (cosmeticBtnW - hatW) / 2, cosmeticBtnY + 3, hatColor, true)
+        }
+
+        // Cosmetic dropdown overlay (rendered later, after all content, before tooltips)
 
         val infoX = leftX + MODEL_SIZE + 6
         var leftY = y + 4
@@ -880,6 +938,46 @@ class PokemonDetailScreen(
 
         context.disableScissor()
 
+        // Cosmetic dropdown overlay (rendered on top of everything with Z-offset)
+        if (showCosmeticOverlay && availableCosmetics.isNotEmpty()) {
+            val overlayX = cosmeticBtnX - 20
+            val rowH = 18
+            val overlayItemCount = availableCosmetics.size + 1 // +1 for "None"
+            val overlayH = overlayItemCount * rowH + 6 // 3px padding top + bottom
+            val overlayW = availableCosmetics.maxOf { textRenderer.getWidth(it.displayName) + 24 }.coerceAtLeast(80)
+            val overlayY = cosmeticBtnY + cosmeticBtnH + 2
+
+            context.matrices.push()
+            context.matrices.translate(0f, 0f, 200f)
+
+            // Opaque background
+            context.fill(overlayX, overlayY, overlayX + overlayW, overlayY + overlayH, 0xFF111111.toInt())
+            drawBorder(context, overlayX, overlayY, overlayW, overlayH, ModConfig.accentColor())
+
+            var oy = overlayY + 3
+            // "None" option
+            val noneHovered = mouseX >= overlayX && mouseX <= overlayX + overlayW && mouseY >= oy && mouseY < oy + rowH
+            if (noneHovered) context.fill(overlayX + 1, oy, overlayX + overlayW - 1, oy + rowH, 0xFF2A2A2A.toInt())
+            val noneText = Translations.tr("None")
+            val noneColor = if (selectedCosmeticIndex == -1) ModConfig.accentColor() else 0xFFCCCCCC.toInt()
+            context.drawText(textRenderer, noneText, overlayX + 6, oy + 5, noneColor, true)
+            oy += rowH
+
+            // Cosmetic items
+            for ((i, cosmetic) in availableCosmetics.withIndex()) {
+                val itemHovered = mouseX >= overlayX && mouseX <= overlayX + overlayW && mouseY >= oy && mouseY < oy + rowH
+                if (itemHovered) context.fill(overlayX + 1, oy, overlayX + overlayW - 1, oy + rowH, 0xFF2A2A2A.toInt())
+                if (cosmetic.itemStack != null) {
+                    context.drawItem(cosmetic.itemStack, overlayX + 4, oy + 1)
+                }
+                val nameColor = if (selectedCosmeticIndex == i) ModConfig.accentColor() else 0xFFCCCCCC.toInt()
+                context.drawText(textRenderer, cosmetic.displayName, overlayX + 22, oy + 5, nameColor, true)
+                oy += rowH
+            }
+
+            context.matrices.pop()
+        }
+
         // Tooltips (after scissor)
         if (tooltipMove != null) {
             val now = System.currentTimeMillis()
@@ -1118,6 +1216,15 @@ class PokemonDetailScreen(
 
     private fun getLevelUpMoves(): List<MoveEntry> {
         return try {
+            // Try form-specific moves first
+            val form = currentForm()
+            val formMoves = try {
+                form?.moves?.levelUpMoves?.flatMap { (level, moves) ->
+                    moves.map { MoveEntry(level, it) }
+                }?.sortedBy { it.level }
+            } catch (_: Exception) { null }
+            if (formMoves != null && formMoves.isNotEmpty()) return formMoves
+
             val apiMoves = species.moves.levelUpMoves.flatMap { (level, moves) ->
                 moves.map { MoveEntry(level, it) }
             }.sortedBy { it.level }
@@ -1129,6 +1236,12 @@ class PokemonDetailScreen(
 
     private fun getTmMoves(): List<MoveEntry> {
         return try {
+            val form = currentForm()
+            val formMoves = try {
+                form?.moves?.tmMoves?.map { MoveEntry(-1, it) }?.sortedBy { it.move.displayName.string }
+            } catch (_: Exception) { null }
+            if (formMoves != null && formMoves.isNotEmpty()) return formMoves
+
             val apiMoves = species.moves.tmMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
             if (apiMoves.isNotEmpty()) return apiMoves
             val fallback = MoveData.getMoves(species.name) ?: return emptyList()
@@ -1138,6 +1251,12 @@ class PokemonDetailScreen(
 
     private fun getEggMoves(): List<MoveEntry> {
         return try {
+            val form = currentForm()
+            val formMoves = try {
+                form?.moves?.eggMoves?.map { MoveEntry(-1, it) }?.sortedBy { it.move.displayName.string }
+            } catch (_: Exception) { null }
+            if (formMoves != null && formMoves.isNotEmpty()) return formMoves
+
             val apiMoves = species.moves.eggMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
             if (apiMoves.isNotEmpty()) return apiMoves
             val fallback = MoveData.getMoves(species.name) ?: return emptyList()
@@ -1147,6 +1266,12 @@ class PokemonDetailScreen(
 
     private fun getTutorMoves(): List<MoveEntry> {
         return try {
+            val form = currentForm()
+            val formMoves = try {
+                form?.moves?.tutorMoves?.map { MoveEntry(-1, it) }?.sortedBy { it.move.displayName.string }
+            } catch (_: Exception) { null }
+            if (formMoves != null && formMoves.isNotEmpty()) return formMoves
+
             val apiMoves = species.moves.tutorMoves.map { MoveEntry(-1, it) }.sortedBy { it.move.displayName.string }
             if (apiMoves.isNotEmpty()) return apiMoves
             val fallback = MoveData.getMoves(species.name) ?: return emptyList()
@@ -1165,7 +1290,7 @@ class PokemonDetailScreen(
         val tableX = panelX + 8
         val colLvl = tableX
         val colName = if (showLevel) colLvl + 24 else colLvl
-        val colType = colName + 78
+        val colType = colName + 95
         val typeBadgeW = 52
         val colCat = colType + typeBadgeW + 6
         val colPow = colCat + 50
@@ -1208,8 +1333,8 @@ class PokemonDetailScreen(
                     context.fill(colName, y + 11, colName + moveNameW, y + 12, 0xFFFFAA00.toInt())
                 }
                 moveClickBounds.add(MoveClickBound(colName, rowTop, moveNameW, rowH, move))
-                val typeName = move.elementalType.name.replaceFirstChar { it.uppercase() }
-                drawMiniTypeBadge(context, colType, y + 1, typeName)
+                val typeKey = move.elementalType.name
+                drawMiniTypeBadge(context, colType, y + 1, typeKey)
                 val catName: String = move.damageCategory.displayName.string
                 context.drawText(textRenderer, catName, colCat, y + 2, getCategoryColor(move.damageCategory.name), true)
                 val power = move.power.toInt()
@@ -1228,14 +1353,15 @@ class PokemonDetailScreen(
         return y
     }
 
-    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeName: String) {
+    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeKey: String) {
         val badgeW = 50
         val badgeH = 11
-        val color = getTypeColor(typeName)
+        val color = getTypeColor(typeKey)
+        val displayName = Translations.formatTypeName(typeKey)
         context.fill(x, y, x + badgeW, y + badgeH, color)
-        val textW = textRenderer.getWidth(typeName)
+        val textW = textRenderer.getWidth(displayName)
         val textX = x + (badgeW - textW) / 2
-        context.drawText(textRenderer, typeName, textX, y + 1, 0xFFFFFFFF.toInt(), true)
+        context.drawText(textRenderer, displayName, textX, y + 1, 0xFFFFFFFF.toInt(), true)
     }
 
     private fun updateHoverState(mouseX: Int, mouseY: Int, panelX: Int, panelWidth: Int,
@@ -1476,8 +1602,43 @@ class PokemonDetailScreen(
             if (mouseX >= shinyBtnX && mouseX <= shinyBtnX + shinyBtnW &&
                 mouseY >= shinyBtnY && mouseY <= shinyBtnY + shinyBtnH) {
                 isShiny = !isShiny
+                showCosmeticOverlay = false
                 rebuildModel()
                 return true
+            }
+
+            // Cosmetic button toggle
+            if (availableCosmetics.isNotEmpty() &&
+                mouseX >= cosmeticBtnX && mouseX <= cosmeticBtnX + cosmeticBtnW &&
+                mouseY >= cosmeticBtnY && mouseY <= cosmeticBtnY + cosmeticBtnH) {
+                showCosmeticOverlay = !showCosmeticOverlay
+                return true
+            }
+
+            // Cosmetic overlay click
+            if (showCosmeticOverlay && availableCosmetics.isNotEmpty()) {
+                val overlayX = cosmeticBtnX - 20
+                val rowH = 18
+                val overlayItemCount = availableCosmetics.size + 1
+                val overlayH = overlayItemCount * rowH + 6
+                val overlayW = availableCosmetics.maxOf { textRenderer.getWidth(it.displayName) + 24 }.coerceAtLeast(80)
+                val overlayY = cosmeticBtnY + cosmeticBtnH + 2
+
+                if (mouseX >= overlayX && mouseX <= overlayX + overlayW &&
+                    mouseY >= overlayY && mouseY <= overlayY + overlayH) {
+                    val clickedRow = ((mouseY - overlayY - 3) / rowH).toInt()
+                    if (clickedRow == 0) {
+                        selectedCosmeticIndex = -1
+                    } else if (clickedRow - 1 in availableCosmetics.indices) {
+                        selectedCosmeticIndex = clickedRow - 1
+                    }
+                    showCosmeticOverlay = false
+                    rebuildModel()
+                    return true
+                } else {
+                    showCosmeticOverlay = false
+                    return true
+                }
             }
 
             // Model click

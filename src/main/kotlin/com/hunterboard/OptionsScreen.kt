@@ -277,6 +277,18 @@ class OptionsScreen(
             if (ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 20
 
+        // Hide Boss Damage Chat toggle
+        val bdLabel = "${Translations.tr("Hide Raid Messages")}: ${if (ModConfig.hideBossDamageChat) "ON" else "OFF"}"
+        val bdBtnW = textRenderer.getWidth("${Translations.tr("Hide Raid Messages")}: OFF") + 10
+        val bdHov = mouseX >= leftX && mouseX <= leftX + bdBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + bdBtnW, y + 14,
+            if (ModConfig.hideBossDamageChat) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, bdBtnW, 14,
+            if (bdHov || ModConfig.hideBossDamageChat) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, bdLabel, leftX + 5, y + 3,
+            if (ModConfig.hideBossDamageChat) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 20
+
         // Separator
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
         y += 8
@@ -732,6 +744,14 @@ class OptionsScreen(
         val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
         if (mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleBattleHuntHud()
+            return true
+        }
+        y += 20
+
+        // Hide Boss Damage Chat toggle
+        val bdBtnW = textRenderer.getWidth("${Translations.tr("Hide Raid Messages")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + bdBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleHideBossDamageChat()
             return true
         }
         y += 20

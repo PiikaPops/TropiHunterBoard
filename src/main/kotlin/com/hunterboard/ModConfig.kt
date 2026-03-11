@@ -91,6 +91,14 @@ object ModConfig {
     var hideCaughtInHud: Boolean = false
         private set
 
+    // Wiki: show 2D sprites in Pokémon list
+    var wikiShowSprites: Boolean = false
+        set(value) { field = value; save() }
+
+    // Hide boss damage chat messages
+    var hideBossDamageChat: Boolean = false
+        private set
+
     // Show battle hunt notification HUD
     var showBattleHuntHud: Boolean = true
         private set
@@ -278,6 +286,11 @@ object ModConfig {
         save()
     }
 
+    fun toggleHideBossDamageChat() {
+        hideBossDamageChat = !hideBossDamageChat
+        save()
+    }
+
     fun setRaidStartSound(soundId: String) {
         raidStartSound = soundId
         save()
@@ -349,6 +362,8 @@ object ModConfig {
         miracleSound = "minecraft:entity.player.levelup"
         hideCaughtInHud = false
         showBattleHuntHud = true
+        hideBossDamageChat = false
+        wikiShowSprites = false
         save()
     }
 
@@ -401,6 +416,8 @@ object ModConfig {
                 hideHudInBattle = data.hideHudInBattle
                 hideCaughtInHud = data.hideCaughtInHud
                 showBattleHuntHud = data.showBattleHuntHud
+                hideBossDamageChat = data.hideBossDamageChat
+                wikiShowSprites = data.wikiShowSprites
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -419,7 +436,9 @@ object ModConfig {
                 showHuntHud, autoHideOnComplete,
                 raidStartSound, raidWarningSound, raidNotification, raidNotifVolume, raidSoundRepeat,
                 miracleNotification, miracleSound, hideHudInBattle, hideCaughtInHud,
-                showBattleHuntHud
+                showBattleHuntHud,
+                hideBossDamageChat,
+                wikiShowSprites
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -461,6 +480,8 @@ object ModConfig {
         val miracleSound: String = "minecraft:entity.player.levelup",
         val hideHudInBattle: Boolean = true,
         val hideCaughtInHud: Boolean = false,
-        val showBattleHuntHud: Boolean = true
+        val showBattleHuntHud: Boolean = true,
+        val hideBossDamageChat: Boolean = false,
+        val wikiShowSprites: Boolean = false
     )
 }

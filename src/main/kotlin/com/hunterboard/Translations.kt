@@ -353,6 +353,7 @@ object Translations {
         "Hide in Battle" to "Cacher en combat",
         "Hide Caught" to "Cacher chassés",
         "Battle Hunt HUD" to "HUD combat chasse",
+        "Hide Raid Messages" to "Masquer messages raid",
         "Hunt Pokémon!" to "Pokémon de chasse !",
         "Physical" to "Physique",
         "Special" to "Spéciale",
