@@ -184,6 +184,7 @@ object HuntOverlay {
             cachedUsePixelArt = ModConfig.usePixelArt
             cachedSpriteLoadedCount = SpriteHelper.loadedCount
             lastBoardUpdate = BoardState.lastUpdated
+            lastBiomeCheck = 0 // Force immediate biome re-check
         }
 
         // Throttled biome highlight check
@@ -191,6 +192,9 @@ object HuntOverlay {
             val now = System.currentTimeMillis()
             if (now - lastBiomeCheck > BIOME_CHECK_INTERVAL_MS) {
                 lastBiomeCheck = now
+                if (!SpawnData.isLoaded && !SpawnData.isLoading) {
+                    SpawnData.ensureLoaded()
+                }
                 cachedBiomeHighlight = if (SpawnData.isLoaded) {
                     displayTargets.map { if (!it.isCaught) isInSpawnBiome(it.speciesId) else false }
                 } else emptyList()
@@ -251,12 +255,35 @@ object HuntOverlay {
 
         val panelHeight = mergedExtraH + huntContentH
 
+        // Full height (all targets, no bravo) — used for bottom-anchoring reference
+        val fullHuntContentH = if (hasHuntData) {
+            val fullCount = if (ModConfig.hideCaughtInHud) {
+                displayTargets.count { !it.isCaught }
+            } else displayTargets.size
+            if (ModConfig.gridLayout) {
+                val fullGridRows = kotlin.math.ceil(fullCount.toFloat() / gridCols.coerceAtLeast(1)).toInt()
+                headerH + fullGridRows * gridCellH + PADDING + footerH
+            } else {
+                headerH + fullCount * ROW_HEIGHT + PADDING + footerH
+            }
+        } else 0
+        val fullPanelHeight = mergedExtraH + fullHuntContentH
+
         val screenWidth = client.window.scaledWidth
         val screenHeight = client.window.scaledHeight
 
-        // panelX/Y are in screen pixels; clamp so the panel never goes off-screen
+        // Determine anchoring: if the panel center (at full size) is in the bottom half, anchor to bottom
         val rawX = panelX ?: (screenWidth - panelW - 10)
-        val rawY = panelY ?: (screenHeight - panelHeight - 10)
+        val rawY = if (panelY != null) {
+            val isBottomAnchored = panelY!! + fullPanelHeight / 2 > screenHeight / 2
+            if (isBottomAnchored && panelHeight < fullPanelHeight) {
+                panelY!! + fullPanelHeight - panelHeight
+            } else {
+                panelY!!
+            }
+        } else {
+            screenHeight - panelHeight - 10
+        }
         val clampedX = rawX.coerceIn(PADDING, (screenWidth - panelW - PADDING).coerceAtLeast(PADDING))
         val clampedY = rawY.coerceIn(PADDING, (screenHeight - panelHeight - PADDING).coerceAtLeast(PADDING))
 

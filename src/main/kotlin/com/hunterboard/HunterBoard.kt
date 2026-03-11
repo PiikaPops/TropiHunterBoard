@@ -3,6 +3,7 @@ package com.hunterboard
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -43,11 +44,17 @@ object HunterBoard : ClientModInitializer {
         // Register battle hunt notification overlay
         BattleHuntOverlay.register()
 
+        // Filter raid chat messages
+        ChatFilter.register()
+
         // Register auto-catch detection
         CatchDetector.register()
 
         // Register clear warning overlay
         ClearWarningOverlay.register()
+
+        // April Fools prank
+        AprilFoolsPrank.register()
 
         // Check for updates on Modrinth
         UpdateChecker.register()

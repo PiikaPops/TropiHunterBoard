@@ -10,12 +10,18 @@ import org.lwjgl.glfw.GLFW
 
 class MoveSearchScreen : Screen(Text.literal("Move Search")) {
 
+    companion object {
+        var savedScrollOffset = 0
+        var savedQuery = ""
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
     private lateinit var searchField: TextFieldWidget
     private var allMovesSorted: List<MoveTemplate>? = null
     private var filteredMoves: List<MoveTemplate> = emptyList()
     private var scrollOffset = 0
+    private var lastQuery = ""
     private val rowHeight = 16
 
     // Sort mode: 0=A-Z, 1=Type, 2=Category, 3=Power
@@ -64,7 +70,6 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         if (allMovesSorted == null) {
             allMovesSorted = MoveData.getAllMoves()
         }
-        applySortAndFilter()
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -73,9 +78,14 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 50, panelWidth - 20, 16, Text.literal(placeholder))
         searchField.setMaxLength(50)
-        searchField.setChangedListener { applySortAndFilter() }
+        searchField.text = savedQuery
+        lastQuery = savedQuery
+        searchField.setChangedListener { applySortAndFilter(); savedQuery = searchField.text; savedScrollOffset = scrollOffset }
         addDrawableChild(searchField)
         setInitialFocus(searchField)
+
+        applySortAndFilter()
+        scrollOffset = savedScrollOffset
 
         // Pre-warm reverse index in background
         Thread { MoveData.buildReverseIndex() }.start()
@@ -97,7 +107,10 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             3 -> searched.sortedByDescending { it.power.toInt() }
             else -> searched.sortedBy { Translations.moveDisplayName(it).lowercase() }
         }
-        scrollOffset = 0
+        if (query != lastQuery) {
+            scrollOffset = 0
+            lastQuery = query
+        }
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
@@ -250,8 +263,8 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
                     }
 
                     // Type badge
-                    val typeName = move.elementalType.name.replaceFirstChar { it.uppercase() }
-                    drawMiniTypeBadge(context, typeColX, y + 2, typeName)
+                    val typeKey = move.elementalType.name
+                    drawMiniTypeBadge(context, typeColX, y + 2, typeKey)
 
                     // Move name
                     val displayName = Translations.moveDisplayName(move)
@@ -444,6 +457,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val contentHeight = filteredMoves.size * rowHeight + 4
         val maxScroll = maxOf(0, contentHeight - resultsAreaHeight)
         scrollOffset = (scrollOffset - (verticalAmount * 20).toInt()).coerceIn(0, maxScroll)
+        savedScrollOffset = scrollOffset
         return true
     }
 
@@ -455,14 +469,15 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeName: String) {
+    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeKey: String) {
         val badgeW = 48
         val badgeH = 11
-        val color = getTypeColor(typeName)
+        val displayName = Translations.formatTypeName(typeKey)
+        val color = getTypeColor(typeKey)
         context.fill(x, y, x + badgeW, y + badgeH, color)
-        val textW = textRenderer.getWidth(typeName)
+        val textW = textRenderer.getWidth(displayName)
         val textX = x + (badgeW - textW) / 2
-        context.drawText(textRenderer, typeName, textX, y + 1, 0xFFFFFFFF.toInt(), true)
+        context.drawText(textRenderer, displayName, textX, y + 1, 0xFFFFFFFF.toInt(), true)
     }
 
     private fun getTypeColor(type: String): Int {

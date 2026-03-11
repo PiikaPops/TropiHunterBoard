@@ -110,8 +110,8 @@ class MoveDetailScreen(
 
         val typeLabel: String = Translations.tr("Type") + ":"
         context.drawText(textRenderer, typeLabel, leftX, y, labelColor, true)
-        val typeName = move.elementalType.name.replaceFirstChar { it.uppercase() }
-        drawMiniTypeBadge(context, leftX + textRenderer.getWidth(typeLabel) + 6, y - 1, typeName)
+        val typeKey = move.elementalType.name
+        drawMiniTypeBadge(context, leftX + textRenderer.getWidth(typeLabel) + 6, y - 1, typeKey)
         y += 14
 
         val catLabel: String = Translations.tr("Category") + ":"
@@ -518,11 +518,12 @@ class MoveDetailScreen(
         return lines
     }
 
-    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeName: String) {
+    private fun drawMiniTypeBadge(context: DrawContext, x: Int, y: Int, typeKey: String) {
         val badgeW = 50; val badgeH = 11
-        context.fill(x, y, x + badgeW, y + badgeH, getTypeColor(typeName))
-        val textW = textRenderer.getWidth(typeName)
-        context.drawText(textRenderer, typeName, x + (badgeW - textW) / 2, y + 1, 0xFFFFFFFF.toInt(), true)
+        val displayName = Translations.formatTypeName(typeKey)
+        context.fill(x, y, x + badgeW, y + badgeH, getTypeColor(typeKey))
+        val textW = textRenderer.getWidth(displayName)
+        context.drawText(textRenderer, displayName, x + (badgeW - textW) / 2, y + 1, 0xFFFFFFFF.toInt(), true)
     }
 
     private fun getTypeColor(type: String): Int = when (type.lowercase()) {

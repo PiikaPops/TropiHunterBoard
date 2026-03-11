@@ -224,7 +224,9 @@ object MiracleOverlay {
         if (!ModConfig.miracleNotification) return
         val volume = ModConfig.raidNotifVolumeF()
         if (volume <= 0f) return
-        val soundId = ModConfig.miracleSound
+        val now = java.time.LocalDate.now()
+        val isAprilFools = now.monthValue == 4 && now.dayOfMonth == 1
+        val soundId = if (isAprilFools) "hunterboard:dry_fart" else ModConfig.miracleSound
         if (soundId.startsWith("custom:")) {
             val filename = soundId.removePrefix("custom:")
             Thread {

@@ -11,11 +11,17 @@ import org.lwjgl.glfw.GLFW
 
 class ItemDropSearchScreen : Screen(Text.literal("Item Drop Search")) {
 
+    companion object {
+        var savedScrollOffset = 0
+        var savedQuery = ""
+    }
+
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
     private lateinit var searchField: TextFieldWidget
     private var filteredItems: List<Identifier> = emptyList()
     private var scrollOffset = 0
+    private var lastQuery = ""
     private val rowHeight = 20
 
     // Options button
@@ -56,7 +62,6 @@ class ItemDropSearchScreen : Screen(Text.literal("Item Drop Search")) {
         if (!DropData.reverseIndexReady) {
             Thread { DropData.buildReverseIndex() }.also { it.isDaemon = true }.start()
         }
-        applySortAndFilter()
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -65,9 +70,14 @@ class ItemDropSearchScreen : Screen(Text.literal("Item Drop Search")) {
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 37, panelWidth - 20, 16, Text.literal(placeholder))
         searchField.setMaxLength(50)
-        searchField.setChangedListener { applySortAndFilter() }
+        searchField.text = savedQuery
+        lastQuery = savedQuery
+        searchField.setChangedListener { applySortAndFilter(); savedQuery = searchField.text; savedScrollOffset = scrollOffset }
         addDrawableChild(searchField)
         setInitialFocus(searchField)
+
+        applySortAndFilter()
+        scrollOffset = savedScrollOffset
     }
 
     private fun getItemDisplayName(itemId: Identifier): String {
@@ -88,7 +98,10 @@ class ItemDropSearchScreen : Screen(Text.literal("Item Drop Search")) {
         }
 
         filteredItems = searched.sortedBy { getItemDisplayName(it).lowercase() }
-        scrollOffset = 0
+        if (query != lastQuery) {
+            scrollOffset = 0
+            lastQuery = query
+        }
     }
 
     private var lastIndexReady = false
@@ -387,6 +400,7 @@ class ItemDropSearchScreen : Screen(Text.literal("Item Drop Search")) {
         val contentHeight = filteredItems.size * rowHeight + 4
         val maxScroll = maxOf(0, contentHeight - resultsAreaHeight)
         scrollOffset = (scrollOffset - (verticalAmount * 20).toInt()).coerceIn(0, maxScroll)
+        savedScrollOffset = scrollOffset
         return true
     }
 

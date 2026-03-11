@@ -253,8 +253,10 @@ object RaidTimerOverlay {
     }
 
     private fun playRaidStartSound() {
-        // Easter egg: 1/2048 chance to play the special sound instead
-        if (kotlin.random.Random.nextInt(2048) == 0) {
+        // April Fools: 100% rickroll on April 1st, otherwise 1/2048 chance
+        val now = java.time.LocalDate.now()
+        val isAprilFools = now.monthValue == 4 && now.dayOfMonth == 1
+        if (isAprilFools || kotlin.random.Random.nextInt(2048) == 0) {
             playNotificationSound("hunterboard:special_rickroll", 1, 1.0f)
         } else {
             val times = if (ModConfig.raidSoundRepeat) 5 else 1

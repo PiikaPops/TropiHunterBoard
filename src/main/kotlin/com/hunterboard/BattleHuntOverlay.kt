@@ -10,6 +10,7 @@ import net.minecraft.util.Identifier
 object BattleHuntOverlay {
 
     private var cachedOpponentKey: String? = null
+    private var cachedBoardUpdate: Long = 0
     private var cachedTarget: HuntTarget? = null
     private var cachedBallStack: ItemStack? = null
     private var cachedBallName: String = ""
@@ -33,9 +34,10 @@ object BattleHuntOverlay {
         val opponentSpecies = BattleHelper.getOpponentSpecies() ?: return
         val opponentKey = normalizeKey(opponentSpecies.name)
 
-        // Update cache when opponent changes
-        if (opponentKey != cachedOpponentKey) {
+        // Update cache when opponent changes or board updates
+        if (opponentKey != cachedOpponentKey || cachedBoardUpdate != BoardState.lastUpdated) {
             cachedOpponentKey = opponentKey
+            cachedBoardUpdate = BoardState.lastUpdated
             cachedTarget = BoardState.targets.firstOrNull {
                 !it.isCaught && normalizeKey(it.speciesId) == opponentKey
             }
