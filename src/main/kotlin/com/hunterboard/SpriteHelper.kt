@@ -13,10 +13,14 @@ import java.net.URI
  * Downloads and caches 2D pixel art sprites from PokeAPI.
  * Sprites are cached on disk in config/hunterboard/sprites/.
  * Falls back to null if download fails (caller should use 3D ModelWidget).
+ *
+ * Regional forms (hisuian, galarian, alolan, paldean) are fetched via the
+ * PokeAPI form endpoint (e.g. /pokemon/growlithe-hisui/) which returns the
+ * correct form-specific sprite URL.
  */
 object SpriteHelper {
 
-    // Memory cache: speciesName -> texture Identifier (null = failed/unavailable)
+    // Memory cache: cacheKey -> texture Identifier (null = failed/unavailable)
     private val spriteCache = mutableMapOf<String, Identifier?>()
     // Species currently being downloaded (thread-safe set)
     private val downloading = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -28,31 +32,44 @@ object SpriteHelper {
         File(MinecraftClient.getInstance().runDirectory, "config/hunterboard/sprites")
     }
 
-    /**
-     * Get a sprite texture identifier for the given species name.
-     * Returns null if the sprite isn't available yet (triggers async download).
-     */
-    /** Normalize species name to a safe key (strips all non-alphanumeric) */
+    /** Maps Cobblemon aspect tags to PokeAPI form name suffixes. */
+    private val FORM_SUFFIXES = mapOf(
+        "hisuian"  to "hisui",
+        "galarian" to "galar",
+        "alolan"   to "alola",
+        "paldean"  to "paldea"
+    )
+
+    /** Normalize a name to a safe file/cache key (strips all non-alphanumeric). */
     private fun normalizeKey(name: String): String =
         name.lowercase().replace(Regex("[^a-z0-9]"), "")
 
-    fun getSpriteIdentifier(speciesName: String): Identifier? {
-        val key = normalizeKey(speciesName)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public API
+    // ─────────────────────────────────────────────────────────────────────────
 
-        // Check memory cache
+    /**
+     * Get a sprite texture identifier for the given species.
+     * If [aspects] contains a regional form tag (e.g. "hisuian"), the
+     * regional form sprite is fetched from PokeAPI instead of the base sprite.
+     *
+     * Returns null while the download is in progress (non-blocking).
+     */
+    fun getSpriteIdentifier(speciesName: String, aspects: Set<String> = emptySet()): Identifier? {
+        val formSuffix = aspects.firstNotNullOfOrNull { FORM_SUFFIXES[it] }
+        val key = if (formSuffix != null) normalizeKey("${speciesName}_$formSuffix")
+                  else normalizeKey(speciesName)
+
         if (spriteCache.containsKey(key)) return spriteCache[key]
 
-        // Check disk cache
         val file = File(CACHE_DIR, "$key.png")
-        if (file.exists() && file.length() > 0) {
-            return loadAndRegister(key, file)
-        }
+        if (file.exists() && file.length() > 0) return loadAndRegister(key, file)
 
-        // Trigger async download
         if (downloading.add(key)) {
             Thread {
                 try {
-                    downloadSprite(key, speciesName)
+                    if (formSuffix != null) downloadFormSprite(key, speciesName, formSuffix)
+                    else                    downloadBaseSprite(key, speciesName)
                 } catch (_: Exception) {
                     spriteCache[key] = null
                 } finally {
@@ -60,11 +77,18 @@ object SpriteHelper {
                 }
             }.also { it.isDaemon = true }.start()
         }
-
         return null
     }
 
-    private fun downloadSprite(key: String, originalName: String) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Download helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Download the base-form sprite using the national Pokédex number.
+     * URL: https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{dexNum}.png
+     */
+    private fun downloadBaseSprite(key: String, originalName: String) {
         val species = PokemonSpecies.getByName(key)
             ?: PokemonSpecies.getByName(originalName.lowercase())
         if (species == null) { spriteCache[key] = null; return }
@@ -73,26 +97,59 @@ object SpriteHelper {
         if (dexNum <= 0) { spriteCache[key] = null; return }
 
         val url = URI("https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/$dexNum.png").toURL()
+        downloadToFile(key, url.toString())
+    }
+
+    /**
+     * Download a regional-form sprite by first calling the PokeAPI form endpoint
+     * (e.g. /pokemon/growlithe-hisui/) to get the form-specific sprite URL,
+     * then downloading that image.
+     * Falls back to the base-form sprite if the form is not found.
+     */
+    private fun downloadFormSprite(key: String, speciesName: String, formSuffix: String) {
+        val formName = "$speciesName-$formSuffix"
+        try {
+            // Ask PokeAPI for this form's data
+            val apiUrl = URI("https://pokeapi.co/api/v2/pokemon/$formName/").toURL()
+            val json   = apiUrl.openStream().reader().readText()
+
+            // Extract front_default URL from JSON without a full parser
+            // e.g. "front_default": "https://.../{id}.png"
+            val spriteUrl = Regex(""""front_default"\s*:\s*"([^"]+)"""").find(json)
+                ?.groupValues?.get(1)
+
+            if (spriteUrl != null) {
+                downloadToFile(key, spriteUrl)
+                return
+            }
+        } catch (_: Exception) {
+            // Form not found on PokeAPI — fall through to base sprite
+        }
+
+        // Fallback: base form sprite
+        HunterBoard.LOGGER.debug("[SpriteHelper] Form '$formName' not found, using base sprite")
+        downloadBaseSprite(key, speciesName)
+    }
+
+    /** Download an image from [url] and save it to the cache file, then register it. */
+    private fun downloadToFile(key: String, url: String) {
         CACHE_DIR.mkdirs()
         val file = File(CACHE_DIR, "$key.png")
-
-        url.openStream().use { input ->
-            file.outputStream().use { output ->
-                input.copyTo(output)
-            }
+        URI(url).toURL().openStream().use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
         }
-
-        // Load texture on render thread
-        MinecraftClient.getInstance().execute {
-            loadAndRegister(key, file)
-        }
+        MinecraftClient.getInstance().execute { loadAndRegister(key, file) }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Texture management
+    // ─────────────────────────────────────────────────────────────────────────
 
     private fun loadAndRegister(key: String, file: File): Identifier? {
         return try {
-            val image = FileInputStream(file).use { NativeImage.read(it) }
+            val image   = FileInputStream(file).use { NativeImage.read(it) }
             val texture = NativeImageBackedTexture(image)
-            val id = Identifier.of("hunterboard", "sprites/$key")
+            val id      = Identifier.of("hunterboard", "sprites/$key")
             MinecraftClient.getInstance().textureManager.registerTexture(id, texture)
             spriteCache[key] = id
             loadedCount++
@@ -103,7 +160,6 @@ object SpriteHelper {
         }
     }
 
-    /** Clear memory cache and unregister textures */
     fun clearCache() {
         val tm = MinecraftClient.getInstance().textureManager
         for ((_, id) in spriteCache) {

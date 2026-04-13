@@ -275,6 +275,18 @@ class OptionsScreen(
             if (bhHov || ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF444444.toInt())
         context.drawText(textRenderer, bhLabel, leftX + 5, y + 3,
             if (ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+
+        // PvP Overlay toggle (same row, after Battle Hunt HUD)
+        val pvpStart = leftX + bhBtnW + 6
+        val pvpLabel = "PvP Overlay: ${if (ModConfig.pvpOverlayEnabled) "ON" else "OFF"}"
+        val pvpBtnW = textRenderer.getWidth("PvP Overlay: OFF") + 10
+        val pvpHov = mouseX >= pvpStart && mouseX <= pvpStart + pvpBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(pvpStart, y, pvpStart + pvpBtnW, y + 14,
+            if (ModConfig.pvpOverlayEnabled) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, pvpStart, y, pvpBtnW, 14,
+            if (pvpHov || ModConfig.pvpOverlayEnabled) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, pvpLabel, pvpStart + 5, y + 3,
+            if (ModConfig.pvpOverlayEnabled) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 20
 
         // Hide Boss Damage Chat toggle
@@ -744,6 +756,14 @@ class OptionsScreen(
         val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
         if (mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleBattleHuntHud()
+            return true
+        }
+
+        // PvP Overlay toggle
+        val pvpStart = leftX + bhBtnW + 6
+        val pvpBtnW = textRenderer.getWidth("PvP Overlay: OFF") + 10
+        if (mouseX >= pvpStart && mouseX <= pvpStart + pvpBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.togglePvpOverlay()
             return true
         }
         y += 20

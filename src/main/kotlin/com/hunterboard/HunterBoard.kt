@@ -25,6 +25,9 @@ object HunterBoard : ClientModInitializer {
         // Register board detection (listens for Hunting Board screens)
         BoardDetector.register()
 
+        // Register PvP challenge screen detection
+        PvpDetector.register()
+
         // Load persistent data (before overlay so position/color are available)
         ModConfig.load()
         SearchHistory.load()
@@ -43,6 +46,9 @@ object HunterBoard : ClientModInitializer {
 
         // Register battle hunt notification overlay
         BattleHuntOverlay.register()
+
+        // Register PvP overlay (shows opponent team during /challenge battles)
+        PvpOverlay.register()
 
         // Filter raid chat messages
         ChatFilter.register()
