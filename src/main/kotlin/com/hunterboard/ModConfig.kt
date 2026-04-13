@@ -103,6 +103,20 @@ object ModConfig {
     var showBattleHuntHud: Boolean = true
         private set
 
+    // PvP Overlay: show opponent team during /challenge battles
+    var pvpOverlayEnabled: Boolean = true
+        private set
+
+    // PvP Overlay panel positions (-1 = auto)
+    var pvpPlayerX: Int = -1
+        private set
+    var pvpPlayerY: Int = -1
+        private set
+    var pvpOpponentX: Int = -1
+        private set
+    var pvpOpponentY: Int = -1
+        private set
+
     // Raid notification sounds
     var raidStartSound: String = "minecraft:block.bell.use"
         private set
@@ -286,6 +300,15 @@ object ModConfig {
         save()
     }
 
+    fun togglePvpOverlay() {
+        pvpOverlayEnabled = !pvpOverlayEnabled
+        save()
+    }
+
+    fun setPvpPlayerPosition(x: Int, y: Int) { pvpPlayerX = x; pvpPlayerY = y; save() }
+    fun setPvpOpponentPosition(x: Int, y: Int) { pvpOpponentX = x; pvpOpponentY = y; save() }
+    fun resetPvpPositions() { pvpPlayerX = -1; pvpPlayerY = -1; pvpOpponentX = -1; pvpOpponentY = -1; save() }
+
     fun toggleHideBossDamageChat() {
         hideBossDamageChat = !hideBossDamageChat
         save()
@@ -364,6 +387,9 @@ object ModConfig {
         showBattleHuntHud = true
         hideBossDamageChat = false
         wikiShowSprites = false
+        pvpOverlayEnabled = true
+        pvpPlayerX = -1; pvpPlayerY = -1
+        pvpOpponentX = -1; pvpOpponentY = -1
         save()
     }
 
@@ -418,6 +444,9 @@ object ModConfig {
                 showBattleHuntHud = data.showBattleHuntHud
                 hideBossDamageChat = data.hideBossDamageChat
                 wikiShowSprites = data.wikiShowSprites
+                pvpOverlayEnabled = data.pvpOverlayEnabled
+                pvpPlayerX = data.pvpPlayerX; pvpPlayerY = data.pvpPlayerY
+                pvpOpponentX = data.pvpOpponentX; pvpOpponentY = data.pvpOpponentY
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -438,7 +467,9 @@ object ModConfig {
                 miracleNotification, miracleSound, hideHudInBattle, hideCaughtInHud,
                 showBattleHuntHud,
                 hideBossDamageChat,
-                wikiShowSprites
+                wikiShowSprites,
+                pvpOverlayEnabled,
+                pvpPlayerX, pvpPlayerY, pvpOpponentX, pvpOpponentY
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -482,6 +513,11 @@ object ModConfig {
         val hideCaughtInHud: Boolean = false,
         val showBattleHuntHud: Boolean = true,
         val hideBossDamageChat: Boolean = false,
-        val wikiShowSprites: Boolean = false
+        val wikiShowSprites: Boolean = false,
+        val pvpOverlayEnabled: Boolean = true,
+        val pvpPlayerX: Int = -1,
+        val pvpPlayerY: Int = -1,
+        val pvpOpponentX: Int = -1,
+        val pvpOpponentY: Int = -1
     )
 }
