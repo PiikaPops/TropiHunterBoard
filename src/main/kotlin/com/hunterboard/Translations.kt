@@ -179,6 +179,7 @@ object Translations {
             }
         }
         return when (context) {
+            "fishing" -> "Pêche"
             "submerged" -> "Sous l'eau"
             "surface" -> "Surface de l'eau"
             "seafloor" -> "Fond marin"
@@ -248,7 +249,7 @@ object Translations {
                 part == "dawn" -> if (isFrench()) "Aube" else "Dawn"
                 part.startsWith("lure:") -> {
                     val lvl = part.removePrefix("lure:")
-                    if (isFrench()) "Leurre $lvl" else "Lure $lvl"
+                    if (isFrench()) "Appât $lvl" else "Lure $lvl"
                 }
                 part.startsWith("moon:") -> {
                     val phase = part.removePrefix("moon:").toIntOrNull()
@@ -452,7 +453,9 @@ object Translations {
         "Auto Hide" to "Masquer auto.",
         "Click on a hunting board" to "Cliquez sur un tableau de chasse",
         "Raid in 5 min!" to "Raid dans 5 min !",
-        "Raid & Miracles" to "Raid et Miracles",
+        "Raid & Miracles" to "Notifications sonores",
+        "Sound Notifications" to "Notifications sonores",
+        "Clear Warning Sound" to "Son Alerte Clear",
         "Raid Sound" to "Son Raid",
         "Miracle Sound" to "Son Miracle",
         "Miracle Notif Sound" to "Son Notif. Miracle",
@@ -474,6 +477,13 @@ object Translations {
         "Loading..." to "Chargement...",
         "No donors yet" to "Aucun donateur pour le moment",
         "donors" to "donateurs",
+
+        // Playtime / Clear sound / Slime chunk / Preset
+        "Playtime" to "Temps connecté",
+        "Clear Sound" to "Son Clear",
+        "Slime Chunk" to "Chunk à Slime",
+        "Body Weight:" to "Poids :",
+        "Preset:" to "Preset :",
 
         // Shared
         "Unknown" to "Inconnu",

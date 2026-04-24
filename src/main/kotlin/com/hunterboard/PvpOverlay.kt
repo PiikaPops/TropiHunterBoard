@@ -77,7 +77,7 @@ object PvpOverlay {
             BattleTracker.clearState()
         }
         wasInBattle = inBattle
-        if (!inBattle) return
+        if (!inBattle || !PvpDetector.pvpSessionActive) return
 
         // Sync battle state every frame
         BattleTracker.sync()
@@ -290,12 +290,22 @@ object PvpOverlay {
             lines += Line("▸ $label", color)
         }
 
+        val speedTier = getSpeedTier(mon.speciesId, mon.aspects)
+
         // ── Separator ──
-        if (mon.moves.isNotEmpty() || mon.abilityName != null || !mon.heldItem.isEmpty) {
+        if (speedTier != null || mon.moves.isNotEmpty() || mon.abilityName != null || !mon.heldItem.isEmpty) {
             lines += Line("──────────────────", 0xFF444444.toInt())
         }
 
         if (mon.isOwn) {
+            // ── Speed tier (own Pokémon) ──
+            if (speedTier != null) {
+                lines += Line("Vitesse: ${speedTier.min}–${speedTier.max}", 0xFF99FFCC.toInt())
+                speedTier.slowStartRange?.let { (sMin, sMax) ->
+                    lines += Line("Slow Start: $sMin–$sMax", 0xFFCCAA44.toInt())
+                }
+            }
+
             // ── Moves (own Pokémon) ──
             for (move in mon.moves) {
                 val typeColor = BattleTracker.TYPE_TEXT_COLORS[move.typeKey] ?: 0xFFCCCCCC.toInt()
@@ -310,15 +320,10 @@ object PvpOverlay {
                 lines += Line("PP: ${move.currentPp}/${move.maxPp}", ppColor, indent = 4)
             }
 
-            // ── Ability (own Pokémon) ──
+            // ── Ability (own Pokémon) — no long description ──
             if (mon.abilityName != null) {
-                if (mon.moves.isNotEmpty()) lines += Line("──────────────────", 0xFF444444.toInt())
+                if (mon.moves.isNotEmpty() || speedTier != null) lines += Line("──────────────────", 0xFF444444.toInt())
                 lines += Line("Talent: ${mon.abilityName}", 0xFFAADDFF.toInt())
-                mon.abilityDesc?.let { desc ->
-                    desc.chunked(28).forEach { chunk ->
-                        lines += Line(chunk, 0xFF8899AA.toInt(), indent = 4)
-                    }
-                }
             }
 
             // ── Held item (own Pokémon) ──
@@ -328,9 +333,11 @@ object PvpOverlay {
 
         } else {
             // ── Speed tier (opponent) ──
-            val speedTier = getSpeedTier(mon.speciesId, mon.aspects)
             if (speedTier != null) {
-                lines += Line("Vitesse: ${speedTier.first}–${speedTier.second}", 0xFF99FFCC.toInt())
+                lines += Line("Vitesse: ${speedTier.min}–${speedTier.max}", 0xFF99FFCC.toInt())
+                speedTier.slowStartRange?.let { (sMin, sMax) ->
+                    lines += Line("Slow Start: $sMin–$sMax", 0xFFCCAA44.toInt())
+                }
             }
 
             // ── All possible abilities (opponent) ──
@@ -430,13 +437,16 @@ object PvpOverlay {
 
     // ── Species helpers ───────────────────────────────────────────────────────
 
+    private data class SpeedRange(val min: Int, val max: Int, val slowStartRange: Pair<Int, Int>? = null)
+
     /**
-     * Speed stat range at level 100 (no EVs/IVs → max EVs/IVs, -nature → +nature).
+     * Speed stat range at level 100 (0 IV / 0 EV / -nature → 31 IV / 252 EV / +nature).
      * Formula: floor((2*base + iv + floor(ev/4) + 5) * nature)
-     *   min: floor((2*base +  0 +  0 + 5) * 0.9)
-     *   max: floor((2*base + 31 + 63 + 5) * 1.1)
+     *   min: floor((2*base + 5)  * 0.9)   [IV=0, EV=0, -nature]
+     *   max: floor((2*base + 99) * 1.1)   [IV=31, EV=252, +nature]
+     * If the form has Slow Start, also provides the halved in-battle range.
      */
-    private fun getSpeedTier(speciesId: String, aspects: Set<String>): Pair<Int, Int>? {
+    private fun getSpeedTier(speciesId: String, aspects: Set<String>): SpeedRange? {
         return try {
             val species = com.cobblemon.mod.common.api.pokemon.PokemonSpecies
                 .getByName(speciesId) ?: return null
@@ -445,7 +455,15 @@ object PvpOverlay {
                 ?: return null
             val min = Math.floor((2.0 * base + 5)  * 0.9).toInt()
             val max = Math.floor((2.0 * base + 99) * 1.1).toInt()
-            Pair(min, max)
+            // Slow Start halves Speed in battle for the first 5 turns
+            val hasSlowStart = form.abilities.any { pa ->
+                try { pa.template.name.replace("_", "").replace(" ", "").lowercase() == "slowstart" }
+                catch (_: Exception) { false }
+            }
+            val slowRange = if (hasSlowStart)
+                Pair(Math.floor(min / 2.0).toInt(), Math.floor(max / 2.0).toInt())
+            else null
+            SpeedRange(min, max, slowRange)
         } catch (_: Exception) { null }
     }
 

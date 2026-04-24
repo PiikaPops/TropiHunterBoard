@@ -575,6 +575,20 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                             }
                         }
 
+                        if (spawn.requiresSlimeChunk) {
+                            val scLabel: String = Translations.tr("Slime Chunk")
+                            context.drawText(textRenderer, "  ★ $scLabel", textContentX + 4, textY, 0xFF55FF55.toInt(), true)
+                            textY += 10
+                        }
+
+                        val displayPresets = spawn.presets.filter { it != "natural" }
+                        if (displayPresets.isNotEmpty()) {
+                            val presetLabel: String = Translations.tr("Preset:")
+                            val presetNames = displayPresets.joinToString(", ") { Translations.formatPreset(it) }
+                            context.drawText(textRenderer, "  $presetLabel $presetNames", textContentX + 4, textY, 0xFFAA8855.toInt(), true)
+                            textY += 10
+                        }
+
                         textY += 2
                     }
                 } else {
@@ -755,6 +769,13 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
                 // Weight multipliers
                 h += spawn.weightMultipliers.size * 10
+
+                // Slime chunk line
+                if (spawn.requiresSlimeChunk) h += 10
+
+                // Preset line (non-"natural" presets)
+                val displayPresets = spawn.presets.filter { it != "natural" }
+                if (displayPresets.isNotEmpty()) h += 10
 
                 h += 2 // spacing between spawns
             }

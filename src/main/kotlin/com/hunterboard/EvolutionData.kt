@@ -11,7 +11,8 @@ data class EvoNode(
     val species: Species?,
     val children: List<EvoNode>,
     val isCurrent: Boolean,
-    val condition: String = ""
+    val condition: String = "",
+    val formAspect: String? = null  // e.g. "galarian" for Galarian Linoone
 )
 
 object EvolutionData {
@@ -23,14 +24,28 @@ object EvolutionData {
     private var jsonPreEvolutions: Map<String, String> = emptyMap()      // species -> pre-evolution name
     private var jsonLoaded = false
 
-    fun getEvolutionTree(species: Species): EvoNode? {
-        val key = species.name.lowercase()
+    fun getEvolutionTree(species: Species, formName: String? = null): EvoNode? {
+        val key = if (formName != null) "${species.name.lowercase()}_$formName" else species.name.lowercase()
         if (cache.containsKey(key)) return cache[key]
 
-        val base = findBaseSpecies(species)
-        val tree = buildTree(base, species.name.lowercase(), mutableSetOf())
-        // Only cache if the tree has more than just the root (i.e., there are evolutions)
-        val result = if (tree.children.isNotEmpty() || tree.isCurrent && hasPreEvolution(species)) tree else null
+        val result: EvoNode?
+        if (formName != null) {
+            // Form-specific tree: start from species root with this form
+            val formTargets = getEvolutionTargets(species, formName)
+            result = if (formTargets.isNotEmpty()) {
+                buildTree(species, species.name.lowercase(), mutableSetOf(), "", formName)
+            } else {
+                // No form-specific evolutions — fall back to standard tree
+                val base = findBaseSpecies(species)
+                val tree = buildTree(base, species.name.lowercase(), mutableSetOf())
+                if (tree.children.isNotEmpty() || (tree.isCurrent && hasPreEvolution(species))) tree else null
+            }
+        } else {
+            val base = findBaseSpecies(species)
+            val tree = buildTree(base, species.name.lowercase(), mutableSetOf())
+            result = if (tree.children.isNotEmpty() || (tree.isCurrent && hasPreEvolution(species))) tree else null
+        }
+
         cache[key] = result
         return result
     }
@@ -77,23 +92,44 @@ object EvolutionData {
         return jsonPreEvolutions[species.name.lowercase()]
     }
 
-    data class EvoTarget(val name: String, val condition: String)
+    // Maps adjective aspects ("galarian") to their form name in species JSON ("galar")
+    private val ASPECT_TO_FORM = mapOf(
+        "galarian" to "galar",
+        "alolan"   to "alola",
+        "hisuian"  to "hisui",
+        "paldean"  to "paldea"
+    )
 
-    private fun getEvolutionTargets(species: Species): List<EvoTarget> {
-        // Try JSON first (has condition data)
+    /** Convert a Cobblemon aspect ("galarian") to the matching form name ("galar"). */
+    fun aspectToFormName(aspect: String): String = ASPECT_TO_FORM[aspect] ?: aspect
+
+    data class EvoTarget(val name: String, val condition: String, val formAspect: String? = null)
+
+    private fun getEvolutionTargets(species: Species, formName: String? = null): List<EvoTarget> {
         ensureJsonLoaded()
+
+        // Try form-specific JSON key first (e.g., "zigzagoon_galar")
+        if (formName != null) {
+            val formKey = "${species.name.lowercase()}_$formName"
+            val formTargets = jsonEvolutionTargets[formKey]
+            if (!formTargets.isNullOrEmpty()) return formTargets
+        }
+
+        // Standard JSON key
         val jsonTargets = jsonEvolutionTargets[species.name.lowercase()]
         if (jsonTargets != null && jsonTargets.isNotEmpty()) return jsonTargets
 
-        // Fallback to API (no conditions)
+        // Fallback: Cobblemon API
         try {
-            val evos = species.evolutions
+            val formData = if (formName != null)
+                species.forms.find { it.name.lowercase() == formName }
+            else null
+            val evos = formData?.evolutions?.takeIf { it.isNotEmpty() } ?: species.evolutions
             if (evos.isNotEmpty()) {
                 return evos.mapNotNull { evo ->
                     try {
-                        val result = evo.result
-                        val speciesName = result.species
-                        speciesName?.lowercase()?.let { EvoTarget(it, "") }
+                        val speciesName = evo.result.species?.lowercase() ?: return@mapNotNull null
+                        EvoTarget(speciesName, "")
                     } catch (_: Exception) { null }
                 }.distinctBy { it.name }
             }
@@ -102,15 +138,21 @@ object EvolutionData {
         return emptyList()
     }
 
-    private fun buildTree(species: Species, highlightName: String, visited: MutableSet<String>, condition: String = ""): EvoNode {
+    private fun buildTree(
+        species: Species, highlightName: String, visited: MutableSet<String>,
+        condition: String = "", formName: String? = null, formAspect: String? = null
+    ): EvoNode {
         val name = species.name.lowercase()
-        visited.add(name)
+        val visitKey = if (formName != null) "$name:$formName" else name
+        visited.add(visitKey)
 
-        val targets = getEvolutionTargets(species)
+        val targets = getEvolutionTargets(species, formName)
         val children = targets.mapNotNull { target ->
-            if (target.name in visited) return@mapNotNull null
+            val targetFormName = target.formAspect?.let { ASPECT_TO_FORM[it] ?: it }
+            val childVisitKey = if (targetFormName != null) "${target.name}:$targetFormName" else target.name
+            if (childVisitKey in visited) return@mapNotNull null
             val childSpecies = PokemonSpecies.getByName(target.name) ?: return@mapNotNull null
-            buildTree(childSpecies, highlightName, visited, target.condition)
+            buildTree(childSpecies, highlightName, visited, target.condition, targetFormName, target.formAspect)
         }
 
         return EvoNode(
@@ -118,7 +160,8 @@ object EvolutionData {
             species = species,
             children = children,
             isCurrent = name == highlightName,
-            condition = condition
+            condition = condition,
+            formAspect = formAspect
         )
     }
 
@@ -168,23 +211,45 @@ object EvolutionData {
         val root = JsonParser.parseString(json).asJsonObject
         val name = root.get("name")?.asString?.lowercase() ?: return
 
-        val evoArray = root.getAsJsonArray("evolutions") ?: return
-
-        val targets = mutableListOf<EvoTarget>()
-        for (evoEl in evoArray) {
-            val evoObj = evoEl.asJsonObject
-            val result = evoObj.get("result")?.asString ?: continue
-            val resultSpecies = result.split(" ").first().lowercase()
-            if (resultSpecies.isEmpty()) continue
-
-            // Parse condition from requirements
-            val condition = parseCondition(evoObj)
-            targets.add(EvoTarget(resultSpecies, condition))
-
-            // Build pre-evolution link
-            preEvos[resultSpecies] = name
+        // Standard form evolutions
+        val evoArray = root.getAsJsonArray("evolutions")
+        if (evoArray != null) {
+            val targets = mutableListOf<EvoTarget>()
+            for (evoEl in evoArray) {
+                val evoObj = evoEl.asJsonObject
+                val result = evoObj.get("result")?.asString ?: continue
+                val parts = result.split(" ")
+                val resultSpecies = parts.first().lowercase()
+                if (resultSpecies.isEmpty()) continue
+                val condition = parseCondition(evoObj)
+                targets.add(EvoTarget(resultSpecies, condition))
+                preEvos[resultSpecies] = name
+            }
+            if (targets.isNotEmpty()) evos[name] = targets
         }
-        if (targets.isNotEmpty()) evos[name] = targets
+
+        // Form-specific evolutions (e.g., Galar form of Zigzagoon → Galarian Linoone)
+        val forms = root.getAsJsonArray("forms") ?: return
+        for (formEl in forms) {
+            val formObj = formEl.asJsonObject
+            val formName = formObj.get("name")?.asString?.lowercase() ?: continue
+            val formEvoArray = formObj.getAsJsonArray("evolutions") ?: continue
+            val formKey = "${name}_$formName"
+            val formTargets = mutableListOf<EvoTarget>()
+            for (evoEl in formEvoArray) {
+                val evoObj = evoEl.asJsonObject
+                val result = evoObj.get("result")?.asString ?: continue
+                val parts = result.split(" ")
+                val resultSpecies = parts.first().lowercase()
+                if (resultSpecies.isEmpty()) continue
+                // The second word (if any) is the form aspect of the result, e.g. "galarian"
+                val resultAspect = parts.getOrNull(1)?.lowercase()
+                val condition = parseCondition(evoObj)
+                formTargets.add(EvoTarget(resultSpecies, condition, resultAspect))
+                preEvos[resultSpecies] = name
+            }
+            if (formTargets.isNotEmpty()) evos[formKey] = formTargets
+        }
     }
 
     private fun parseCondition(evoObj: com.google.gson.JsonObject): String {

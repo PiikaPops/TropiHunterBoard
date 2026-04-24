@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.option.KeyBinding
 import net.minecraft.client.util.InputUtil
+import net.minecraft.registry.Registries
 import org.lwjgl.glfw.GLFW
 
 object KeyBindings {
@@ -13,6 +14,7 @@ object KeyBindings {
     private lateinit var spawnInfoKey: KeyBinding
     private lateinit var searchKey: KeyBinding
     private lateinit var cycleHudModeKey: KeyBinding
+    private lateinit var openRadarKey: KeyBinding
 
     fun register() {
         toggleHudKey = KeyBindingHelper.registerKeyBinding(
@@ -47,6 +49,15 @@ object KeyBindings {
                 "key.hunterboard.cycle_mode",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_BRACKET, // $ on French AZERTY
+                "category.hunterboard"
+            )
+        )
+
+        openRadarKey = KeyBindingHelper.registerKeyBinding(
+            KeyBinding(
+                "key.hunterboard.open_radar",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_G,
                 "category.hunterboard"
             )
         )
@@ -91,6 +102,21 @@ object KeyBindings {
                     BoardState.setDisplayMode(newMode)
                 }
             }
+
+            if (openRadarKey.wasPressed()) {
+                val mc = MinecraftClient.getInstance()
+                if (mc.currentScreen == null && mc.player != null && hasPokeRadarItem(mc)) {
+                    RadarEnhancer.triggerRadarOpen()
+                }
+            }
+        }
+    }
+
+    private fun hasPokeRadarItem(mc: MinecraftClient): Boolean {
+        val player = mc.player ?: return false
+        val inv = player.inventory
+        return (inv.main + inv.offHand).any { stack ->
+            !stack.isEmpty && Registries.ITEM.getId(stack.item).toString() == "tropifurnitures:pokeradar"
         }
     }
 }

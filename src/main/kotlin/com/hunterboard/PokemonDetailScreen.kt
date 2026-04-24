@@ -104,7 +104,7 @@ class PokemonDetailScreen(
     private var currentIndex = -1
 
     // F3: Evolution tree click bounds
-    private data class EvoClickBound(val x: Int, val y: Int, val w: Int, val h: Int, val species: Species)
+    private data class EvoClickBound(val x: Int, val y: Int, val w: Int, val h: Int, val species: Species, val formAspect: String? = null)
     private var evoClickBounds = mutableListOf<EvoClickBound>()
 
     // Mega evolution click bounds
@@ -587,6 +587,15 @@ class PokemonDetailScreen(
         }
         leftY += 12
 
+        // Body weight
+        try {
+            val kg = species.weight / 10f
+            val weightLabel: String = Translations.tr("Body Weight:")
+            context.drawText(textRenderer, "$weightLabel ${"%.1f".format(kg)} kg",
+                infoX + 4, leftY, 0xFFAAAAAA.toInt(), true)
+            leftY += 10
+        } catch (_: Exception) {}
+
         val leftEndY = maxOf(leftY, y + MODEL_SIZE + 6)
 
         // --- RIGHT: Base Stats (F4: use form overrides if available) ---
@@ -651,7 +660,8 @@ class PokemonDetailScreen(
         y += 6
 
         // ========== EVOLUTION (left) | DROPPED ITEMS (right) ==========
-        val evoTree = try { EvolutionData.getEvolutionTree(species) } catch (_: Exception) { null }
+        val currentFormName = currentForm()?.name?.lowercase()
+        val evoTree = try { EvolutionData.getEvolutionTree(species, currentFormName) } catch (_: Exception) { null }
         val hasEvo = evoTree != null
         val megaForms = try {
             species.forms.filter { form ->
@@ -855,6 +865,20 @@ class PokemonDetailScreen(
                         context.drawText(textRenderer, "  $multStr $condLabel", leftX + 8, spawnY, 0xFF55BBFF.toInt(), true)
                         spawnY += 10
                     }
+                }
+
+                if (spawn.requiresSlimeChunk) {
+                    val scLabel: String = Translations.tr("Slime Chunk")
+                    context.drawText(textRenderer, "  ★ $scLabel", leftX + 8, spawnY, 0xFF55FF55.toInt(), true)
+                    spawnY += 10
+                }
+
+                val displayPresets = spawn.presets.filter { it != "natural" }
+                if (displayPresets.isNotEmpty()) {
+                    val presetLabel: String = Translations.tr("Preset:")
+                    val presetNames = displayPresets.joinToString(", ") { Translations.formatPreset(it) }
+                    context.drawText(textRenderer, "  $presetLabel $presetNames", leftX + 8, spawnY, 0xFFAA8855.toInt(), true)
+                    spawnY += 10
                 }
 
                 spawnY += 2
@@ -1164,7 +1188,11 @@ class PokemonDetailScreen(
         x: Int, y: Int, mouseX: Int, mouseY: Int,
         visibleTop: Int, visibleBottom: Int
     ): Int {
-        val name: String = node.species?.translatedName?.string ?: node.speciesName.replaceFirstChar { it.uppercase() }
+        val baseName: String = node.species?.translatedName?.string ?: node.speciesName.replaceFirstChar { it.uppercase() }
+        val name: String = if (node.formAspect != null) {
+            val aspectLabel = node.formAspect.replaceFirstChar { it.uppercase() }
+            "$baseName ($aspectLabel)"
+        } else baseName
         val nameW = textRenderer.getWidth(name)
         val hovered = node.species != null && !node.isCurrent &&
                 mouseX >= x && mouseX <= x + nameW &&
@@ -1182,7 +1210,7 @@ class PokemonDetailScreen(
         if (node.species != null && !node.isCurrent) {
             val ulColor = if (hovered) 0xFFFFDD55.toInt() else 0xFF555555.toInt()
             context.fill(x, y + 9, x + nameW, y + 10, ulColor)
-            evoClickBounds.add(EvoClickBound(x, y, nameW, 10, node.species))
+            evoClickBounds.add(EvoClickBound(x, y, nameW, 10, node.species, node.formAspect))
         }
 
         return x + nameW
@@ -1689,7 +1717,8 @@ class PokemonDetailScreen(
             for (evo in evoClickBounds) {
                 if (mouseX >= evo.x && mouseX <= evo.x + evo.w &&
                     mouseY >= evo.y.toDouble() && mouseY <= (evo.y + evo.h).toDouble()) {
-                    client?.setScreen(PokemonDetailScreen(evo.species, parent, allSpecies))
+                    val targetFormName = evo.formAspect?.let { EvolutionData.aspectToFormName(it) }
+                    client?.setScreen(PokemonDetailScreen(evo.species, parent, allSpecies, targetFormName))
                     return true
                 }
             }

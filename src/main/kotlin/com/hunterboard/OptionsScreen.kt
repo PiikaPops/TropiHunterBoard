@@ -124,6 +124,24 @@ class OptionsScreen(
 
         var y = contentTop + 6 - scrollOffset
 
+        // ========== POKÉRADAR SECTION ==========
+        context.drawText(textRenderer, "Pokéradar", leftX, y, ModConfig.accentColor(), true)
+        y += 14
+
+        val hrLabel = "Interface: ${if (ModConfig.useHunterRadar) "HunterBoard" else "TropiMod"}"
+        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
+        val hrHov = mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + hrBtnW, y + 14,
+            if (ModConfig.useHunterRadar) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, hrBtnW, 14,
+            if (hrHov || ModConfig.useHunterRadar) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, hrLabel, leftX + 5, y + 3,
+            if (ModConfig.useHunterRadar) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 20
+
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        y += 8
+
         // ========== HUD SECTION ==========
         val hudLabel: String = Translations.tr("HUD")
         context.drawText(textRenderer, hudLabel, leftX, y, ModConfig.accentColor(), true)
@@ -301,6 +319,18 @@ class OptionsScreen(
             if (ModConfig.hideBossDamageChat) ModConfig.accentColor() else 0xFF666666.toInt(), true)
         y += 20
 
+        // Playtime toggle
+        val ptLabel = "${Translations.tr("Playtime")}: ${if (ModConfig.showPlaytime) "ON" else "OFF"}"
+        val ptBtnW = textRenderer.getWidth("${Translations.tr("Playtime")}: OFF") + 10
+        val ptHov = mouseX >= leftX && mouseX <= leftX + ptBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + ptBtnW, y + 14,
+            if (ModConfig.showPlaytime) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, ptBtnW, 14,
+            if (ptHov || ModConfig.showPlaytime) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, ptLabel, leftX + 5, y + 3,
+            if (ModConfig.showPlaytime) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 20
+
         // Separator
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
         y += 8
@@ -354,10 +384,22 @@ class OptionsScreen(
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
         y += 8
 
-        // ========== RAID & MIRACLES SECTION ==========
-        val sectionLabel: String = Translations.tr("Raid & Miracles")
+        // ========== NOTIFICATIONS SECTION ==========
+        val sectionLabel: String = Translations.tr("Sound Notifications")
         context.drawText(textRenderer, sectionLabel, leftX, y, ModConfig.accentColor(), true)
         y += 14
+
+        // Clear Sound toggle
+        val csLabel = "${Translations.tr("Clear Sound")}: ${if (ModConfig.clearWarningSound) "ON" else "OFF"}"
+        val csBtnW = textRenderer.getWidth("${Translations.tr("Clear Sound")}: OFF") + 10
+        val csHov = mouseX >= leftX && mouseX <= leftX + csBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + csBtnW, y + 14,
+            if (ModConfig.clearWarningSound) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+        drawBorder(context, leftX, y, csBtnW, 14,
+            if (csHov || ModConfig.clearWarningSound) ModConfig.accentColor() else 0xFF444444.toInt())
+        context.drawText(textRenderer, csLabel, leftX + 5, y + 3,
+            if (ModConfig.clearWarningSound) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        y += 18
 
         // Raid Notification toggle + Miracle Notification toggle
         val rnLabel = "${Translations.tr("Raid Sound")}: ${if (ModConfig.raidNotification) "ON" else "OFF"}"
@@ -428,6 +470,15 @@ class OptionsScreen(
         val msBtnW = textRenderer.getWidth(msLabel) + 10
         val msHov = mouseX >= leftX && mouseX <= leftX + msBtnW && mouseY >= y && mouseY <= y + 14
         renderButton(context, leftX, y, msBtnW, 14, msLabel, msHov)
+        y += 18
+
+        // Clear Warning Sound button
+        val cwsSoundName = ModConfig.clearWarningSoundId.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val cwsLabel = "${Translations.tr("Clear Warning Sound")}: $cwsSoundName"
+        val cwsBtnW = textRenderer.getWidth(cwsLabel) + 10
+        val cwsHov = mouseX >= leftX && mouseX <= leftX + cwsBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, cwsBtnW, 14, cwsLabel, cwsHov)
         y += 20
 
         // Separator
@@ -634,6 +685,16 @@ class OptionsScreen(
 
         var y = cTop + 6 - scrollOffset
 
+        // Pokéradar section
+        y += 14 // Pokéradar label
+        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
+        if (mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleUseHunterRadar()
+            return true
+        }
+        y += 20
+        y += 9 // separator
+
         y += 14 // HUD label
 
         // Mode button
@@ -776,6 +837,14 @@ class OptionsScreen(
         }
         y += 20
 
+        // Playtime toggle
+        val ptBtnW = textRenderer.getWidth("${Translations.tr("Playtime")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + ptBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleShowPlaytime()
+            return true
+        }
+        y += 20
+
         // Color section
         y += 9 // separator
         y += 14 // color label
@@ -809,8 +878,16 @@ class OptionsScreen(
         y += 5
         y += 8
 
-        // Raid & Miracles section
+        // Notifications sonores section
         y += 14 // section label
+
+        // Clear Sound toggle
+        val csBtnW = textRenderer.getWidth("${Translations.tr("Clear Sound")}: OFF") + 10
+        if (mouseX >= leftX && mouseX <= leftX + csBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleClearWarningSound()
+            return true
+        }
+        y += 18
 
         // Raid Sound toggle
         val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Sound")}: OFF") + 10
@@ -881,6 +958,19 @@ class OptionsScreen(
         if (mouseX >= leftX && mouseX <= leftX + msBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             client?.setScreen(SoundPickerScreen(this, ModConfig.miracleSound) { selected ->
                 ModConfig.setMiracleSound(selected)
+            })
+            return true
+        }
+        y += 18
+
+        // Clear Warning Sound button
+        val cwsSoundName = ModConfig.clearWarningSoundId.substringAfter(":").replace(".", " ").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val cwsLabel = "${Translations.tr("Clear Warning Sound")}: $cwsSoundName"
+        val cwsBtnW = textRenderer.getWidth(cwsLabel) + 10
+        if (mouseX >= leftX && mouseX <= leftX + cwsBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            client?.setScreen(SoundPickerScreen(this, ModConfig.clearWarningSoundId) { selected ->
+                ModConfig.setClearWarningSound(selected)
             })
             return true
         }
