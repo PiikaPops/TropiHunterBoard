@@ -46,7 +46,8 @@ data class SpawnEntry(
     val spawnContext: String = "",
     val excludedBiomes: List<BiomeDetail> = emptyList(),
     val presets: List<String> = emptyList(),
-    val weightMultipliers: List<WeightMultiplierData> = emptyList()
+    val weightMultipliers: List<WeightMultiplierData> = emptyList(),
+    val requiresSlimeChunk: Boolean = false
 )
 
 object SpawnData {
@@ -63,14 +64,54 @@ object SpawnData {
     private fun normalizeKey(name: String): String =
         name.lowercase().replace(Regex("[^a-z0-9]"), "")
 
-    /** Store a spawn entry under its normalized key (and optionally form key) */
+    /**
+     * Bidirectional alias map for TRUE regional forms between the short JSON form name
+     * ("alola") and the Cobblemon aspect tag ("alolan"). These are distinct from regional
+     * biases, which use a different aspect format (see storeSpawn).
+     */
+    private val FORM_ALIASES = mapOf(
+        "galar"    to "galarian",
+        "galarian" to "galar",
+        "alola"    to "alolan",
+        "alolan"   to "alola",
+        "hisui"    to "hisuian",
+        "hisuian"  to "hisui",
+        "paldea"   to "paldean",
+        "paldean"  to "paldea"
+    )
+
+    /**
+     * Store a spawn entry under its normalized key, handling three form categories distinctly:
+     *  - Regional bias (spawn JSON "region_bias=alola" ↔ species aspect "region-bias-alola")
+     *  - True regional form (spawn JSON "alola" ↔ species aspect "alolan")
+     *  - Any other form (stored as-is)
+     * Regional bias and regional form are kept in SEPARATE key buckets because they are
+     * different concepts in Cobblemon — a bias is a soft spawn tint, a form is a distinct variant.
+     */
     private fun storeSpawn(map: MutableMap<String, MutableList<SpawnEntry>>, species: String, form: String, entry: SpawnEntry) {
         val baseKey = normalizeKey(species)
         if (form.isNotEmpty()) {
-            map.getOrPut("$baseKey $form") { mutableListOf() }.add(entry)
+            val aliases = mutableSetOf(form)
+            when {
+                // Regional bias: bridge JSON "region_bias=X" ↔ aspect "region-bias-X"
+                form.startsWith("region_bias=") -> {
+                    aliases.add("region-bias-${form.removePrefix("region_bias=")}")
+                }
+                form.startsWith("region-bias-") -> {
+                    aliases.add("region_bias=${form.removePrefix("region-bias-")}")
+                }
+                // True regional form (or any other short ↔ adjective pair)
+                else -> {
+                    FORM_ALIASES[form]?.let { aliases.add(it) }
+                }
+            }
+            for (alias in aliases) {
+                map.getOrPut("$baseKey $alias") { mutableListOf() }.add(entry)
+            }
+            // Do NOT add form entries to the base key — base form should only have formless entries
+        } else {
+            map.getOrPut(baseKey) { mutableListOf() }.add(entry)
         }
-        // Always store under base key so formless lookups work
-        map.getOrPut(baseKey) { mutableListOf() }.add(entry)
     }
 
     fun getSpawns(pokemonName: String, formName: String = ""): List<SpawnEntry> {
@@ -120,6 +161,7 @@ object SpawnData {
                 var minSkyLight: Int? = null
                 var maxSkyLight: Int? = null
                 var moonPhase: Int? = null
+                var slimeChunk = false
 
                 for (condition in detail.conditions) {
                     extractBiomes(condition, biomeDetails)
@@ -137,6 +179,7 @@ object SpawnData {
                     extractIntField(condition, "moonPhase")?.let { moonPhase = it }
                     extractBlockConditions(condition, "neededNearbyBlocks", nearbyBlocks)
                     extractBlockConditions(condition, "neededBaseBlocks", baseBlocks)
+                    if (!slimeChunk) slimeChunk = extractBoolField(condition, "isSlimeChunk") == true
                 }
 
                 // Anticonditions (excluded biomes)
@@ -153,6 +196,9 @@ object SpawnData {
                     @Suppress("UNCHECKED_CAST")
                     (pField.get(detail) as? List<String>)?.toList() ?: emptyList()
                 } catch (_: Exception) { emptyList<String>() }
+
+                // Preset-based slime chunk detection (fallback if field reflection missed it)
+                if (!slimeChunk) slimeChunk = presetList.any { it.contains("slime", ignoreCase = true) }
 
                 val spawnCtx = try {
                     val field = detail::class.java.getField("spawnablePositionType")
@@ -188,7 +234,8 @@ object SpawnData {
                     spawnContext = spawnCtx,
                     excludedBiomes = excludedBiomes.toList(),
                     presets = presetList,
-                    weightMultipliers = multipliers
+                    weightMultipliers = multipliers,
+                    requiresSlimeChunk = slimeChunk
                 )
                 storeSpawn(map, species, form, entry)
             }
@@ -291,6 +338,7 @@ object SpawnData {
         var maxSkyLight: Int? = null
         var moonPhase: Int? = null
 
+        var slimeChunk = false
         obj.getAsJsonObject("condition")?.let { condition ->
             parseConditionBiomes(condition, biomeDetails)
             condition.get("timeRange")?.asString?.let { time = it }
@@ -306,6 +354,7 @@ object SpawnData {
             if (condition.has("moonPhase")) moonPhase = condition.get("moonPhase").asInt
             parseConditionBlocks(condition, "neededNearbyBlocks", nearbyBlocks)
             parseConditionBlocks(condition, "neededBaseBlocks", baseBlocks)
+            if (condition.has("isSlimeChunk")) slimeChunk = condition.get("isSlimeChunk").asBoolean
         }
 
         val spawnCtx = obj.get("spawnablePositionType")?.asString?.lowercase() ?: ""
@@ -323,6 +372,7 @@ object SpawnData {
             val p = el.asString
             if (p.isNotEmpty()) presetList.add(p)
         }
+        if (!slimeChunk) slimeChunk = presetList.any { it.contains("slime", ignoreCase = true) }
 
         // Weight multipliers (JSON supports both singular "weightMultiplier" and plural "weightMultipliers")
         val multipliers = parseJsonWeightMultipliers(obj)
@@ -351,7 +401,8 @@ object SpawnData {
             spawnContext = spawnCtx,
             excludedBiomes = excludedBiomes.toList(),
             presets = presetList.toList(),
-            weightMultipliers = multipliers
+            weightMultipliers = multipliers,
+            requiresSlimeChunk = slimeChunk
         )
         storeSpawn(map, species, form, entry)
     }
@@ -374,6 +425,7 @@ object SpawnData {
         var minSkyLight: Int? = null
         var maxSkyLight: Int? = null
         var moonPhase: Int? = null
+        var slimeChunkHerd = false
 
         obj.getAsJsonObject("condition")?.let { condition ->
             parseConditionBiomes(condition, biomeDetails)
@@ -390,6 +442,7 @@ object SpawnData {
             if (condition.has("moonPhase")) moonPhase = condition.get("moonPhase").asInt
             parseConditionBlocks(condition, "neededNearbyBlocks", nearbyBlocks)
             parseConditionBlocks(condition, "neededBaseBlocks", baseBlocks)
+            if (condition.has("isSlimeChunk")) slimeChunkHerd = condition.get("isSlimeChunk").asBoolean
         }
 
         val spawnCtx = obj.get("spawnablePositionType")?.asString?.lowercase() ?: ""
@@ -405,6 +458,7 @@ object SpawnData {
             val p = el.asString
             if (p.isNotEmpty()) presetList.add(p)
         }
+        if (!slimeChunkHerd) slimeChunkHerd = presetList.any { it.contains("slime", ignoreCase = true) }
 
         val multipliers = parseJsonWeightMultipliers(obj)
 
@@ -448,7 +502,8 @@ object SpawnData {
                 spawnContext = spawnCtx,
                 excludedBiomes = excludedBiomes.toList(),
                 presets = presetList.toList(),
-                weightMultipliers = multipliers
+                weightMultipliers = multipliers,
+                requiresSlimeChunk = slimeChunkHerd
             )
             storeSpawn(map, species, form, entry)
         }
@@ -604,6 +659,18 @@ object SpawnData {
             val field = condition::class.java.getField(fieldName)
             field.get(condition) as? Int
         } catch (_: Exception) { null }
+    }
+
+    private fun extractBoolField(condition: SpawningCondition<*>, fieldName: String): Boolean? {
+        // Try public field (@JvmField)
+        try { return condition::class.java.getField(fieldName).get(condition) as? Boolean } catch (_: Exception) {}
+        // Try Java-style getter (getXxx)
+        try { return condition::class.java.getMethod("get${fieldName.replaceFirstChar { it.uppercase() }}").invoke(condition) as? Boolean } catch (_: Exception) {}
+        // Try Kotlin-style boolean getter (isXxx — same name as property)
+        try { return condition::class.java.getMethod(fieldName).invoke(condition) as? Boolean } catch (_: Exception) {}
+        // Try private declared field
+        try { val f = condition::class.java.getDeclaredField(fieldName); f.isAccessible = true; return f.get(condition) as? Boolean } catch (_: Exception) {}
+        return null
     }
 
     private fun extractBlockConditions(condition: SpawningCondition<*>, fieldName: String, list: MutableList<String>) {

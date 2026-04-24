@@ -31,6 +31,10 @@ object PvpDetector {
     val playerTeam  : MutableList<PvpPokemon> = mutableListOf()
     val opponentTeam: MutableList<PvpPokemon> = mutableListOf()
 
+    /** True once a PvP team-selection screen was detected; cleared when the battle ends. */
+    var pvpSessionActive = false
+        private set
+
     // Regional aspect → readable label shown in overlay
     private val REGION_LABELS = mapOf(
         "hisuian"  to "Hisui",
@@ -53,45 +57,66 @@ object PvpDetector {
     private var tickCounter  = 0
     private var alreadyScanned = false
 
+    private val CHALLENGE_TITLE        = "Select your Lead Pokemon"
+    private val CHALLENGE_DOUBLE_TITLE = "Select 2 Pokemon for Doubles"
+    private val RANKED_TITLE           = "Sélection de l'équipe"
+
+    private fun isChallenge(title: String) = title.contains(CHALLENGE_TITLE, ignoreCase = true)
+                                          || title.contains(CHALLENGE_DOUBLE_TITLE, ignoreCase = true)
+    private fun isRanked(title: String)    = title.contains(RANKED_TITLE, ignoreCase = true)
+
     fun register() {
         ScreenEvents.AFTER_INIT.register afterInit@{ _, screen, _, _ ->
             if (screen !is HandledScreen<*>) return@afterInit
             val title = screen.title.string
-            if (!title.contains("Select your Lead Pokemon", ignoreCase = true)) return@afterInit
+            if (!isChallenge(title) && !isRanked(title)) return@afterInit
 
             tickCounter    = 0
             alreadyScanned = false
-            HunterBoard.LOGGER.info("[PvP] Challenge screen detected")
+            HunterBoard.LOGGER.info("[PvP] Screen detected: \"$title\"")
 
             ScreenEvents.afterTick(screen).register afterTick@{ scr ->
                 if (scr !is HandledScreen<*>) return@afterTick
                 tickCounter++
                 if (tickCounter == 3 && !alreadyScanned) {
                     alreadyScanned = true
-                    scanScreen(scr)
+                    scanScreen(scr, isRanked(title))
                 }
             }
         }
         HunterBoard.LOGGER.info("[PvP] Detector registered")
     }
 
-    private fun scanScreen(screen: HandledScreen<*>) {
+    private fun scanScreen(screen: HandledScreen<*>, ranked: Boolean) {
         if (!ModConfig.pvpOverlayEnabled) return
         try {
-            val handler      = screen.screenHandler
-            val slots        = handler.slots
+            val handler       = screen.screenHandler
+            val slots         = handler.slots
             val containerSize = (slots.size - 36).coerceAtLeast(0)
             if (containerSize == 0) return
 
-            // First column = player, last column = opponent
-            val playerSlots   = slots.filter { it.id < containerSize && it.id % 9 == 0 }
-            val opponentSlots = slots.filter { it.id < containerSize && it.id % 9 == 8 }
+            // Ranked layout (54-slot chest, 6×9):
+            //   Player   : cols 1-2, rows 2-4 (skip header row 0 + player-head row 1)
+            //   Opponent : cols 6-7, rows 2-4
+            val playerSlots = if (ranked)
+                slots.filter { it.id < containerSize && it.id >= 18 && it.id < 45 && (it.id % 9 == 1 || it.id % 9 == 2) }
+            else
+                slots.filter { it.id < containerSize && it.id % 9 == 0 }
+
+            val opponentSlots = if (ranked)
+                slots.filter { it.id < containerSize && it.id >= 18 && it.id < 45 && (it.id % 9 == 6 || it.id % 9 == 7) }
+            else
+                slots.filter { it.id < containerSize && it.id % 9 == 8 }
 
             val detectedPlayer   = scanColumn(playerSlots)
             val detectedOpponent = scanColumn(opponentSlots)
 
             playerTeam.clear();   playerTeam.addAll(detectedPlayer)
             opponentTeam.clear(); opponentTeam.addAll(detectedOpponent)
+
+            if (detectedPlayer.isNotEmpty() || detectedOpponent.isNotEmpty()) {
+                pvpSessionActive = true
+            }
 
             HunterBoard.LOGGER.info("[PvP] Player   (${detectedPlayer.size}): ${detectedPlayer.map { it.speciesId }}")
             HunterBoard.LOGGER.info("[PvP] Opponent (${detectedOpponent.size}): ${detectedOpponent.map { it.speciesId }}")
@@ -203,5 +228,6 @@ object PvpDetector {
     fun clearTeam() {
         playerTeam.clear()
         opponentTeam.clear()
+        pvpSessionActive = false
     }
 }

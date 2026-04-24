@@ -99,6 +99,20 @@ object ModConfig {
     var hideBossDamageChat: Boolean = false
         private set
 
+    // Use HunterBoard's custom radar screen instead of TropiMod's default
+    var useHunterRadar: Boolean = true
+        private set
+
+    // Play a sound when the ground-clear countdown reaches 10 seconds
+    var clearWarningSound: Boolean = true
+        private set
+    var clearWarningSoundId: String = "minecraft:entity.experience_orb.pickup"
+        private set
+
+    // Show session playtime on the HUD
+    var showPlaytime: Boolean = true
+        private set
+
     // Show battle hunt notification HUD
     var showBattleHuntHud: Boolean = true
         private set
@@ -309,8 +323,19 @@ object ModConfig {
     fun setPvpOpponentPosition(x: Int, y: Int) { pvpOpponentX = x; pvpOpponentY = y; save() }
     fun resetPvpPositions() { pvpPlayerX = -1; pvpPlayerY = -1; pvpOpponentX = -1; pvpOpponentY = -1; save() }
 
+
     fun toggleHideBossDamageChat() {
         hideBossDamageChat = !hideBossDamageChat
+        save()
+    }
+
+    fun setUseHunterRadar(value: Boolean) {
+        useHunterRadar = value
+        save()
+    }
+
+    fun toggleUseHunterRadar() {
+        useHunterRadar = !useHunterRadar
         save()
     }
 
@@ -341,6 +366,21 @@ object ModConfig {
 
     fun toggleRaidNotification() {
         raidNotification = !raidNotification
+        save()
+    }
+
+    fun toggleClearWarningSound() {
+        clearWarningSound = !clearWarningSound
+        save()
+    }
+
+    fun setClearWarningSound(soundId: String) {
+        clearWarningSoundId = soundId
+        save()
+    }
+
+    fun toggleShowPlaytime() {
+        showPlaytime = !showPlaytime
         save()
     }
 
@@ -390,6 +430,10 @@ object ModConfig {
         pvpOverlayEnabled = true
         pvpPlayerX = -1; pvpPlayerY = -1
         pvpOpponentX = -1; pvpOpponentY = -1
+        useHunterRadar = true
+        clearWarningSound = true
+        clearWarningSoundId = "minecraft:entity.experience_orb.pickup"
+        showPlaytime = true
         save()
     }
 
@@ -447,6 +491,11 @@ object ModConfig {
                 pvpOverlayEnabled = data.pvpOverlayEnabled
                 pvpPlayerX = data.pvpPlayerX; pvpPlayerY = data.pvpPlayerY
                 pvpOpponentX = data.pvpOpponentX; pvpOpponentY = data.pvpOpponentY
+                useHunterRadar = data.useHunterRadar
+                clearWarningSound = data.clearWarningSound
+                clearWarningSoundId = data.clearWarningSoundId
+                showPlaytime = data.showPlaytime
+
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
         } catch (e: Exception) {
@@ -469,7 +518,11 @@ object ModConfig {
                 hideBossDamageChat,
                 wikiShowSprites,
                 pvpOverlayEnabled,
-                pvpPlayerX, pvpPlayerY, pvpOpponentX, pvpOpponentY
+                pvpPlayerX, pvpPlayerY, pvpOpponentX, pvpOpponentY,
+                useHunterRadar,
+                clearWarningSound,
+                clearWarningSoundId,
+                showPlaytime
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -518,6 +571,10 @@ object ModConfig {
         val pvpPlayerX: Int = -1,
         val pvpPlayerY: Int = -1,
         val pvpOpponentX: Int = -1,
-        val pvpOpponentY: Int = -1
+        val pvpOpponentY: Int = -1,
+        val useHunterRadar: Boolean = true,
+        val clearWarningSound: Boolean = true,
+        val clearWarningSoundId: String = "minecraft:entity.experience_orb.pickup",
+        val showPlaytime: Boolean = true
     )
 }
