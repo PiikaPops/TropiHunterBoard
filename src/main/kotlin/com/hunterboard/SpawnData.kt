@@ -47,7 +47,9 @@ data class SpawnEntry(
     val excludedBiomes: List<BiomeDetail> = emptyList(),
     val presets: List<String> = emptyList(),
     val weightMultipliers: List<WeightMultiplierData> = emptyList(),
-    val requiresSlimeChunk: Boolean = false
+    val requiresSlimeChunk: Boolean = false,
+    /** Human-readable variant label ("Classic", "Red"…) when this entry comes from a cosmetic feature aspect */
+    val formLabel: String = ""
 )
 
 object SpawnData {
@@ -60,9 +62,8 @@ object SpawnData {
     var loadError: String? = null
         private set
 
-    /** Normalize any species name to a canonical key (strips all non-alphanumeric) */
-    private fun normalizeKey(name: String): String =
-        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+    /** Normalize any species name to a canonical key (accents/gender symbols folded, non-alphanumeric stripped) */
+    private fun normalizeKey(name: String): String = NameUtil.normalize(name)
 
     /**
      * Bidirectional alias map for TRUE regional forms between the short JSON form name
@@ -80,13 +81,35 @@ object SpawnData {
         "paldean"  to "paldea"
     )
 
+    /** Regional form identifiers — real variants that must stay OUT of the base species bucket */
+    private val REGIONAL_FORMS = setOf(
+        "galar", "galarian", "alola", "alolan",
+        "hisui", "hisuian", "paldea", "paldean"
+    )
+
     /**
-     * Store a spawn entry under its normalized key, handling three form categories distinctly:
+     * True if this form is a cosmetic feature aspect (e.g. Arbok "snake_pattern=classic",
+     * Flabébé "flower=red", Unown "character=a") rather than a regional form or bias.
+     * JSON spawn files use "feature=value"; the Cobblemon API exposes the same thing
+     * as "feature-value" (see species_features aspectFormat).
+     */
+    private fun isCosmeticFeature(form: String): Boolean {
+        if (form.startsWith("region_bias=") || form.startsWith("region-bias-")) return false
+        if (form in REGIONAL_FORMS) return false
+        return true
+    }
+
+    /**
+     * Store a spawn entry under its normalized key, handling four form categories distinctly:
      *  - Regional bias (spawn JSON "region_bias=alola" ↔ species aspect "region-bias-alola")
      *  - True regional form (spawn JSON "alola" ↔ species aspect "alolan")
+     *  - Cosmetic feature aspect (spawn JSON "snake_pattern=classic" ↔ aspect "snake-pattern-classic")
      *  - Any other form (stored as-is)
      * Regional bias and regional form are kept in SEPARATE key buckets because they are
      * different concepts in Cobblemon — a bias is a soft spawn tint, a form is a distinct variant.
+     * Cosmetic features are ALSO stored under the base key: species like Arbok, Unown, Vivillon
+     * or Flabébé spawn exclusively with such aspects, so without this the base species would
+     * appear to have no spawns at all.
      */
     private fun storeSpawn(map: MutableMap<String, MutableList<SpawnEntry>>, species: String, form: String, entry: SpawnEntry) {
         val baseKey = normalizeKey(species)
@@ -103,15 +126,40 @@ object SpawnData {
                 // True regional form (or any other short ↔ adjective pair)
                 else -> {
                     FORM_ALIASES[form]?.let { aliases.add(it) }
+                    // Bridge JSON "feature=value" ↔ API aspect "feature-value"
+                    if (form.contains("=")) {
+                        aliases.add(form.replace("_", "-").replace("=", "-"))
+                    }
                 }
             }
             for (alias in aliases) {
                 map.getOrPut("$baseKey $alias") { mutableListOf() }.add(entry)
             }
-            // Do NOT add form entries to the base key — base form should only have formless entries
+            // Cosmetic feature aspects also feed the base species (deduplicated),
+            // otherwise e.g. Arbok — whose every spawn carries a snake_pattern — shows nothing.
+            if (isCosmeticFeature(form)) {
+                val labeled = entry.copy(formLabel = prettyFormLabel(form))
+                val baseList = map.getOrPut(baseKey) { mutableListOf() }
+                if (labeled !in baseList) baseList.add(labeled)
+            }
         } else {
             map.getOrPut(baseKey) { mutableListOf() }.add(entry)
         }
+    }
+
+    /**
+     * "snake_pattern=classic" → "Classic", "flower=red" → "Red",
+     * "snake-pattern-classic" → "Classic" (API aspect form).
+     */
+    private fun prettyFormLabel(form: String): String {
+        val value = when {
+            form.contains("=") -> form.substringAfterLast("=")
+            form.contains("-") -> form.substringAfterLast("-")
+            else -> form
+        }
+        return value.replace("_", " ").replace("-", " ")
+            .split(" ").filter { it.isNotEmpty() }
+            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
     }
 
     fun getSpawns(pokemonName: String, formName: String = ""): List<SpawnEntry> {

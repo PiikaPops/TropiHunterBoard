@@ -73,7 +73,7 @@ class OptionsScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -81,18 +81,15 @@ class OptionsScreen(
         val panelBottom = height - 25
         val panelHeight = panelBottom - panelTop
 
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
 
         val title: String = Translations.tr("Options")
-        val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
-        context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
+        UiKit.header(context, textRenderer, panelX, panelTop, panelWidth, title)
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Reset button (in title bar, not scrollable)
         val resetLabel: String = Translations.tr("Reset")
@@ -103,8 +100,6 @@ class OptionsScreen(
                            mouseY >= resetBtnY && mouseY <= resetBtnY + 14
         renderButton(context, resetBtnX, resetBtnY, resetBtnW, 14, resetLabel, resetHovered)
 
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
         val leftX = panelX + 12
         val rightX = panelX + panelWidth - 12
@@ -124,27 +119,23 @@ class OptionsScreen(
 
         var y = contentTop + 6 - scrollOffset
 
-        // ========== POKÉRADAR SECTION ==========
-        context.drawText(textRenderer, "Pokéradar", leftX, y, ModConfig.accentColor(), true)
+        // ========== THEME SECTION ==========
+        val themeSection: String = Translations.tr("Theme")
+        context.drawText(textRenderer, themeSection, leftX, y, UiKit.accent(), true)
         y += 14
 
-        val hrLabel = "Interface: ${if (ModConfig.useHunterRadar) "HunterBoard" else "TropiMod"}"
-        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
-        val hrHov = mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y && mouseY <= y + 14
-        context.fill(leftX, y, leftX + hrBtnW, y + 14,
-            if (ModConfig.useHunterRadar) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, leftX, y, hrBtnW, 14,
-            if (hrHov || ModConfig.useHunterRadar) ModConfig.accentColor() else 0xFF444444.toInt())
-        context.drawText(textRenderer, hrLabel, leftX + 5, y + 3,
-            if (ModConfig.useHunterRadar) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+        val themeName: String = themeDisplayName(ModConfig.uiTheme)
+        val themeBtnW = themeButtonWidth()
+        val themeHov = mouseX >= leftX && mouseX <= leftX + themeBtnW && mouseY >= y && mouseY <= y + 14
+        renderButton(context, leftX, y, themeBtnW, 14, themeName, themeHov)
         y += 20
 
-        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
 
         // ========== HUD SECTION ==========
         val hudLabel: String = Translations.tr("HUD")
-        context.drawText(textRenderer, hudLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, hudLabel, leftX, y, UiKit.accent(), true)
         y += 14
 
         // Mode + Position on same row
@@ -189,40 +180,40 @@ class OptionsScreen(
         // ========== HUD VISIBILITY ==========
         y += 2
         val showLabel: String = Translations.tr("Show:")
-        context.drawText(textRenderer, showLabel, leftX, y + 3, 0xFFBBBBBB.toInt(), true)
+        context.drawText(textRenderer, showLabel, leftX, y + 3, UiKit.TEXT_MUTED, true)
         var vx = leftX + textRenderer.getWidth(showLabel) + 8
 
         val raidLabel = "Raid: ${if (ModConfig.showRaidHud) "ON" else "OFF"}"
         val raidToggleW = textRenderer.getWidth("Raid: OFF") + 10
         val raidHov = mouseX >= vx && mouseX <= vx + raidToggleW && mouseY >= y && mouseY <= y + 14
         context.fill(vx, y, vx + raidToggleW, y + 14,
-            if (ModConfig.showRaidHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.showRaidHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, raidToggleW, 14,
-            if (raidHov || ModConfig.showRaidHud) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (raidHov || ModConfig.showRaidHud) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, raidLabel, vx + 5, y + 3,
-            if (ModConfig.showRaidHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.showRaidHud) UiKit.accent() else UiKit.TEXT_FAINT, true)
         vx += raidToggleW + 6
 
         val miracleLabel = "Miracle: ${if (ModConfig.showMiracleHud) "ON" else "OFF"}"
         val miracleToggleW = textRenderer.getWidth("Miracle: OFF") + 10
         val miracleHov = mouseX >= vx && mouseX <= vx + miracleToggleW && mouseY >= y && mouseY <= y + 14
         context.fill(vx, y, vx + miracleToggleW, y + 14,
-            if (ModConfig.showMiracleHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.showMiracleHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, miracleToggleW, 14,
-            if (miracleHov || ModConfig.showMiracleHud) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (miracleHov || ModConfig.showMiracleHud) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, miracleLabel, vx + 5, y + 3,
-            if (ModConfig.showMiracleHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.showMiracleHud) UiKit.accent() else UiKit.TEXT_FAINT, true)
         vx += miracleToggleW + 6
 
         val huntLabel = "Hunt: ${if (ModConfig.showHuntHud) "ON" else "OFF"}"
         val huntToggleW = textRenderer.getWidth("Hunt: OFF") + 10
         val huntHov = mouseX >= vx && mouseX <= vx + huntToggleW && mouseY >= y && mouseY <= y + 14
         context.fill(vx, y, vx + huntToggleW, y + 14,
-            if (ModConfig.showHuntHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.showHuntHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, huntToggleW, 14,
-            if (huntHov || ModConfig.showHuntHud) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (huntHov || ModConfig.showHuntHud) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, huntLabel, vx + 5, y + 3,
-            if (ModConfig.showHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.showHuntHud) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Full Clear + Merged HUD toggles
@@ -230,22 +221,22 @@ class OptionsScreen(
         val fcBtnW = textRenderer.getWidth("${Translations.tr("Full Clear")}: OFF") + 10
         val fcHov = mouseX >= leftX && mouseX <= leftX + fcBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + fcBtnW, y + 14,
-            if (ModConfig.fullClearMode) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.fullClearMode) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, fcBtnW, 14,
-            if (fcHov || ModConfig.fullClearMode) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (fcHov || ModConfig.fullClearMode) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, fcLabel, leftX + 5, y + 3,
-            if (ModConfig.fullClearMode) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.fullClearMode) UiKit.accent() else UiKit.TEXT_FAINT, true)
 
         val mhStart = leftX + fcBtnW + 6
         val mhLabel = "${Translations.tr("Merged HUD")}: ${if (ModConfig.mergedHudMode) "ON" else "OFF"}"
         val mhBtnW = textRenderer.getWidth("${Translations.tr("Merged HUD")}: OFF") + 10
         val mhHov = mouseX >= mhStart && mouseX <= mhStart + mhBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(mhStart, y, mhStart + mhBtnW, y + 14,
-            if (ModConfig.mergedHudMode) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.mergedHudMode) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, mhStart, y, mhBtnW, 14,
-            if (mhHov || ModConfig.mergedHudMode) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (mhHov || ModConfig.mergedHudMode) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, mhLabel, mhStart + 5, y + 3,
-            if (ModConfig.mergedHudMode) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.mergedHudMode) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Auto Hide toggle
@@ -253,11 +244,11 @@ class OptionsScreen(
         val ahBtnW = textRenderer.getWidth("${Translations.tr("Auto Hide")}: OFF") + 10
         val ahHov = mouseX >= leftX && mouseX <= leftX + ahBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + ahBtnW, y + 14,
-            if (ModConfig.autoHideOnComplete) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.autoHideOnComplete) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, ahBtnW, 14,
-            if (ahHov || ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (ahHov || ModConfig.autoHideOnComplete) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, ahLabel, leftX + 5, y + 3,
-            if (ModConfig.autoHideOnComplete) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.autoHideOnComplete) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Hide in Battle toggle
@@ -265,22 +256,22 @@ class OptionsScreen(
         val hbBtnW = textRenderer.getWidth("${Translations.tr("Hide in Battle")}: OFF") + 10
         val hbHov = mouseX >= leftX && mouseX <= leftX + hbBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + hbBtnW, y + 14,
-            if (ModConfig.hideHudInBattle) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.hideHudInBattle) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, hbBtnW, 14,
-            if (hbHov || ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (hbHov || ModConfig.hideHudInBattle) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, hbLabel, leftX + 5, y + 3,
-            if (ModConfig.hideHudInBattle) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.hideHudInBattle) UiKit.accent() else UiKit.TEXT_FAINT, true)
 
         val hcStart = leftX + hbBtnW + 6
         val hcLabel = "${Translations.tr("Hide Caught")}: ${if (ModConfig.hideCaughtInHud) "ON" else "OFF"}"
         val hcBtnW = textRenderer.getWidth("${Translations.tr("Hide Caught")}: OFF") + 10
         val hcHov = mouseX >= hcStart && mouseX <= hcStart + hcBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(hcStart, y, hcStart + hcBtnW, y + 14,
-            if (ModConfig.hideCaughtInHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.hideCaughtInHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, hcStart, y, hcBtnW, 14,
-            if (hcHov || ModConfig.hideCaughtInHud) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (hcHov || ModConfig.hideCaughtInHud) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, hcLabel, hcStart + 5, y + 3,
-            if (ModConfig.hideCaughtInHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.hideCaughtInHud) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Battle Hunt HUD toggle
@@ -288,11 +279,11 @@ class OptionsScreen(
         val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
         val bhHov = mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + bhBtnW, y + 14,
-            if (ModConfig.showBattleHuntHud) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.showBattleHuntHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, bhBtnW, 14,
-            if (bhHov || ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (bhHov || ModConfig.showBattleHuntHud) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, bhLabel, leftX + 5, y + 3,
-            if (ModConfig.showBattleHuntHud) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.showBattleHuntHud) UiKit.accent() else UiKit.TEXT_FAINT, true)
 
         // PvP Overlay toggle (same row, after Battle Hunt HUD)
         val pvpStart = leftX + bhBtnW + 6
@@ -300,11 +291,11 @@ class OptionsScreen(
         val pvpBtnW = textRenderer.getWidth("PvP Overlay: OFF") + 10
         val pvpHov = mouseX >= pvpStart && mouseX <= pvpStart + pvpBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(pvpStart, y, pvpStart + pvpBtnW, y + 14,
-            if (ModConfig.pvpOverlayEnabled) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.pvpOverlayEnabled) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, pvpStart, y, pvpBtnW, 14,
-            if (pvpHov || ModConfig.pvpOverlayEnabled) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (pvpHov || ModConfig.pvpOverlayEnabled) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, pvpLabel, pvpStart + 5, y + 3,
-            if (ModConfig.pvpOverlayEnabled) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.pvpOverlayEnabled) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 20
 
         // Hide Boss Damage Chat toggle
@@ -312,11 +303,11 @@ class OptionsScreen(
         val bdBtnW = textRenderer.getWidth("${Translations.tr("Hide Raid Messages")}: OFF") + 10
         val bdHov = mouseX >= leftX && mouseX <= leftX + bdBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + bdBtnW, y + 14,
-            if (ModConfig.hideBossDamageChat) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.hideBossDamageChat) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, bdBtnW, 14,
-            if (bdHov || ModConfig.hideBossDamageChat) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (bdHov || ModConfig.hideBossDamageChat) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, bdLabel, leftX + 5, y + 3,
-            if (ModConfig.hideBossDamageChat) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.hideBossDamageChat) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 20
 
         // Playtime toggle
@@ -324,27 +315,27 @@ class OptionsScreen(
         val ptBtnW = textRenderer.getWidth("${Translations.tr("Playtime")}: OFF") + 10
         val ptHov = mouseX >= leftX && mouseX <= leftX + ptBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + ptBtnW, y + 14,
-            if (ModConfig.showPlaytime) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.showPlaytime) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, ptBtnW, 14,
-            if (ptHov || ModConfig.showPlaytime) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (ptHov || ModConfig.showPlaytime) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, ptLabel, leftX + 5, y + 3,
-            if (ModConfig.showPlaytime) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.showPlaytime) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 20
 
         // Separator
-        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
 
         // ========== COLOR SECTION ==========
         val colorLabel: String = Translations.tr("HUD Color")
-        context.drawText(textRenderer, colorLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, colorLabel, leftX, y, UiKit.accent(), true)
         y += 14
 
         val previewX = leftX
         val previewW = 16
         val previewH = 36
         context.fill(previewX, y, previewX + previewW, y + previewH, ModConfig.accentColor())
-        drawBorder(context, previewX, y, previewW, previewH, 0xFF666666.toInt())
+        drawBorder(context, previewX, y, previewW, previewH, UiKit.TEXT_FAINT)
 
         val sliderStartX = leftX + previewW + 8
         val sliderEndX = rightX
@@ -354,7 +345,7 @@ class OptionsScreen(
         y = renderSlider(context, "G", sliderStartX, y, slW, ModConfig.hudColorG, 0xFF44FF44.toInt(), mouseX, mouseY, "g")
         y = renderSlider(context, "B", sliderStartX, y, slW, ModConfig.hudColorB, 0xFF4444FF.toInt(), mouseX, mouseY, "b")
 
-        context.drawText(textRenderer, "#", leftX, y + 2, 0xFFBBBBBB.toInt(), true)
+        context.drawText(textRenderer, "#", leftX, y + 2, UiKit.TEXT_MUTED, true)
         hexField.x = leftX + 10
         hexField.y = y
         hexField.visible = y >= contentTop - 12 && y <= contentBottom
@@ -370,23 +361,23 @@ class OptionsScreen(
 
         // ========== TRANSPARENCY SECTION ==========
         val transLabel: String = Translations.tr("Transparency")
-        context.drawText(textRenderer, transLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, transLabel, leftX, y, UiKit.accent(), true)
         y += 14
 
         val opacityLabel = "${ModConfig.hudOpacity}%"
-        context.drawText(textRenderer, opacityLabel, leftX, y + 1, 0xFFBBBBBB.toInt(), true)
+        context.drawText(textRenderer, opacityLabel, leftX, y + 1, UiKit.TEXT_MUTED, true)
         val opSliderX = leftX + 30
         val opSliderW = rightX - opSliderX
-        y = renderSlider(context, null, opSliderX, y, opSliderW, (ModConfig.hudOpacity * 255 / 100), 0xFFBBBBBB.toInt(), mouseX, mouseY, "opacity")
+        y = renderSlider(context, null, opSliderX, y, opSliderW, (ModConfig.hudOpacity * 255 / 100), UiKit.TEXT_MUTED, mouseX, mouseY, "opacity")
         y += 4
 
         // Separator
-        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
 
         // ========== NOTIFICATIONS SECTION ==========
         val sectionLabel: String = Translations.tr("Sound Notifications")
-        context.drawText(textRenderer, sectionLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, sectionLabel, leftX, y, UiKit.accent(), true)
         y += 14
 
         // Clear Sound toggle
@@ -394,11 +385,11 @@ class OptionsScreen(
         val csBtnW = textRenderer.getWidth("${Translations.tr("Clear Sound")}: OFF") + 10
         val csHov = mouseX >= leftX && mouseX <= leftX + csBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + csBtnW, y + 14,
-            if (ModConfig.clearWarningSound) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.clearWarningSound) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, csBtnW, 14,
-            if (csHov || ModConfig.clearWarningSound) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (csHov || ModConfig.clearWarningSound) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, csLabel, leftX + 5, y + 3,
-            if (ModConfig.clearWarningSound) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.clearWarningSound) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Raid Notification toggle + Miracle Notification toggle
@@ -406,22 +397,22 @@ class OptionsScreen(
         val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Sound")}: OFF") + 10
         val rnHov = mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + rnBtnW, y + 14,
-            if (ModConfig.raidNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.raidNotification) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, rnBtnW, 14,
-            if (rnHov || ModConfig.raidNotification) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (rnHov || ModConfig.raidNotification) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, rnLabel, leftX + 5, y + 3,
-            if (ModConfig.raidNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.raidNotification) UiKit.accent() else UiKit.TEXT_FAINT, true)
 
         val mnStart = leftX + rnBtnW + 6
         val mnLabel = "${Translations.tr("Miracle Sound")}: ${if (ModConfig.miracleNotification) "ON" else "OFF"}"
         val mnBtnW = textRenderer.getWidth("${Translations.tr("Miracle Sound")}: OFF") + 10
         val mnHov = mouseX >= mnStart && mouseX <= mnStart + mnBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(mnStart, y, mnStart + mnBtnW, y + 14,
-            if (ModConfig.miracleNotification) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.miracleNotification) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, mnStart, y, mnBtnW, 14,
-            if (mnHov || ModConfig.miracleNotification) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (mnHov || ModConfig.miracleNotification) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, mnLabel, mnStart + 5, y + 3,
-            if (ModConfig.miracleNotification) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.miracleNotification) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Raid Sound Repeat toggle (5x vs 1x)
@@ -429,20 +420,20 @@ class OptionsScreen(
         val rpBtnW = textRenderer.getWidth("${Translations.tr("Repeat")}: 5x") + 10
         val rpHov = mouseX >= leftX && mouseX <= leftX + rpBtnW && mouseY >= y && mouseY <= y + 14
         context.fill(leftX, y, leftX + rpBtnW, y + 14,
-            if (ModConfig.raidSoundRepeat) (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt() else 0xFF1A1A1A.toInt())
+            if (ModConfig.raidSoundRepeat) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, rpBtnW, 14,
-            if (rpHov || ModConfig.raidSoundRepeat) ModConfig.accentColor() else 0xFF444444.toInt())
+            if (rpHov || ModConfig.raidSoundRepeat) UiKit.accent() else UiKit.BORDER)
         context.drawText(textRenderer, rpLabel, leftX + 5, y + 3,
-            if (ModConfig.raidSoundRepeat) ModConfig.accentColor() else 0xFF666666.toInt(), true)
+            if (ModConfig.raidSoundRepeat) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 18
 
         // Volume slider (shared)
         val volLabel = "${Translations.tr("Volume")}: ${ModConfig.raidNotifVolume}%"
-        context.drawText(textRenderer, volLabel, leftX, y + 1, 0xFFBBBBBB.toInt(), true)
+        context.drawText(textRenderer, volLabel, leftX, y + 1, UiKit.TEXT_MUTED, true)
         val volLabelW = textRenderer.getWidth("${Translations.tr("Volume")}: 100%") + 6
         val volSliderX = leftX + volLabelW
         val volSliderW = rightX - volSliderX
-        y = renderSlider(context, null, volSliderX, y, volSliderW, (ModConfig.raidNotifVolume * 255 / 100), ModConfig.accentColor(), mouseX, mouseY, "raidVol")
+        y = renderSlider(context, null, volSliderX, y, volSliderW, (ModConfig.raidNotifVolume * 255 / 100), UiKit.accent(), mouseX, mouseY, "raidVol")
         y += 4
 
         // Raid Start Sound button
@@ -482,12 +473,12 @@ class OptionsScreen(
         y += 20
 
         // Separator
-        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
 
         // ========== RANK SECTION ==========
         val rankLabel: String = Translations.tr("Rank")
-        context.drawText(textRenderer, rankLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, rankLabel, leftX, y, UiKit.accent(), true)
         y += 14
 
         var rx = leftX
@@ -498,17 +489,17 @@ class OptionsScreen(
             val isSelected = i == ModConfig.rank
             val isHov = mouseX >= rx && mouseX <= rx + btnW && mouseY >= y && mouseY <= y + 16
             val bg = when {
-                isSelected -> (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt()
-                isHov -> 0xFF252525.toInt()
-                else -> 0xFF1A1A1A.toInt()
+                isSelected -> (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt()
+                isHov -> UiKit.SURFACE_HOVER
+                else -> UiKit.SURFACE
             }
             context.fill(rx, y, rx + btnW, y + 16, bg)
-            val bc = if (isSelected) ModConfig.accentColor() else if (isHov) 0xFF666666.toInt() else 0xFF444444.toInt()
+            val bc = if (isSelected) UiKit.accent() else if (isHov) UiKit.TEXT_FAINT else UiKit.BORDER
             drawBorder(context, rx, y, btnW, 16, bc)
             val tc = when {
-                isSelected -> ModConfig.accentColor()
-                isHov -> 0xFFDDDDDD.toInt()
-                else -> 0xFF888888.toInt()
+                isSelected -> UiKit.accent()
+                isHov -> UiKit.TEXT
+                else -> UiKit.TEXT_MUTED
             }
             context.drawText(textRenderer, translatedLabel, rx + 5, y + 4, tc, true)
             rx += btnW + 3
@@ -517,7 +508,7 @@ class OptionsScreen(
 
         val huntsCount = ModConfig.maxHunts()
         val huntsText = "$huntsCount ${Translations.tr("hunts displayed")}"
-        context.drawText(textRenderer, huntsText, leftX + 4, y, 0xFF999999.toInt(), true)
+        context.drawText(textRenderer, huntsText, leftX + 4, y, UiKit.TEXT_FAINT, true)
         y += 14
 
         // Track content height for scrolling
@@ -528,27 +519,24 @@ class OptionsScreen(
         // Scrollbar
         if (contentHeight > contentAreaHeight && contentAreaHeight > 0) {
             sbTrackX = panelX + panelWidth - 5
-            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, 0xFF1A1A1A.toInt())
+            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, UiKit.SURFACE)
             sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
             sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, UiKit.accent())
         } else {
             sbThumbHeight = 0
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint: String = Translations.tr("ESC to return")
-        val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-        context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+                val hint: String = Translations.tr("ESC to return")
+        UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
 
         // Version mention
         val modVersion = FabricLoader.getInstance().getModContainer(HunterBoard.MOD_ID)
             .map { it.metadata.version.friendlyString }.orElse("?")
         val versionText = "HunterBoard $modVersion"
         val versionX = (width - textRenderer.getWidth(versionText)) / 2
-        context.drawText(textRenderer, versionText, versionX, height - 12, 0xFFCCCCCC.toInt(), true)
+        context.drawText(textRenderer, versionText, versionX, height - 12, UiKit.TEXT_MUTED, true)
 
         super.render(context, mouseX, mouseY, delta)
     }
@@ -570,15 +558,15 @@ class OptionsScreen(
         stepSliderBars[sliderId] = Pair(barX, barW)
 
         // Label (left-aligned)
-        context.drawText(textRenderer, label, x, y + 2, 0xFFBBBBBB.toInt(), true)
+        context.drawText(textRenderer, label, x, y + 2, UiKit.TEXT_MUTED, true)
 
         // Track
-        context.fill(barX, y + 5, barX + barW, y + 7, 0xFF222222.toInt())
+        context.fill(barX, y + 5, barX + barW, y + 7, UiKit.SURFACE)
 
         // Step markers
         for (i in 0 until steps) {
             val cx = barX + i * barW / (steps - 1)
-            val markerColor = if (i == step) ModConfig.accentColor() else 0xFF555555.toInt()
+            val markerColor = if (i == step) UiKit.accent() else UiKit.TEXT_FAINT
             context.fill(cx - 1, y + 3, cx + 1, y + 9, markerColor)
         }
 
@@ -586,14 +574,14 @@ class OptionsScreen(
         val thumbX = barX + step * barW / (steps - 1) - 3
         val isActive = draggingSlider == sliderId
         val isHov = isActive || (mouseX >= barX - 4 && mouseX <= barX + barW + 4 && mouseY >= y && mouseY <= y + sliderH)
-        context.fill(thumbX, y + 1, thumbX + 7, y + 11, if (isHov) ModConfig.accentColor() else 0xFFAAAAAA.toInt())
-        drawBorder(context, thumbX, y + 1, 7, 10, if (isHov) 0xFFFFFFFF.toInt() else 0xFF666666.toInt())
+        context.fill(thumbX, y + 1, thumbX + 7, y + 11, if (isHov) UiKit.accent() else UiKit.TEXT_MUTED)
+        drawBorder(context, thumbX, y + 1, 7, 10, if (isHov) UiKit.TEXT else UiKit.TEXT_FAINT)
 
         // Step label centered on the entire bar
         val stepLabel = Translations.tr(SIZE_LABELS[step])
         val stepLabelW = textRenderer.getWidth(stepLabel)
         val labelCenterX = barX + (barW - stepLabelW) / 2
-        context.drawText(textRenderer, stepLabel, labelCenterX, y + 2, 0xFF888888.toInt(), true)
+        context.drawText(textRenderer, stepLabel, labelCenterX, y + 2, UiKit.TEXT_MUTED, true)
 
         return y + sliderH + 2
     }
@@ -616,14 +604,14 @@ class OptionsScreen(
 
         if (label != null) context.drawText(textRenderer, label, x, y + 1, color, true)
 
-        context.fill(barX, y + 3, barX + barW, y + 7, 0xFF222222.toInt())
+        context.fill(barX, y + 3, barX + barW, y + 7, UiKit.SURFACE)
         val fillW = (value * barW / 255).coerceIn(0, barW)
         context.fill(barX, y + 3, barX + fillW, y + 7, color)
 
         val thumbX = barX + fillW - 2
         val thumbHov = draggingSlider == sliderId ||
                 (mouseX >= barX - 2 && mouseX <= barX + barW + 2 && mouseY >= y && mouseY <= y + sliderH)
-        context.fill(thumbX, y + 1, thumbX + 5, y + 9, if (thumbHov) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt())
+        context.fill(thumbX, y + 1, thumbX + 5, y + 9, if (thumbHov) UiKit.TEXT else UiKit.TEXT_MUTED)
 
         return y + sliderH + 2
     }
@@ -685,11 +673,11 @@ class OptionsScreen(
 
         var y = cTop + 6 - scrollOffset
 
-        // Pokéradar section
-        y += 14 // Pokéradar label
-        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
-        if (mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
-            ModConfig.toggleUseHunterRadar()
+        // Theme section
+        y += 14 // Theme label
+        val themeBtnW = themeButtonWidth()
+        if (mouseX >= leftX && mouseX <= leftX + themeBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleUiTheme()
             return true
         }
         y += 20
@@ -1103,10 +1091,23 @@ class OptionsScreen(
     override fun close() { client?.setScreen(parent) }
 
     private fun renderButton(context: DrawContext, x: Int, y: Int, w: Int, h: Int, text: String, hovered: Boolean) {
-        context.fill(x, y, x + w, y + h, if (hovered) 0xFF353535.toInt() else 0xFF222222.toInt())
-        drawBorder(context, x, y, w, h, if (hovered) ModConfig.accentColor() else 0xFF444444.toInt())
-        context.drawText(textRenderer, text, x + 5, y + 3, if (hovered) ModConfig.accentColor() else 0xFFBBBBBB.toInt(), true)
+        UiKit.button(context, textRenderer, x, y, w, h, text, hovered)
     }
+
+    /** Localized display name of a theme id. */
+    private fun themeDisplayName(id: String): String = Translations.tr(when (id) {
+        "cobblemon" -> "Cobblemon Theme"
+        "polaris" -> "Polaris Theme"
+        "rebutsurmer" -> "Rebut-sur-mer Theme"
+        "rhode" -> "Rhode Theme"
+        "niavarane" -> "Niavarane Theme"
+        "tropimon" -> "Tropimon Theme"
+        else -> "HunterBoard Theme"
+    })
+
+    /** Width fitting the longest theme name (stable hitbox across cycling). */
+    private fun themeButtonWidth(): Int =
+        ModConfig.UI_THEMES.maxOf { textRenderer.getWidth(themeDisplayName(it)) } + 10
 
     private fun drawBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int, color: Int) {
         context.fill(x, y, x + w, y + 1, color)

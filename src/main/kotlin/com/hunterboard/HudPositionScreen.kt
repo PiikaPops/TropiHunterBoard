@@ -63,14 +63,7 @@ class HudPositionScreen(
         val btnHovered = mouseX >= btnX && mouseX <= btnX + btnW &&
                          mouseY >= btnY && mouseY <= btnY + btnH
 
-        val btnBase  = if (btnHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
-        val btnLight = if (btnHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
-        val btnDark  = if (btnHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
-        context.fill(btnX, btnY, btnX + btnW, btnY + btnH, btnBase)
-        context.fill(btnX, btnY, btnX + btnW, btnY + 1, btnLight)
-        context.fill(btnX, btnY, btnX + 1, btnY + btnH, btnLight)
-        context.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, btnDark)
-        context.fill(btnX + btnW - 1, btnY, btnX + btnW, btnY + btnH, btnDark)
+        UiKit.button(context, textRenderer, btnX, btnY, btnW, btnH, "", btnHovered)
 
         val textColor = if (btnHovered) 0xFFFFFF00.toInt() else 0xFFFFFFFF.toInt()
         val textX = btnX + (btnW - textRenderer.getWidth(confirmLabel)) / 2

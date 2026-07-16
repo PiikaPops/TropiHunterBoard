@@ -110,7 +110,7 @@ class SoundPickerScreen(
     private fun currentListSize(): Int = if (activeTab == 0) filteredSounds.size else filteredCustom.size
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -118,20 +118,17 @@ class SoundPickerScreen(
         val panelBottom = height - 25
         val panelHeight = panelBottom - panelTop
 
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
 
         val title = Translations.tr("Select")
-        val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
-        context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
+        UiKit.header(context, textRenderer, panelX, panelTop, panelWidth, title)
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
+        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, UiKit.accent())
 
         // === Tabs ===
         val tabY = panelTop + 21
@@ -149,9 +146,9 @@ class SoundPickerScreen(
         val mcHovered = !mcActive && mouseX >= tabStartX && mouseX <= tabStartX + tabMcW &&
                 mouseY >= tabY && mouseY <= tabY + tabH
         context.fill(tabStartX, tabY, tabStartX + tabMcW, tabY + tabH,
-            if (mcActive) (ModConfig.accentColor() and 0x00FFFFFF or 0x44000000.toInt()) else if (mcHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+            if (mcActive) (UiKit.accent() and 0x00FFFFFF or 0x44000000.toInt()) else if (mcHovered) UiKit.SURFACE_HOVER else UiKit.SURFACE)
         context.drawText(textRenderer, tabMc, tabStartX + 5, tabY + 2,
-            if (mcActive) ModConfig.accentColor() else if (mcHovered) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (mcActive) UiKit.accent() else if (mcHovered) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         // Custom tab
         val customActive = activeTab == 1
@@ -159,9 +156,9 @@ class SoundPickerScreen(
         val customHovered = !customActive && mouseX >= customTabX && mouseX <= customTabX + tabCustomW &&
                 mouseY >= tabY && mouseY <= tabY + tabH
         context.fill(customTabX, tabY, customTabX + tabCustomW, tabY + tabH,
-            if (customActive) (ModConfig.accentColor() and 0x00FFFFFF or 0x44000000.toInt()) else if (customHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
+            if (customActive) (UiKit.accent() and 0x00FFFFFF or 0x44000000.toInt()) else if (customHovered) UiKit.SURFACE_HOVER else UiKit.SURFACE)
         context.drawText(textRenderer, tabCustom, customTabX + 5, tabY + 2,
-            if (customActive) ModConfig.accentColor() else if (customHovered) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (customActive) UiKit.accent() else if (customHovered) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         // === Results list ===
         val resultsTop = panelTop + 54
@@ -186,15 +183,15 @@ class SoundPickerScreen(
             sbTrackX = panelX + panelWidth - 5
             sbContentTop = resultsTop
             sbContentBottom = resultsBottom
-            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, 0xFF1A1A1A.toInt())
+            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, UiKit.SURFACE)
             sbThumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
             sbThumbY = resultsTop + (scrollOffset * (resultsAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, UiKit.accent())
         }
 
         // === Footer ===
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
+        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, UiKit.SURFACE_SUNKEN)
+        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, UiKit.BORDER_DIM)
 
         if (activeTab == 1) {
             // Open folder + Refresh buttons — side by side, centered
@@ -211,20 +208,20 @@ class SoundPickerScreen(
             val openHovered = mouseX >= openFolderBtnX && mouseX <= openFolderBtnX + openFolderBtnW &&
                     mouseY >= openFolderBtnY && mouseY <= openFolderBtnY + openFolderBtnH
             context.fill(openFolderBtnX, openFolderBtnY, openFolderBtnX + openFolderBtnW, openFolderBtnY + openFolderBtnH,
-                if (openHovered) 0xFF3A3A3A.toInt() else 0xFF2A2A2A.toInt())
+                if (openHovered) UiKit.BORDER else UiKit.BORDER_DIM)
             context.drawText(textRenderer, openText, openFolderBtnX + 6, openFolderBtnY + 2,
-                if (openHovered) 0xFFFFFFFF.toInt() else 0xFFDDDDDD.toInt(), true)
+                if (openHovered) UiKit.accent() else UiKit.TEXT, true)
 
             val refreshHovered = mouseX >= refreshBtnX && mouseX <= refreshBtnX + refreshBtnW &&
                     mouseY >= refreshBtnY && mouseY <= refreshBtnY + refreshBtnH
             context.fill(refreshBtnX, refreshBtnY, refreshBtnX + refreshBtnW, refreshBtnY + refreshBtnH,
-                if (refreshHovered) 0xFF3A3A3A.toInt() else 0xFF2A2A2A.toInt())
+                if (refreshHovered) UiKit.BORDER else UiKit.BORDER_DIM)
             context.drawText(textRenderer, refreshText, refreshBtnX + 6, refreshBtnY + 2,
-                if (refreshHovered) 0xFFFFFFFF.toInt() else 0xFFDDDDDD.toInt(), true)
+                if (refreshHovered) UiKit.accent() else UiKit.TEXT, true)
         } else {
             val hint: String = Translations.tr("ESC to return")
             val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-            context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+            context.drawText(textRenderer, hint, hintX, panelBottom - 10, UiKit.TEXT_FAINT, true)
         }
 
         super.render(context, mouseX, mouseY, delta)
@@ -246,15 +243,15 @@ class SoundPickerScreen(
         if (filteredCustom.isEmpty()) {
             val msg = Translations.tr("No custom sounds")
             val mx = panelX + (panelWidth - textRenderer.getWidth(msg)) / 2
-            context.drawText(textRenderer, msg, mx, resultsTop + 10, 0xFF666666.toInt(), true)
+            context.drawText(textRenderer, msg, mx, resultsTop + 10, UiKit.TEXT_FAINT, true)
 
             val hint = Translations.tr("Drop .wav or .ogg files in:")
             val hx = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-            context.drawText(textRenderer, hint, hx, resultsTop + 24, 0xFF555555.toInt(), true)
+            context.drawText(textRenderer, hint, hx, resultsTop + 24, UiKit.TEXT_FAINT, true)
 
             val path = "config/hunterboard/sounds/"
             val px = panelX + (panelWidth - textRenderer.getWidth(path)) / 2
-            context.drawText(textRenderer, path, px, resultsTop + 36, ModConfig.accentColor(), true)
+            context.drawText(textRenderer, path, px, resultsTop + 36, UiKit.accent(), true)
             return
         }
         var y = resultsTop + 2 - scrollOffset
@@ -280,9 +277,9 @@ class SoundPickerScreen(
 
         if (isSelected) {
             context.fill(panelX + 6, y, panelX + panelWidth - 6, y + rowHeight,
-                (ModConfig.accentColor() and 0x00FFFFFF) or 0x33000000.toInt())
+                (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt())
         } else if (hovered) {
-            context.fill(panelX + 6, y, panelX + panelWidth - 6, y + rowHeight, 0xFF252525.toInt())
+            UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
         }
 
         // Play/Stop button
@@ -293,9 +290,9 @@ class SoundPickerScreen(
                 mouseY >= resultsTop && mouseY <= resultsBottom
         val playColor = when {
             isPlaying -> 0xFFFF5555.toInt()
-            playHovered -> 0xFFFFFFFF.toInt()
-            isSelected -> ModConfig.accentColor()
-            else -> 0xFF777777.toInt()
+            playHovered -> UiKit.TEXT
+            isSelected -> UiKit.accent()
+            else -> UiKit.TEXT_FAINT
         }
         val tx = playX + 2
         val ty = y + 3
@@ -309,9 +306,9 @@ class SoundPickerScreen(
         }
 
         val nameColor = when {
-            isSelected -> ModConfig.accentColor()
-            hovered -> 0xFFFFFFFF.toInt()
-            else -> 0xFFBBBBBB.toInt()
+            isSelected -> UiKit.accent()
+            hovered -> UiKit.TEXT
+            else -> UiKit.TEXT_MUTED
         }
         val nameX = panelX + 10 + playBtnSize
         context.drawText(textRenderer, displayName, nameX, y + 3, nameColor, true)
@@ -319,7 +316,7 @@ class SoundPickerScreen(
         val idW = textRenderer.getWidth(rightLabel)
         val nameW = textRenderer.getWidth(displayName)
         if (panelX + panelWidth - 12 - idW > nameX + nameW + 8) {
-            context.drawText(textRenderer, rightLabel, panelX + panelWidth - 12 - idW, y + 3, 0xFF555555.toInt(), true)
+            context.drawText(textRenderer, rightLabel, panelX + panelWidth - 12 - idW, y + 3, UiKit.TEXT_FAINT, true)
         }
     }
 

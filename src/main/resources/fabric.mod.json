@@ -16,8 +16,7 @@
         ]
     },
     "mixins": [
-        "hunterboard.mixins.json",
-        "hunterboard.tropimod.mixins.json"
+        "hunterboard.mixins.json"
     ],
     "depends": {
         "fabricloader": ">=0.16.0",

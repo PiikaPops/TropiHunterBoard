@@ -21,8 +21,7 @@ object BattleHuntOverlay {
         }
     }
 
-    private fun normalizeKey(name: String): String =
-        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+    private fun normalizeKey(name: String): String = NameUtil.normalize(name)
 
     private fun render(context: DrawContext) {
         if (!BattleHelper.isInBattle()) return

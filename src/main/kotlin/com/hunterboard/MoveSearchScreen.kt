@@ -96,8 +96,8 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val query = if (::searchField.isInitialized) searchField.text.lowercase().trim() else ""
 
         val searched = if (query.isEmpty()) base else base.filter { move ->
-            Translations.moveDisplayName(move).lowercase().contains(query) ||
-            move.name.contains(query) ||
+            NameUtil.matchesQuery(Translations.moveDisplayName(move), query) ||
+            NameUtil.matchesQuery(move.name, query) ||
             move.elementalType.name.lowercase().contains(query)
         }
 
@@ -114,7 +114,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -122,37 +122,25 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val panelBottom = height - 25
         val panelHeight = panelBottom - panelTop
 
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
 
         // Title
-        val title: String = Translations.tr("\u2726 Move Search \u2726")
-        val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
-        context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
+        val title: String = Translations.tr("Move Search")
+        UiKit.header(context, textRenderer, panelX, panelTop, panelWidth, title)
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Options button (attached to panel top-right corner, outside)
         optBtnX = panelX + panelWidth + 2
         optBtnY = panelTop
         val optHovered = mouseX in optBtnX..(optBtnX + optBtnSize) && mouseY in optBtnY..(optBtnY + optBtnSize)
-        val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
-        val btnLight = if (optHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
-        val btnDark = if (optHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
-        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnBase)
-        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + 1, btnLight)
-        context.fill(optBtnX, optBtnY, optBtnX + 1, optBtnY + optBtnSize, btnLight)
-        context.fill(optBtnX, optBtnY + optBtnSize - 1, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
-        context.fill(optBtnX + optBtnSize - 1, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
+        UiKit.button(context, textRenderer, optBtnX, optBtnY, optBtnSize, optBtnSize, "", optHovered)
         context.drawTexture(OPTIONS_ICON, optBtnX + 4, optBtnY + 4, 0f, 0f, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8)
 
         // Gold separator
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
         // Tabs: Pokémon | Capacités | Talents | Objets
         val pokemonLabel: String = Translations.tr("Pokémon")
@@ -171,23 +159,18 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
 
         // Pokemon tab (inactive)
         val pokTabHovered = mouseX in pokemonTabX..(pokemonTabX + pokemonTabW) && mouseY in tY..(tY + tabH)
-        context.fill(pokemonTabX, tY, pokemonTabX + pokemonTabW, tY + tabH, if (pokTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, pokemonLabel, pokemonTabX + 4, tY + 2, if (pokTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, pokemonTabX, tY, pokemonTabW, tabH, pokemonLabel, false, pokTabHovered)
 
         // Moves tab (active)
-        context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, 0xFF2A2200.toInt())
-        drawBorder(context, movesTabX, tY, movesTabW, tabH, ModConfig.accentColor())
-        context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, ModConfig.accentColor(), true)
+        UiKit.tab(context, textRenderer, movesTabX, tY, movesTabW, tabH, movesLabel, true, false)
 
         // Abilities tab (inactive)
         val abiTabHovered = mouseX in abilitiesTabX..(abilitiesTabX + abilitiesTabW) && mouseY in tY..(tY + tabH)
-        context.fill(abilitiesTabX, tY, abilitiesTabX + abilitiesTabW, tY + tabH, if (abiTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, abilitiesLabel, abilitiesTabX + 4, tY + 2, if (abiTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, abilitiesTabX, tY, abilitiesTabW, tabH, abilitiesLabel, false, abiTabHovered)
 
         // Items tab (inactive)
         val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
-        context.fill(itemsTabX, tY, itemsTabX + itemsTabW, tY + tabH, if (itemTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, itemsLabel, itemsTabX + 4, tY + 2, if (itemTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, itemsTabX, tY, itemsTabW, tabH, itemsLabel, false, itemTabHovered)
 
         // Language toggle button (right side of tab row)
         val langLabel = Translations.nameLanguageLabel()
@@ -199,9 +182,9 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val langBtnY = langBtnYField
         val langBtnH = tabH
         val langHovered = mouseX in langBtnX..(langBtnX + langBtnW) && mouseY in langBtnY..(langBtnY + langBtnH)
-        context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
-        context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+        context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) UiKit.SURFACE_HOVER else UiKit.SURFACE)
+        drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) UiKit.accent() else UiKit.TEXT_FAINT)
+        context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
 
         // Sort buttons
         val sortY = panelTop + 34
@@ -213,18 +196,18 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             val isActive = sortMode == i
             val sortHovered = mouseX in sortX..(sortX + sw) && mouseY in sortY..(sortY + 10)
             val bg = when {
-                isActive -> 0xFF2A2200.toInt()
-                sortHovered -> 0xFF252525.toInt()
-                else -> 0xFF1A1A1A.toInt()
+                isActive -> UiKit.withAlpha(UiKit.accent(), 0x40)
+                sortHovered -> UiKit.SURFACE_HOVER
+                else -> UiKit.SURFACE
             }
             context.fill(sortX, sortY, sortX + sw, sortY + 10, bg)
             if (isActive) {
-                context.fill(sortX, sortY + 9, sortX + sw, sortY + 10, ModConfig.accentColor())
+                context.fill(sortX, sortY + 9, sortX + sw, sortY + 10, UiKit.accent())
             }
             val color = when {
-                isActive -> ModConfig.accentColor()
-                sortHovered -> 0xFFDDDDDD.toInt()
-                else -> 0xFF888888.toInt()
+                isActive -> UiKit.accent()
+                sortHovered -> UiKit.TEXT
+                else -> UiKit.TEXT_MUTED
             }
             context.drawText(textRenderer, label, sortX + 3, sortY + 1, color, true)
             sortX += sw + 3
@@ -235,13 +218,13 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
         val resultsBottom = panelBottom - 16
         val resultsAreaHeight = resultsBottom - resultsTop
 
-        context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, UiKit.BORDER_DIM)
 
         context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (filteredMoves.isEmpty()) {
             val noResult: String = Translations.tr("No move found")
-            context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, 0xFF666666.toInt(), true)
+            context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, UiKit.TEXT_FAINT, true)
         } else {
             val typeColW = 50
             val typeColX = panelX + 10
@@ -259,7 +242,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
                                   mouseY >= resultsTop && mouseY <= resultsBottom
 
                     if (hovered) {
-                        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + rowHeight, 0xFF252525.toInt())
+                        UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
                     }
 
                     // Type badge
@@ -268,7 +251,7 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
 
                     // Move name
                     val displayName = Translations.moveDisplayName(move)
-                    val nameColor = if (hovered) ModConfig.accentColor() else 0xFFFFFFFF.toInt()
+                    val nameColor = if (hovered) UiKit.accent() else UiKit.TEXT
                     context.drawText(textRenderer, displayName, nameColX, y + 3, nameColor, true)
 
                     // Category (right area)
@@ -278,14 +261,14 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
 
                     // Power
                     val power = move.power.toInt()
-                    context.drawText(textRenderer, if (power > 0) "$power" else "-", powColX, y + 3, 0xFFCCCCCC.toInt(), true)
+                    context.drawText(textRenderer, if (power > 0) "$power" else "-", powColX, y + 3, UiKit.TEXT_MUTED, true)
 
                     // Accuracy
                     val acc = move.accuracy
-                    context.drawText(textRenderer, if (acc > 0) "${acc.toInt()}%" else "-", accColX, y + 3, 0xFFAAAAAA.toInt(), true)
+                    context.drawText(textRenderer, if (acc > 0) "${acc.toInt()}%" else "-", accColX, y + 3, UiKit.TEXT_MUTED, true)
 
                     // PP
-                    context.drawText(textRenderer, "${move.pp}pp", ppColX, y + 3, 0xFF999999.toInt(), true)
+                    context.drawText(textRenderer, "${move.pp}pp", ppColX, y + 3, UiKit.TEXT_FAINT, true)
                 }
                 y += rowHeight
             }
@@ -300,19 +283,16 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             sbTrackX = panelX + panelWidth - 5
             sbContentTop = resultsTop
             sbContentBottom = resultsBottom
-            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, 0xFF1A1A1A.toInt())
+            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, UiKit.SURFACE)
             sbThumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
             val maxScroll = contentHeight - resultsAreaHeight
             sbThumbY = resultsTop + (scrollOffset * (resultsAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, UiKit.accent())
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
-        val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-        context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+                val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
+        UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
 
         super.render(context, mouseX, mouseY, delta)
     }
@@ -491,14 +471,14 @@ class MoveSearchScreen : Screen(Text.literal("Move Search")) {
             "rock" -> 0xFFB8A038.toInt(); "ghost" -> 0xFF705898.toInt()
             "dragon" -> 0xFF7038F8.toInt(); "dark" -> 0xFF705848.toInt()
             "steel" -> 0xFFB8B8D0.toInt(); "fairy" -> 0xFFEE99AC.toInt()
-            else -> 0xFF888888.toInt()
+            else -> UiKit.TEXT_MUTED
         }
     }
 
     private fun getCategoryColor(name: String): Int {
         return when (name.lowercase()) {
             "physical" -> 0xFFFF6644.toInt(); "special" -> 0xFF6688FF.toInt()
-            "status" -> 0xFFAABBCC.toInt(); else -> 0xFFCCCCCC.toInt()
+            "status" -> 0xFFAABBCC.toInt(); else -> UiKit.TEXT_MUTED
         }
     }
 

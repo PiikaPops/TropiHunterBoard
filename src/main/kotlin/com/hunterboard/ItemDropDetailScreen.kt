@@ -69,7 +69,7 @@ class ItemDropDetailScreen(
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         pokemonBounds.clear()
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
         val panelX = (width - panelWidth) / 2
@@ -77,21 +77,19 @@ class ItemDropDetailScreen(
         val panelBottom = height - 10
         val panelHeight = panelBottom - panelTop
 
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
 
         // Close button
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Back button
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
         context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) ModConfig.accentColor() else 0xFFAAAAAA.toInt(), true)
+            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
 
         // Item name (centered) with icon
         val itemName = getItemDisplayName()
@@ -105,7 +103,7 @@ class ItemDropDetailScreen(
                 context.drawItem(stack, startX, panelTop + 1)
             }
         } catch (_: Exception) {}
-        context.drawText(textRenderer, itemName, startX + 18, panelTop + 6, 0xFFFFFFFF.toInt(), true)
+        context.drawText(textRenderer, itemName, startX + 18, panelTop + 6, UiKit.TEXT, true)
 
         // Item description (tooltip lines from Minecraft, below item name)
         val descLines = getItemDescriptionLines()
@@ -114,13 +112,13 @@ class ItemDropDetailScreen(
             val wrappedLines = wrapText(line, panelWidth - 24)
             for (wl in wrappedLines) {
                 val text: String = wl
-                context.drawText(textRenderer, text, panelX + 12, descY, 0xFF999999.toInt(), true)
+                context.drawText(textRenderer, text, panelX + 12, descY, UiKit.TEXT_FAINT, true)
                 descY += 10
             }
         }
 
         // Gold separator
-        context.fill(panelX + 6, descY + 2, panelX + panelWidth - 6, descY + 3, ModConfig.accentColor())
+        context.fill(panelX + 6, descY + 2, panelX + panelWidth - 6, descY + 3, UiKit.accent())
         context.fill(panelX + 6, descY + 3, panelX + panelWidth - 6, descY + 4, 0xFF442200.toInt())
 
         // Content area
@@ -139,7 +137,7 @@ class ItemDropDetailScreen(
 
         // === Pokémon dropping this item ===
         val sectionLabel: String = Translations.tr("Pokémon dropping this item")
-        context.drawText(textRenderer, sectionLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, sectionLabel, leftX, y, UiKit.accent(), true)
 
         // Toggle buttons
         val iconToggleText = "\u229E"
@@ -158,33 +156,33 @@ class ItemDropDetailScreen(
         val iconSelected = learnerViewMode == 0
         val iconHov = mouseX >= iconBtnX && mouseX <= iconBtnX + iconBtnW && mouseY >= tBtnY && mouseY <= tBtnY + tBtnH
         context.fill(iconBtnX, tBtnY, iconBtnX + iconBtnW, tBtnY + tBtnH,
-            if (iconSelected) (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt() else 0xFF1A1A1A.toInt())
+            if (iconSelected) (UiKit.accent() and 0x00FFFFFF) or 0x44000000.toInt() else UiKit.SURFACE)
         drawBorder(context, iconBtnX, tBtnY, iconBtnW, tBtnH,
-            if (iconSelected) ModConfig.accentColor() else if (iconHov) 0xFF666666.toInt() else 0xFF333333.toInt())
+            if (iconSelected) UiKit.accent() else if (iconHov) UiKit.TEXT_FAINT else UiKit.BORDER_DIM)
         context.drawText(textRenderer, iconToggleText, iconBtnX + tBtnPad / 2, tBtnY + 2,
-            if (iconSelected) ModConfig.accentColor() else if (iconHov) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (iconSelected) UiKit.accent() else if (iconHov) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         val listSelected = learnerViewMode == 1
         val listHov = mouseX >= listBtnX && mouseX <= listBtnX + listBtnW && mouseY >= tBtnY && mouseY <= tBtnY + tBtnH
         context.fill(listBtnX, tBtnY, listBtnX + listBtnW, tBtnY + tBtnH,
-            if (listSelected) (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt() else 0xFF1A1A1A.toInt())
+            if (listSelected) (UiKit.accent() and 0x00FFFFFF) or 0x44000000.toInt() else UiKit.SURFACE)
         drawBorder(context, listBtnX, tBtnY, listBtnW, tBtnH,
-            if (listSelected) ModConfig.accentColor() else if (listHov) 0xFF666666.toInt() else 0xFF333333.toInt())
+            if (listSelected) UiKit.accent() else if (listHov) UiKit.TEXT_FAINT else UiKit.BORDER_DIM)
         context.drawText(textRenderer, listToggleText, listBtnX + tBtnPad / 2, tBtnY + 2,
-            if (listSelected) ModConfig.accentColor() else if (listHov) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (listSelected) UiKit.accent() else if (listHov) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         y += 14
 
         // === Droppers ===
         if (!DropData.reverseIndexReady) {
             val loadingText: String = Translations.tr("Loading...")
-            context.drawText(textRenderer, loadingText, leftX + 4, y, 0xFF888888.toInt(), true)
+            context.drawText(textRenderer, loadingText, leftX + 4, y, UiKit.TEXT_MUTED, true)
             y += 12
         } else {
             val droppers = DropData.getSpeciesWithDrop(itemId.toString())
             if (droppers.isEmpty()) {
                 val noText: String = Translations.tr("No Pokémon drops this item")
-                context.drawText(textRenderer, noText, leftX + 4, y, 0xFF666666.toInt(), true)
+                context.drawText(textRenderer, noText, leftX + 4, y, UiKit.TEXT_FAINT, true)
                 y += 12
             } else {
                 if (learnerViewMode == 0) {
@@ -201,21 +199,18 @@ class ItemDropDetailScreen(
         // Scrollbar
         if (contentHeight > contentAreaHeight && contentAreaHeight > 0) {
             sbTrackX = panelX + panelWidth - 5
-            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, 0xFF1A1A1A.toInt())
+            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, UiKit.SURFACE)
             sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
             val maxScroll = contentHeight - contentAreaHeight
             sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, UiKit.accent())
         } else {
             sbThumbHeight = 0
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint: String = Translations.tr("ESC / Click Back to return")
-        val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-        context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+                val hint: String = Translations.tr("ESC / Click Back to return")
+        UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
     }
 
     // ---- Icon grid (2 columns, model + name + drop info) ----
@@ -259,13 +254,13 @@ class ItemDropDetailScreen(
                 val dispText = truncateText(displayName, nameMaxW)
                 val textY = y + 4
                 context.drawText(textRenderer, dispText, nameX, textY,
-                    if (hovered) ModConfig.accentColor() else 0xFFCCCCCC.toInt(), true)
+                    if (hovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
 
                 // Drop info (percentage + quantity)
                 val qtyText = if (dropper.quantityMin != dropper.quantityMax)
                     "${dropper.quantityMin}-${dropper.quantityMax}" else "${dropper.quantityMin}"
                 val dropInfo = "${dropper.percentage.toInt()}% x$qtyText"
-                context.drawText(textRenderer, dropInfo, nameX, textY + 10, 0xFF888888.toInt(), true)
+                context.drawText(textRenderer, dropInfo, nameX, textY + 10, UiKit.TEXT_MUTED, true)
 
                 if (hovered && textRenderer.getWidth(displayName) > nameMaxW) {
                     context.drawTooltip(textRenderer, listOf(Text.literal(displayName)), mouseX, mouseY)
@@ -311,17 +306,17 @@ class ItemDropDetailScreen(
 
                 if (hovered) pokemonBounds.add(PokemonBound(itemX, y, textW, itemH, dropper.speciesName))
 
-                context.drawText(textRenderer, "\u2022", itemX, y + 2, 0xFF555555.toInt(), true)
+                context.drawText(textRenderer, "\u2022", itemX, y + 2, UiKit.TEXT_FAINT, true)
                 val textX = itemX + 8
-                val nameColor = if (hovered) ModConfig.accentColor() else 0xFFCCCCCC.toInt()
+                val nameColor = if (hovered) UiKit.accent() else UiKit.TEXT_MUTED
                 context.drawText(textRenderer, displayName, textX, y + 2, nameColor, true)
 
                 // Drop info after name
                 val infoX = textX + textRenderer.getWidth(displayName) + 4
-                context.drawText(textRenderer, "${dropper.percentage.toInt()}% x$qtyText", infoX, y + 2, 0xFF888888.toInt(), true)
+                context.drawText(textRenderer, "${dropper.percentage.toInt()}% x$qtyText", infoX, y + 2, UiKit.TEXT_MUTED, true)
 
                 if (hovered) {
-                    context.fill(textX, y + itemH - 1, textX + textW, y + itemH, ModConfig.accentColor())
+                    context.fill(textX, y + itemH - 1, textX + textW, y + itemH, UiKit.accent())
                 }
             }
 

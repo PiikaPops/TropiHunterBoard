@@ -22,11 +22,12 @@ class DonorsScreen(
     private var sbThumbY = 0
     private var sbThumbHeight = 0
 
+    // Darker golds on light themes (Polaris, Niavarane) so text stays readable
     private val goldDark = 0xFFB8860B.toInt()
-    private val goldBright = 0xFFFFD700.toInt()
-    private val goldText = 0xFFFFE066.toInt()
-    private val goldDim = 0xFFCCA832.toInt()
-    private val starColor = 0xFFFFAA00.toInt()
+    private val goldBright = if (UiKit.isLightTheme) 0xFF9A7208.toInt() else 0xFFFFD700.toInt()
+    private val goldText = if (UiKit.isLightTheme) 0xFF8A6D1F.toInt() else 0xFFFFE066.toInt()
+    private val goldDim = if (UiKit.isLightTheme) 0xFFA08428.toInt() else 0xFFCCA832.toInt()
+    private val starColor = UiKit.accent()
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
@@ -36,7 +37,7 @@ class DonorsScreen(
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.45).toInt().coerceIn(200, 360)
         val panelX = (width - panelWidth) / 2
@@ -44,11 +45,15 @@ class DonorsScreen(
         val panelBottom = height - 30
         val panelHeight = panelBottom - panelTop
 
-        // Panel background with golden border
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawDoubleBorder(context, panelX, panelTop, panelWidth, panelHeight)
+        // Panel background with golden identity (gradient body + gold brackets)
+        context.fill(panelX + 3, panelBottom, panelX + panelWidth + 3, panelBottom + 3, 0x40000000)
+        context.fillGradient(panelX, panelTop, panelX + panelWidth, panelBottom, UiKit.PANEL_TOP, UiKit.PANEL_BOTTOM)
+        UiKit.border(context, panelX, panelTop, panelWidth, panelHeight, goldDark)
+        UiKit.corners(context, panelX, panelTop, panelWidth, panelHeight, goldBright)
 
-        // Title with stars
+        // Title with stars over a golden glow
+        context.fillGradient(panelX + 1, panelTop + 1, panelX + panelWidth - 1, panelTop + 19,
+            UiKit.withAlpha(goldBright, 0x28), UiKit.withAlpha(goldBright, 0x00))
         val title = "\u2726 ${Translations.tr("Generous Souls")} \u2726"
         val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
         context.drawText(textRenderer, title, titleX, panelTop + 8, goldBright, true)
@@ -56,8 +61,7 @@ class DonorsScreen(
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 6
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Subtitle
         val subtitle = Translations.tr("Thank you for your support!")
@@ -76,7 +80,7 @@ class DonorsScreen(
             val msg = if (DonorsFetcher.fetchFailed) Translations.tr("No donors yet")
                       else Translations.tr("Loading...")
             val lx = panelX + (panelWidth - textRenderer.getWidth(msg)) / 2
-            context.drawText(textRenderer, msg, lx, listTop + 10, 0xFF666666.toInt(), true)
+            context.drawText(textRenderer, msg, lx, listTop + 10, UiKit.TEXT_FAINT, true)
         } else {
             context.enableScissor(panelX + 1, listTop, panelX + panelWidth - 1, listBottom)
 
@@ -118,7 +122,7 @@ class DonorsScreen(
                 sbTrackX = panelX + panelWidth - 5
                 sbContentTop = listTop
                 sbContentBottom = listBottom
-                context.fill(sbTrackX, listTop, sbTrackX + 3, listBottom, 0xFF1A1A1A.toInt())
+                context.fill(sbTrackX, listTop, sbTrackX + 3, listBottom, UiKit.SURFACE)
                 sbThumbHeight = maxOf(15, listAreaHeight * listAreaHeight / contentHeight)
                 sbThumbY = listTop + (scrollOffset * (listAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
                 context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, goldDark)
@@ -126,7 +130,7 @@ class DonorsScreen(
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 16, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
+        context.fill(panelX + 1, panelBottom - 16, panelX + panelWidth - 1, panelBottom - 1, UiKit.SURFACE_SUNKEN)
         context.fill(panelX + 10, panelBottom - 16, panelX + panelWidth - 10, panelBottom - 15, goldDark and 0x44FFFFFF.toInt())
         val count = if (donors.isNotEmpty()) "${donors.size} ${Translations.tr("donors")}" else ""
         val hint = if (count.isNotEmpty()) "$count  \u2022  ${Translations.tr("ESC to return")}"
@@ -216,16 +220,4 @@ class DonorsScreen(
 
     override fun close() { client?.setScreen(parent) }
 
-    private fun drawDoubleBorder(context: DrawContext, x: Int, y: Int, w: Int, h: Int) {
-        // Outer border - dark gold
-        context.fill(x, y, x + w, y + 1, goldDark)
-        context.fill(x, y + h - 1, x + w, y + h, goldDark)
-        context.fill(x, y, x + 1, y + h, goldDark)
-        context.fill(x + w - 1, y, x + w, y + h, goldDark)
-        // Inner border - bright gold (1px inset)
-        context.fill(x + 1, y + 1, x + w - 1, y + 2, goldBright)
-        context.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, goldBright)
-        context.fill(x + 1, y + 1, x + 2, y + h - 1, goldBright)
-        context.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, goldBright)
-    }
 }
