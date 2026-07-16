@@ -362,6 +362,12 @@ object Translations {
 
         // PokemonSearchScreen
         "✦ Pokémon Search ✦" to "✦ Recherche Pokémon ✦",
+        // Plain screen titles (UiKit.header adds its own ornaments)
+        "Pokémon Search" to "Recherche Pokémon",
+        "Move Search" to "Encyclopédie Capacités",
+        "Ability Search" to "Recherche de Talents",
+        "Item Search" to "Recherche d'Objets",
+        "Spawn Info" to "Infos d'Apparition",
         "No Pokémon found" to "Aucun Pokémon trouvé",
         "ESC to close  \u2022  Click for details" to "ESC pour fermer  \u2022  Cliquer pour détails",
         "Search" to "Rechercher",
@@ -394,6 +400,14 @@ object Translations {
 
         // Options screen
         "Options" to "Options",
+        "Theme" to "Thème",
+        "Cobblemon Theme" to "Thème Cobblemon",
+        "HunterBoard Theme" to "Thème HunterBoard",
+        "Polaris Theme" to "Thème Polaris",
+        "Rebut-sur-mer Theme" to "Thème Rebut-sur-mer",
+        "Rhode Theme" to "Thème Rhode",
+        "Niavarane Theme" to "Thème Niavarane",
+        "Tropimon Theme" to "Thème Tropimon",
         "HUD" to "ATH",
         "HUD Color" to "Couleur ATH",
         "Transparency" to "Transparence",

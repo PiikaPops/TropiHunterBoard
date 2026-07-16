@@ -57,7 +57,7 @@ class MoveDetailScreen(
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         pokemonBounds.clear()
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
         val panelX = (width - panelWidth) / 2
@@ -65,30 +65,26 @@ class MoveDetailScreen(
         val panelBottom = height - 10
         val panelHeight = panelBottom - panelTop
 
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Back button
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
         context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) ModConfig.accentColor() else 0xFFAAAAAA.toInt(), true)
+            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
 
         // Move name (centered)
         val moveName = move.displayName.string
         val nameX = panelX + (panelWidth - textRenderer.getWidth(moveName)) / 2
-        context.drawText(textRenderer, moveName, nameX, panelTop + 6, 0xFFFFFFFF.toInt(), true)
+        context.drawText(textRenderer, moveName, nameX, panelTop + 6, UiKit.TEXT, true)
 
         // Gold separator
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, 0xFF442200.toInt())
 
         // Content area
         val contentTop = panelTop + 22
@@ -105,8 +101,8 @@ class MoveDetailScreen(
         var y = contentTop + 4 - scrollOffset
 
         // === Move Info ===
-        val labelColor = ModConfig.accentColor()
-        val valueColor = 0xFFDDDDDD.toInt()
+        val labelColor = UiKit.accent()
+        val valueColor = UiKit.TEXT
 
         val typeLabel: String = Translations.tr("Type") + ":"
         context.drawText(textRenderer, typeLabel, leftX, y, labelColor, true)
@@ -144,17 +140,17 @@ class MoveDetailScreen(
         y += 12
         val description = move.description.string
         for (line in wrapText(description, contentW - 8)) {
-            context.drawText(textRenderer, line, leftX + 4, y, 0xFFBBBBBB.toInt(), true)
+            context.drawText(textRenderer, line, leftX + 4, y, UiKit.TEXT_MUTED, true)
             y += 10
         }
         y += 8
 
-        context.fill(panelX + 10, y, panelX + panelWidth - 10, y + 1, 0xFF333333.toInt())
+        context.fill(panelX + 10, y, panelX + panelWidth - 10, y + 1, UiKit.BORDER_DIM)
         y += 6
 
         // === Learned By header + view toggle ===
         val learnedByLabel: String = Translations.tr("Learned By")
-        context.drawText(textRenderer, learnedByLabel, leftX, y, ModConfig.accentColor(), true)
+        context.drawText(textRenderer, learnedByLabel, leftX, y, UiKit.accent(), true)
 
         // Toggle buttons: [⊞] icon mode  [≡] list mode
         val iconToggleText = "\u229E" // ⊞
@@ -175,34 +171,34 @@ class MoveDetailScreen(
         val iconSelected = learnerViewMode == 0
         val iconHov = mouseX >= iconBtnX && mouseX <= iconBtnX + iconBtnW && mouseY >= tBtnY && mouseY <= tBtnY + tBtnH
         context.fill(iconBtnX, tBtnY, iconBtnX + iconBtnW, tBtnY + tBtnH,
-            if (iconSelected) (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt() else 0xFF1A1A1A.toInt())
+            if (iconSelected) (UiKit.accent() and 0x00FFFFFF) or 0x44000000.toInt() else UiKit.SURFACE)
         drawBorder(context, iconBtnX, tBtnY, iconBtnW, tBtnH,
-            if (iconSelected) ModConfig.accentColor() else if (iconHov) 0xFF666666.toInt() else 0xFF333333.toInt())
+            if (iconSelected) UiKit.accent() else if (iconHov) UiKit.TEXT_FAINT else UiKit.BORDER_DIM)
         context.drawText(textRenderer, iconToggleText, iconBtnX + tBtnPad / 2, tBtnY + 2,
-            if (iconSelected) ModConfig.accentColor() else if (iconHov) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (iconSelected) UiKit.accent() else if (iconHov) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         // List button
         val listSelected = learnerViewMode == 1
         val listHov = mouseX >= listBtnX && mouseX <= listBtnX + listBtnW && mouseY >= tBtnY && mouseY <= tBtnY + tBtnH
         context.fill(listBtnX, tBtnY, listBtnX + listBtnW, tBtnY + tBtnH,
-            if (listSelected) (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt() else 0xFF1A1A1A.toInt())
+            if (listSelected) (UiKit.accent() and 0x00FFFFFF) or 0x44000000.toInt() else UiKit.SURFACE)
         drawBorder(context, listBtnX, tBtnY, listBtnW, tBtnH,
-            if (listSelected) ModConfig.accentColor() else if (listHov) 0xFF666666.toInt() else 0xFF333333.toInt())
+            if (listSelected) UiKit.accent() else if (listHov) UiKit.TEXT_FAINT else UiKit.BORDER_DIM)
         context.drawText(textRenderer, listToggleText, listBtnX + tBtnPad / 2, tBtnY + 2,
-            if (listSelected) ModConfig.accentColor() else if (listHov) 0xFFDDDDDD.toInt() else 0xFF777777.toInt(), true)
+            if (listSelected) UiKit.accent() else if (listHov) UiKit.TEXT else UiKit.TEXT_FAINT, true)
 
         y += 14
 
         // === Learners ===
         if (!MoveData.reverseIndexReady) {
             val loadingText: String = Translations.tr("Loading...")
-            context.drawText(textRenderer, loadingText, leftX + 4, y, 0xFF888888.toInt(), true)
+            context.drawText(textRenderer, loadingText, leftX + 4, y, UiKit.TEXT_MUTED, true)
             y += 12
         } else {
             val learners = MoveData.getLearnersForMove(move.name)
             if (learners.isEmpty()) {
                 val noLearnText: String = Translations.tr("No Pokémon learns this move")
-                context.drawText(textRenderer, noLearnText, leftX + 4, y, 0xFF666666.toInt(), true)
+                context.drawText(textRenderer, noLearnText, leftX + 4, y, UiKit.TEXT_FAINT, true)
                 y += 12
             } else {
                 val grouped = learners.groupBy { it.method }
@@ -236,21 +232,18 @@ class MoveDetailScreen(
         // Scrollbar
         if (contentHeight > contentAreaHeight && contentAreaHeight > 0) {
             sbTrackX = panelX + panelWidth - 5
-            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, 0xFF1A1A1A.toInt())
+            context.fill(sbTrackX, contentTop, sbTrackX + 3, contentBottom, UiKit.SURFACE)
             sbThumbHeight = maxOf(15, contentAreaHeight * contentAreaHeight / contentHeight)
             val maxScroll = contentHeight - contentAreaHeight
             sbThumbY = contentTop + (scrollOffset * (contentAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, ModConfig.accentColor())
+            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, UiKit.accent())
         } else {
             sbThumbHeight = 0
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint: String = Translations.tr("ESC / Click Back to return")
-        val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-        context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+                val hint: String = Translations.tr("ESC / Click Back to return")
+        UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
     }
 
     // ---- Icon grid (2 columns, model + name) ----
@@ -299,7 +292,7 @@ class MoveDetailScreen(
                 val dispText = truncateText(fullText, nameMaxW)
                 val textY = y + (CARD_H - 9) / 2
                 context.drawText(textRenderer, dispText, nameX, textY,
-                    if (hovered) ModConfig.accentColor() else 0xFFCCCCCC.toInt(), true)
+                    if (hovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
 
                 if (hovered && textRenderer.getWidth(fullText) > nameMaxW) {
                     // Tooltip if truncated
@@ -350,12 +343,12 @@ class MoveDetailScreen(
                 if (hovered) pokemonBounds.add(PokemonBound(itemX, y, textW, itemH, learner.speciesName))
 
                 // Bullet
-                context.drawText(textRenderer, "\u2022", itemX, y + 2, 0xFF555555.toInt(), true)
+                context.drawText(textRenderer, "\u2022", itemX, y + 2, UiKit.TEXT_FAINT, true)
                 val textX = itemX + 8
-                val nameColor = if (hovered) ModConfig.accentColor() else 0xFFCCCCCC.toInt()
+                val nameColor = if (hovered) UiKit.accent() else UiKit.TEXT_MUTED
                 context.drawText(textRenderer, fullText, textX, y + 2, nameColor, true)
                 if (hovered) {
-                    context.fill(textX, y + itemH - 1, textX + textW, y + itemH, ModConfig.accentColor())
+                    context.fill(textX, y + itemH - 1, textX + textW, y + itemH, UiKit.accent())
                 }
             }
 
@@ -536,12 +529,12 @@ class MoveDetailScreen(
         "rock" -> 0xFFB8A038.toInt(); "ghost" -> 0xFF705898.toInt()
         "dragon" -> 0xFF7038F8.toInt(); "dark" -> 0xFF705848.toInt()
         "steel" -> 0xFFB8B8D0.toInt(); "fairy" -> 0xFFEE99AC.toInt()
-        else -> 0xFF888888.toInt()
+        else -> UiKit.TEXT_MUTED
     }
 
     private fun getCategoryColor(name: String): Int = when (name.lowercase()) {
         "physical" -> 0xFFFF6644.toInt(); "special" -> 0xFF6688FF.toInt()
-        "status" -> 0xFFAABBCC.toInt(); else -> 0xFFCCCCCC.toInt()
+        "status" -> 0xFFAABBCC.toInt(); else -> UiKit.TEXT_MUTED
     }
 
     private fun safeGetByName(name: String): com.cobblemon.mod.common.pokemon.Species? {

@@ -99,10 +99,6 @@ object ModConfig {
     var hideBossDamageChat: Boolean = false
         private set
 
-    // Use HunterBoard's custom radar screen instead of TropiMod's default
-    var useHunterRadar: Boolean = true
-        private set
-
     // Play a sound when the ground-clear countdown reaches 10 seconds
     var clearWarningSound: Boolean = true
         private set
@@ -111,6 +107,11 @@ object ModConfig {
 
     // Show session playtime on the HUD
     var showPlaytime: Boolean = true
+        private set
+
+    // UI theme (see UiKit for palettes). Order = cycle order of the options button.
+    val UI_THEMES = listOf("hunterboard", "cobblemon", "polaris", "rebutsurmer", "rhode", "niavarane", "tropimon")
+    var uiTheme: String = "hunterboard"
         private set
 
     // Show battle hunt notification HUD
@@ -329,16 +330,6 @@ object ModConfig {
         save()
     }
 
-    fun setUseHunterRadar(value: Boolean) {
-        useHunterRadar = value
-        save()
-    }
-
-    fun toggleUseHunterRadar() {
-        useHunterRadar = !useHunterRadar
-        save()
-    }
-
     fun setRaidStartSound(soundId: String) {
         raidStartSound = soundId
         save()
@@ -381,6 +372,13 @@ object ModConfig {
 
     fun toggleShowPlaytime() {
         showPlaytime = !showPlaytime
+        save()
+    }
+
+    /** Cycle to the next UI theme (order of UI_THEMES). */
+    fun toggleUiTheme() {
+        val idx = UI_THEMES.indexOf(uiTheme)
+        uiTheme = UI_THEMES[(idx + 1) % UI_THEMES.size]
         save()
     }
 
@@ -430,10 +428,10 @@ object ModConfig {
         pvpOverlayEnabled = true
         pvpPlayerX = -1; pvpPlayerY = -1
         pvpOpponentX = -1; pvpOpponentY = -1
-        useHunterRadar = true
         clearWarningSound = true
         clearWarningSoundId = "minecraft:entity.experience_orb.pickup"
         showPlaytime = true
+        uiTheme = "hunterboard"
         save()
     }
 
@@ -491,10 +489,10 @@ object ModConfig {
                 pvpOverlayEnabled = data.pvpOverlayEnabled
                 pvpPlayerX = data.pvpPlayerX; pvpPlayerY = data.pvpPlayerY
                 pvpOpponentX = data.pvpOpponentX; pvpOpponentY = data.pvpOpponentY
-                useHunterRadar = data.useHunterRadar
                 clearWarningSound = data.clearWarningSound
                 clearWarningSoundId = data.clearWarningSoundId
                 showPlaytime = data.showPlaytime
+                uiTheme = if (data.uiTheme in UI_THEMES) data.uiTheme else "hunterboard"
 
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
             }
@@ -519,10 +517,10 @@ object ModConfig {
                 wikiShowSprites,
                 pvpOverlayEnabled,
                 pvpPlayerX, pvpPlayerY, pvpOpponentX, pvpOpponentY,
-                useHunterRadar,
                 clearWarningSound,
                 clearWarningSoundId,
-                showPlaytime
+                showPlaytime,
+                uiTheme
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -572,9 +570,9 @@ object ModConfig {
         val pvpPlayerY: Int = -1,
         val pvpOpponentX: Int = -1,
         val pvpOpponentY: Int = -1,
-        val useHunterRadar: Boolean = true,
         val clearWarningSound: Boolean = true,
         val clearWarningSoundId: String = "minecraft:entity.experience_orb.pickup",
-        val showPlaytime: Boolean = true
+        val showPlaytime: Boolean = true,
+        val uiTheme: String = "hunterboard"
     )
 }

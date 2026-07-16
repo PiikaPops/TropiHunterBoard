@@ -12,9 +12,8 @@ object CobblemonLangLoader {
     private var frMoveNames: Map<String, String>? = null
     private var loaded = false
 
-    /** Normalize species key: strip all non-alphanumeric for consistent lookup */
-    private fun normalizeKey(name: String): String =
-        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+    /** Normalize species key: accents/gender symbols folded, non-alphanumeric stripped */
+    private fun normalizeKey(name: String): String = NameUtil.normalize(name)
 
     fun ensureLoaded() {
         if (loaded) return

@@ -40,9 +40,8 @@ object SpriteHelper {
         "paldean"  to "paldea"
     )
 
-    /** Normalize a name to a safe file/cache key (strips all non-alphanumeric). */
-    private fun normalizeKey(name: String): String =
-        name.lowercase().replace(Regex("[^a-z0-9]"), "")
+    /** Normalize a name to a safe file/cache key (accents/gender symbols folded, non-alphanumeric stripped). */
+    private fun normalizeKey(name: String): String = NameUtil.normalize(name)
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API

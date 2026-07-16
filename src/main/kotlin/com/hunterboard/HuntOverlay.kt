@@ -305,7 +305,9 @@ object HuntOverlay {
         // Background + border (skip in Full Clear mode)
         if (!ModConfig.fullClearMode) {
             context.fill(x - PADDING, y - PADDING, x + panelW + PADDING, y + panelHeight, BG_COLOR())
-            drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelHeight + PADDING, BORDER_COLOR())
+            drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelHeight + PADDING, UiKit.withAlpha(BORDER_COLOR(), 0x66))
+            // HunterBoard signature: accent targeting brackets over a dimmed border
+            UiKit.corners(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelHeight + PADDING, BORDER_COLOR(), 5)
         }
 
         // Merged mode: draw Raid + Miracle sections at top of panel
@@ -658,7 +660,8 @@ object HuntOverlay {
 
         if (!ModConfig.fullClearMode) {
             context.fill(x - PADDING, y - PADDING, x + panelW + PADDING, y + panelH, BG_COLOR())
-            drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelH + PADDING, BORDER_COLOR())
+            drawBorder(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelH + PADDING, UiKit.withAlpha(BORDER_COLOR(), 0x66))
+            UiKit.corners(context, x - PADDING, y - PADDING, panelW + PADDING * 2, panelH + PADDING, BORDER_COLOR(), 5)
         }
         context.drawText(textRenderer, text, x + PADDING, y + 4, TITLE_COLOR(), true)
     }

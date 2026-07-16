@@ -197,21 +197,21 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
         var list = allEntriesSorted ?: emptyList()
 
-        // Text filter
+        // Text filter — accent/apostrophe-insensitive ("flabebe" → Flabébé, "farfetch'd" → Farfetch’d)
         if (query.isNotEmpty()) {
             list = list.filter { entry ->
                 when (entry) {
                     is PokemonEntry.Regular -> {
-                        val displayName = Translations.speciesDisplayName(entry.species).lowercase()
-                        entry.species.name.contains(query) || displayName.contains(query)
+                        val displayName = Translations.speciesDisplayName(entry.species)
+                        NameUtil.matchesQuery(entry.species.name, query) ||
+                        NameUtil.matchesQuery(displayName, query)
                     }
                     is PokemonEntry.Mega -> {
-                        val displayName = Translations.speciesDisplayName(entry.species).lowercase()
-                        val mLabel = PokemonEntry.megaLabel(entry.form.name).lowercase()
-                        val fullName = "$mLabel $displayName"
-                        entry.species.name.contains(query) ||
-                        displayName.contains(query) ||
-                        fullName.contains(query)
+                        val displayName = Translations.speciesDisplayName(entry.species)
+                        val mLabel = PokemonEntry.megaLabel(entry.form.name)
+                        NameUtil.matchesQuery(entry.species.name, query) ||
+                        NameUtil.matchesQuery(displayName, query) ||
+                        NameUtil.matchesQuery("$mLabel $displayName", query)
                     }
                 }
             }
@@ -250,8 +250,8 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         // Hide search bar when showing history
         searchField.visible = !showingHistory
 
-        // Dark overlay
-        context.fill(0, 0, width, height, 0xAA000000.toInt())
+        // Dimmed backdrop
+        UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -259,34 +259,22 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val panelBottom = height - 25
         val panelHeight = panelBottom - panelTop
 
-        // Panel background
-        context.fill(panelX, panelTop, panelX + panelWidth, panelBottom, 0xF0101010.toInt())
-        drawBorder(context, panelX, panelTop, panelWidth, panelHeight, ModConfig.accentColor())
-
-        // Title
-        val title: String = if (showingHistory) Translations.tr("\u2726 History \u2726") else Translations.tr("\u2726 Pok\u00e9mon Search \u2726")
-        val titleX = panelX + (panelWidth - textRenderer.getWidth(title)) / 2
-        context.drawText(textRenderer, title, titleX, panelTop + 6, ModConfig.accentColor(), true)
+        // Panel + header band
+        UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
+        val title: String = if (showingHistory) Translations.tr("History") else Translations.tr("Pok\u00e9mon Search")
+        UiKit.header(context, textRenderer, panelX, panelTop, panelWidth, title)
 
         // Close button ✕
         val closeX = panelX + panelWidth - 12
         val closeY = panelTop + 4
-        val closeHovered = mouseX >= closeX - 2 && mouseX <= closeX + 9 && mouseY >= closeY - 2 && mouseY <= closeY + 11
-        context.drawText(textRenderer, "\u2715", closeX, closeY, if (closeHovered) 0xFFFF5555.toInt() else 0xFF888888.toInt(), true)
+        UiKit.closeButton(context, textRenderer, closeX, closeY, mouseX, mouseY)
 
         // Options button (attached to panel top-right corner, outside)
         optBtnX = panelX + panelWidth + 2
         optBtnY = panelTop
         val optHovered = mouseX >= optBtnX && mouseX <= optBtnX + optBtnSize &&
                          mouseY >= optBtnY && mouseY <= optBtnY + optBtnSize
-        val btnBase = if (optHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
-        val btnLight = if (optHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
-        val btnDark = if (optHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
-        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnBase)
-        context.fill(optBtnX, optBtnY, optBtnX + optBtnSize, optBtnY + 1, btnLight)
-        context.fill(optBtnX, optBtnY, optBtnX + 1, optBtnY + optBtnSize, btnLight)
-        context.fill(optBtnX, optBtnY + optBtnSize - 1, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
-        context.fill(optBtnX + optBtnSize - 1, optBtnY, optBtnX + optBtnSize, optBtnY + optBtnSize, btnDark)
+        UiKit.button(context, textRenderer, optBtnX, optBtnY, optBtnSize, optBtnSize, "", optHovered)
         context.drawTexture(OPTIONS_ICON, optBtnX + 4, optBtnY + 4, 0f, 0f, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8)
 
         // History toggle button (right side of header, before ✕)
@@ -296,18 +284,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val btnY = panelTop + 4
         val btnH = 12
         val btnHovered = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH
-        context.fill(btnX, btnY, btnX + btnW, btnY + btnH, if (btnHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        if (btnHovered) {
-            context.fill(btnX, btnY, btnX + btnW, btnY + 1, 0xFFFFAA00.toInt())
-            context.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, 0xFFFFAA00.toInt())
-            context.fill(btnX, btnY, btnX + 1, btnY + btnH, 0xFFFFAA00.toInt())
-            context.fill(btnX + btnW - 1, btnY, btnX + btnW, btnY + btnH, 0xFFFFAA00.toInt())
-        }
-        context.drawText(textRenderer, btnLabel, btnX + 4, btnY + 2, if (btnHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
-
-        // Separator (uses accent color)
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, ModConfig.accentColor())
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, (ModConfig.accentColor() and 0x00FFFFFF) or 0x44000000.toInt())
+        UiKit.button(context, textRenderer, btnX, btnY, btnW, btnH, btnLabel, btnHovered, showingHistory)
 
         // Tabs: Pokémon | Capacités | Talents | Objets
         val pokemonLabel: String = Translations.tr("Pokémon")
@@ -325,24 +302,19 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val tY = panelTop + 20
 
         // Pokemon tab (active)
-        context.fill(pokTabX, tY, pokTabX + pokTabW, tY + tabH, 0xFF2A2200.toInt())
-        drawBorder(context, pokTabX, tY, pokTabW, tabH, ModConfig.accentColor())
-        context.drawText(textRenderer, pokemonLabel, pokTabX + 4, tY + 2, ModConfig.accentColor(), true)
+        UiKit.tab(context, textRenderer, pokTabX, tY, pokTabW, tabH, pokemonLabel, true, false)
 
         // Moves tab (inactive)
         val movTabHovered = mouseX in movesTabX..(movesTabX + movesTabW) && mouseY in tY..(tY + tabH)
-        context.fill(movesTabX, tY, movesTabX + movesTabW, tY + tabH, if (movTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, movesLabel, movesTabX + 4, tY + 2, if (movTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, movesTabX, tY, movesTabW, tabH, movesLabel, false, movTabHovered)
 
         // Abilities tab (inactive)
         val abiTabHovered = mouseX in abilitiesTabX..(abilitiesTabX + abilitiesTabW) && mouseY in tY..(tY + tabH)
-        context.fill(abilitiesTabX, tY, abilitiesTabX + abilitiesTabW, tY + tabH, if (abiTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, abilitiesLabel, abilitiesTabX + 4, tY + 2, if (abiTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, abilitiesTabX, tY, abilitiesTabW, tabH, abilitiesLabel, false, abiTabHovered)
 
         // Items tab (inactive)
         val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
-        context.fill(itemsTabX, tY, itemsTabX + itemsTabW, tY + tabH, if (itemTabHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        context.drawText(textRenderer, itemsLabel, itemsTabX + 4, tY + 2, if (itemTabHovered) 0xFFDDDDDD.toInt() else 0xFF888888.toInt(), true)
+        UiKit.tab(context, textRenderer, itemsTabX, tY, itemsTabW, tabH, itemsLabel, false, itemTabHovered)
 
         // Language toggle button (right side of tab row)
         val langLabel = Translations.nameLanguageLabel()
@@ -350,9 +322,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         langBtnX = panelX + panelWidth - langBtnW - 8
         langBtnY = tY
         val langHovered = mouseX in langBtnX..(langBtnX + langBtnW) && mouseY in langBtnY..(langBtnY + langBtnH)
-        context.fill(langBtnX, langBtnY, langBtnX + langBtnW, langBtnY + langBtnH, if (langHovered) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, langBtnX, langBtnY, langBtnW, langBtnH, if (langHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
-        context.drawText(textRenderer, langLabel, langBtnX + 4, langBtnY + 2, if (langHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+        UiKit.button(context, textRenderer, langBtnX, langBtnY, langBtnW, langBtnH, langLabel, langHovered)
 
         // Sort button (left of language button)
         val sortLabel = when (sortMode) {
@@ -364,9 +334,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         sortBtnX = langBtnX - sortBtnW - 4
         sortBtnY = tY
         val sortHovered = mouseX in sortBtnX..(sortBtnX + sortBtnW) && mouseY in sortBtnY..(sortBtnY + sortBtnH)
-        context.fill(sortBtnX, sortBtnY, sortBtnX + sortBtnW, sortBtnY + sortBtnH, if (sortHovered || showSortDropdown) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, sortBtnX, sortBtnY, sortBtnW, sortBtnH, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
-        context.drawText(textRenderer, sortLabel, sortBtnX + 4, sortBtnY + 2, if (sortHovered || showSortDropdown) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+        UiKit.button(context, textRenderer, sortBtnX, sortBtnY, sortBtnW, sortBtnH, sortLabel, sortHovered, showSortDropdown)
 
         // Sprite toggle button (left of sort button)
         val spriteLabel = if (showSprites) "\u25A3" else "\u25A2" // filled/empty square icon
@@ -374,24 +342,21 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         spriteBtnX = sortBtnX - spriteBtnW - 4
         spriteBtnY = tY
         val spriteHovered = mouseX in spriteBtnX..(spriteBtnX + spriteBtnW) && mouseY in spriteBtnY..(spriteBtnY + spriteBtnH)
-        val spriteActive = showSprites
-        context.fill(spriteBtnX, spriteBtnY, spriteBtnX + spriteBtnW, spriteBtnY + spriteBtnH, if (spriteHovered || spriteActive) 0xFF252525.toInt() else 0xFF1A1A1A.toInt())
-        drawBorder(context, spriteBtnX, spriteBtnY, spriteBtnW, spriteBtnH, if (spriteActive) ModConfig.accentColor() else if (spriteHovered) 0xFFFFAA00.toInt() else 0xFF555555.toInt())
-        context.drawText(textRenderer, spriteLabel, spriteBtnX + 4, spriteBtnY + 2, if (spriteActive) ModConfig.accentColor() else if (spriteHovered) 0xFFFFAA00.toInt() else 0xFFAAAAAA.toInt(), true)
+        UiKit.button(context, textRenderer, spriteBtnX, spriteBtnY, spriteBtnW, spriteBtnH, spriteLabel, spriteHovered, showSprites)
 
         // Results area (higher when search bar is hidden in history mode)
         val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
         val resultsBottom = panelBottom - 16
         val resultsAreaHeight = resultsBottom - resultsTop
 
-        context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, 0xFF333333.toInt())
+        context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, UiKit.BORDER_DIM)
 
         // Scissor for scrollable results
         context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (filteredList.isEmpty()) {
             val noResult: String = if (showingHistory) Translations.tr("No history yet") else Translations.tr("No Pok\u00e9mon found")
-            context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, 0xFF666666.toInt(), true)
+            context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, UiKit.TEXT_FAINT, true)
         } else {
             var y = resultsTop + 2 - scrollOffset
             for (entry in filteredList) {
@@ -401,7 +366,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                                   mouseY >= resultsTop && mouseY <= resultsBottom
 
                     if (hovered) {
-                        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + rowHeight, 0xFF252525.toInt())
+                        UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
                     }
 
                     when (entry) {
@@ -426,7 +391,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                             val textY = y + (rowHeight - 9) / 2
                             val iconY = y + (rowHeight - typeIconSize) / 2
                             val displayName = Translations.speciesDisplayName(entry.species)
-                            val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFFFFFFF.toInt()
+                            val nameColor = if (hovered) UiKit.accent() else UiKit.TEXT
                             context.drawText(textRenderer, displayName, textStartX, textY, nameColor, true)
 
                             // Type icons after name
@@ -447,7 +412,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
                             val dexText = "#${entry.species.nationalPokedexNumber}"
                             val dexWidth = textRenderer.getWidth(dexText)
-                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, textY, 0xFF777777.toInt(), true)
+                            context.drawText(textRenderer, dexText, panelX + panelWidth - 12 - dexWidth, textY, UiKit.TEXT_FAINT, true)
                         }
                         is PokemonEntry.Mega -> {
                             // 2D sprite icon for mega (use base species sprite)
@@ -475,7 +440,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
 
                             val mLabel = PokemonEntry.megaLabel(entry.form.name)
                             val displayName = "$mLabel ${Translations.speciesDisplayName(entry.species)}"
-                            val nameColor = if (hovered) 0xFFFFAA00.toInt() else 0xFFCC99FF.toInt()
+                            val nameColor = if (hovered) UiKit.accent() else 0xFFCC99FF.toInt()
                             context.drawText(textRenderer, displayName, megaTextStartX + prefixW, megaTextY, nameColor, true)
 
                             // Type icons after name (use form types if available)
@@ -514,19 +479,15 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             sbTrackX = panelX + panelWidth - 5
             sbContentTop = resultsTop
             sbContentBottom = resultsBottom
-            context.fill(sbTrackX, resultsTop, sbTrackX + 3, resultsBottom, 0xFF1A1A1A.toInt())
-            sbThumbHeight = maxOf(15, resultsAreaHeight * resultsAreaHeight / contentHeight)
-            val maxScroll = contentHeight - resultsAreaHeight
-            sbThumbY = resultsTop + (scrollOffset * (resultsAreaHeight - sbThumbHeight) / maxOf(1, maxScroll))
-            context.fill(sbTrackX, sbThumbY, sbTrackX + 3, sbThumbY + sbThumbHeight, 0xFFFFAA00.toInt())
+            UiKit.scrollbar(context, sbTrackX, resultsTop, resultsBottom, contentHeight, scrollOffset)?.let { (ty, th) ->
+                sbThumbY = ty
+                sbThumbHeight = th
+            }
         }
 
         // Footer
-        context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, 0xFF0D0D0D.toInt())
-        context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, 0xFF2A2A2A.toInt())
-        val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
-        val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
-        context.drawText(textRenderer, hint, hintX, panelBottom - 10, 0xFF555555.toInt(), true)
+        UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth,
+            Translations.tr("ESC to close  \u2022  Click for details"))
 
         // Render search field and other widgets
         super.render(context, mouseX, mouseY, delta)
@@ -538,15 +499,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         donorsBtnY = height - donorsBtnH - 6
         val donorsHovered = mouseX >= donorsBtnX && mouseX <= donorsBtnX + donorsBtnW &&
                             mouseY >= donorsBtnY && mouseY <= donorsBtnY + donorsBtnH
-        val gBase = if (donorsHovered) 0xFF8B7320.toInt() else 0xFF6B5710.toInt()
-        val gLight = if (donorsHovered) 0xFFFFD700.toInt() else 0xFFB8860B.toInt()
-        val gDark = if (donorsHovered) 0xFF5A4A0A.toInt() else 0xFF3A2F05.toInt()
-        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gBase)
-        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + 1, gLight)
-        context.fill(donorsBtnX, donorsBtnY, donorsBtnX + 1, donorsBtnY + donorsBtnH, gLight)
-        context.fill(donorsBtnX, donorsBtnY + donorsBtnH - 1, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
-        context.fill(donorsBtnX + donorsBtnW - 1, donorsBtnY, donorsBtnX + donorsBtnW, donorsBtnY + donorsBtnH, gDark)
-        context.drawText(textRenderer, donorsText, donorsBtnX + 8, donorsBtnY + 4, 0xFFFFE066.toInt(), true)
+        UiKit.goldButton(context, textRenderer, donorsBtnX, donorsBtnY, donorsBtnW, donorsBtnH, donorsText, donorsHovered)
 
         // Donate button (bottom-right, shifted 15% left)
         val donateText: String = Translations.tr("Donate to _Popichu")
@@ -555,22 +508,14 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         donateBtnY = height - donateBtnH - 6
         val donateHovered = mouseX >= donateBtnX && mouseX <= donateBtnX + donateBtnW &&
                             mouseY >= donateBtnY && mouseY <= donateBtnY + donateBtnH
-        val dBase = if (donateHovered) 0xFFA0A0A0.toInt() else 0xFF808080.toInt()
-        val dLight = if (donateHovered) 0xFFDDDDDD.toInt() else 0xFFBBBBBB.toInt()
-        val dDark = if (donateHovered) 0xFF666666.toInt() else 0xFF444444.toInt()
-        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dBase)
-        context.fill(donateBtnX, donateBtnY, donateBtnX + donateBtnW, donateBtnY + 1, dLight)
-        context.fill(donateBtnX, donateBtnY, donateBtnX + 1, donateBtnY + donateBtnH, dLight)
-        context.fill(donateBtnX, donateBtnY + donateBtnH - 1, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
-        context.fill(donateBtnX + donateBtnW - 1, donateBtnY, donateBtnX + donateBtnW, donateBtnY + donateBtnH, dDark)
-        context.drawText(textRenderer, donateText, donateBtnX + 8, donateBtnY + 4, 0xFFFFFFFF.toInt(), true)
+        UiKit.button(context, textRenderer, donateBtnX, donateBtnY, donateBtnW, donateBtnH, donateText, donateHovered)
 
         // Version mention
         val modVersion = FabricLoader.getInstance().getModContainer(HunterBoard.MOD_ID)
             .map { it.metadata.version.friendlyString }.orElse("?")
         val versionText = "HunterBoard $modVersion"
         val versionX = (width - textRenderer.getWidth(versionText)) / 2
-        context.drawText(textRenderer, versionText, versionX, height - 12, 0xFFCCCCCC.toInt(), true)
+        context.drawText(textRenderer, versionText, versionX, height - 12, UiKit.TEXT_MUTED, true)
 
         // Sort dropdown (rendered last to be on top of everything)
         if (showSortDropdown) {
@@ -868,16 +813,15 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val dropH = options.size * itemH + 4
 
         // Background + border
-        context.fill(dropX, dropY, dropX + dropW, dropY + dropH, 0xFF1A1A1A.toInt())
-        drawBorder(context, dropX, dropY, dropW, dropH, 0xFF555555.toInt())
+        UiKit.card(context, dropX, dropY, dropW, dropH)
 
         for ((i, pair) in options.withIndex()) {
             val (label, mode) = pair
             val iy = dropY + 2 + i * itemH
             val hovered = mouseX in dropX..(dropX + dropW) && mouseY in iy..(iy + itemH)
             val active = sortMode == mode
-            if (hovered) context.fill(dropX + 1, iy, dropX + dropW - 1, iy + itemH, 0xFF252525.toInt())
-            val color = if (active) ModConfig.accentColor() else if (hovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt()
+            if (hovered) context.fill(dropX + 1, iy, dropX + dropW - 1, iy + itemH, UiKit.SURFACE_HOVER)
+            val color = if (active) UiKit.accent() else if (hovered) UiKit.TEXT else UiKit.TEXT_MUTED
             context.drawText(textRenderer, Translations.tr(label), dropX + 6, iy + 3, color, true)
             if (mode == SortMode.TYPE) {
                 val arrow = if (showTypeSubMenu) "\u25BE" else "\u25B8"
@@ -895,28 +839,27 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             val subW = maxOf(typeMaxW, allLabelW) + 12
             val subH = (allTypes.size + 1) * subItemH + 4
 
-            context.fill(subX, subY, subX + subW, subY + subH, 0xFF1A1A1A.toInt())
-            drawBorder(context, subX, subY, subW, subH, 0xFF555555.toInt())
+            UiKit.card(context, subX, subY, subW, subH)
 
             // "All types" option
             val allLabel = Translations.tr("All types")
             val allY = subY + 2
             val allHovered = mouseX in subX..(subX + subW) && mouseY in allY..(allY + subItemH)
             val allActive = selectedTypeFilter == null
-            if (allHovered) context.fill(subX + 1, allY, subX + subW - 1, allY + subItemH, 0xFF252525.toInt())
+            if (allHovered) context.fill(subX + 1, allY, subX + subW - 1, allY + subItemH, UiKit.SURFACE_HOVER)
             context.drawText(textRenderer, allLabel, subX + 6, allY + 3,
-                if (allActive) ModConfig.accentColor() else if (allHovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt(), true)
+                if (allActive) UiKit.accent() else if (allHovered) UiKit.TEXT else UiKit.TEXT_MUTED, true)
 
             // Type entries
             for ((i, typeName) in allTypes.withIndex()) {
                 val ty = subY + 2 + (i + 1) * subItemH
                 val hovered = mouseX in subX..(subX + subW) && mouseY in ty..(ty + subItemH)
                 val active = selectedTypeFilter == typeName
-                if (hovered) context.fill(subX + 1, ty, subX + subW - 1, ty + subItemH, 0xFF252525.toInt())
+                if (hovered) context.fill(subX + 1, ty, subX + subW - 1, ty + subItemH, UiKit.SURFACE_HOVER)
                 typeIcons[typeName]?.let {
                     context.drawTexture(it, subX + 4, ty + 2, 0f, 0f, typeIconSize, typeIconSize, typeIconSize, typeIconSize)
                 }
-                val color = if (active) ModConfig.accentColor() else if (hovered) 0xFFDDDDDD.toInt() else 0xFFAAAAAA.toInt()
+                val color = if (active) UiKit.accent() else if (hovered) UiKit.TEXT else UiKit.TEXT_MUTED
                 context.drawText(textRenderer, Translations.formatTypeName(typeName), subX + 4 + typeIconSize + 4, ty + 3, color, true)
             }
         }
