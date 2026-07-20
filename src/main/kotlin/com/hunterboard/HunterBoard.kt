@@ -50,6 +50,9 @@ object HunterBoard : ClientModInitializer {
         // Register PvP overlay (shows opponent team during /challenge battles)
         PvpOverlay.register()
 
+        // Register radar enhancer (replaces TropiMod's PokeRadar screen)
+        RadarEnhancer.register()
+
         // Filter raid chat messages
         ChatFilter.register()
 

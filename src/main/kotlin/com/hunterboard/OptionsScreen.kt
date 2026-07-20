@@ -133,6 +133,24 @@ class OptionsScreen(
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
 
+        // ========== POKÉRADAR SECTION ==========
+        context.drawText(textRenderer, "Pokéradar", leftX, y, UiKit.accent(), true)
+        y += 14
+
+        val hrLabel = "Interface: ${if (ModConfig.useHunterRadar) "HunterBoard" else "TropiMod"}"
+        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
+        val hrHov = mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y && mouseY <= y + 14
+        context.fill(leftX, y, leftX + hrBtnW, y + 14,
+            if (ModConfig.useHunterRadar) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
+        drawBorder(context, leftX, y, hrBtnW, 14,
+            if (hrHov || ModConfig.useHunterRadar) UiKit.accent() else UiKit.BORDER)
+        context.drawText(textRenderer, hrLabel, leftX + 5, y + 3,
+            if (ModConfig.useHunterRadar) UiKit.accent() else UiKit.TEXT_FAINT, true)
+        y += 20
+
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
+        y += 8
+
         // ========== HUD SECTION ==========
         val hudLabel: String = Translations.tr("HUD")
         context.drawText(textRenderer, hudLabel, leftX, y, UiKit.accent(), true)
@@ -678,6 +696,16 @@ class OptionsScreen(
         val themeBtnW = themeButtonWidth()
         if (mouseX >= leftX && mouseX <= leftX + themeBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
             ModConfig.toggleUiTheme()
+            return true
+        }
+        y += 20
+        y += 9 // separator
+
+        // Pokéradar section
+        y += 14 // Pokéradar label
+        val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
+        if (mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y.toDouble() && mouseY <= (y + 14).toDouble()) {
+            ModConfig.toggleUseHunterRadar()
             return true
         }
         y += 20

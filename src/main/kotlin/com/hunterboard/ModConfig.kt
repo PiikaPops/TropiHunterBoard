@@ -99,6 +99,10 @@ object ModConfig {
     var hideBossDamageChat: Boolean = false
         private set
 
+    // Use HunterBoard's custom radar screen instead of TropiMod's default
+    var useHunterRadar: Boolean = true
+        private set
+
     // Play a sound when the ground-clear countdown reaches 10 seconds
     var clearWarningSound: Boolean = true
         private set
@@ -330,6 +334,16 @@ object ModConfig {
         save()
     }
 
+    fun setUseHunterRadar(value: Boolean) {
+        useHunterRadar = value
+        save()
+    }
+
+    fun toggleUseHunterRadar() {
+        useHunterRadar = !useHunterRadar
+        save()
+    }
+
     fun setRaidStartSound(soundId: String) {
         raidStartSound = soundId
         save()
@@ -424,6 +438,7 @@ object ModConfig {
         hideCaughtInHud = false
         showBattleHuntHud = true
         hideBossDamageChat = false
+        useHunterRadar = true
         wikiShowSprites = false
         pvpOverlayEnabled = true
         pvpPlayerX = -1; pvpPlayerY = -1
@@ -485,6 +500,7 @@ object ModConfig {
                 hideCaughtInHud = data.hideCaughtInHud
                 showBattleHuntHud = data.showBattleHuntHud
                 hideBossDamageChat = data.hideBossDamageChat
+                useHunterRadar = data.useHunterRadar
                 wikiShowSprites = data.wikiShowSprites
                 pvpOverlayEnabled = data.pvpOverlayEnabled
                 pvpPlayerX = data.pvpPlayerX; pvpPlayerY = data.pvpPlayerY
@@ -514,6 +530,7 @@ object ModConfig {
                 miracleNotification, miracleSound, hideHudInBattle, hideCaughtInHud,
                 showBattleHuntHud,
                 hideBossDamageChat,
+                useHunterRadar,
                 wikiShowSprites,
                 pvpOverlayEnabled,
                 pvpPlayerX, pvpPlayerY, pvpOpponentX, pvpOpponentY,
@@ -564,6 +581,7 @@ object ModConfig {
         val hideCaughtInHud: Boolean = false,
         val showBattleHuntHud: Boolean = true,
         val hideBossDamageChat: Boolean = false,
+        val useHunterRadar: Boolean = true,
         val wikiShowSprites: Boolean = false,
         val pvpOverlayEnabled: Boolean = true,
         val pvpPlayerX: Int = -1,
