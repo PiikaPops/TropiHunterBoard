@@ -30,6 +30,23 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         private set
     private var allEntriesSorted: List<PokemonEntry>? = null
     private var scrollOffset = 0
+
+    /**
+     * Row highlighted by the keyboard, or -1 when the keyboard is not driving.
+     *
+     * Kept separate from hover: whichever was used last wins, so moving the mouse does
+     * not fight the arrow keys and vice versa.
+     */
+    private var selectedIndex = -1
+
+    // The panel geometry used to live in three places — render, click and scroll — each
+    // recomputing the same expressions. They agreed, but that is exactly how a hitbox
+    // drifts away from what is drawn, which has happened in this mod before.
+    private val panelTopY = 25
+    private val panelWidthNow: Int get() = (width * 0.55).toInt().coerceIn(260, 450)
+    private val panelXNow: Int get() = (width - panelWidthNow) / 2
+    private val resultsTopY: Int get() = if (showingHistory) panelTopY + 37 else panelTopY + 59
+    private val resultsBottomY: Int get() = height - 25 - 16
     private val rowHeightNormal = 16
     private val rowHeightSprite = 20
     private var showSprites = ModConfig.wikiShowSprites
@@ -194,6 +211,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         val query = searchField.text.lowercase().trim()
         if (query != lastQuery) {
             scrollOffset = 0
+            selectedIndex = -1
             lastQuery = query
         }
 
@@ -369,11 +387,16 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
             context.drawText(textRenderer, noResult, panelX + 15, resultsTop + 10, UiKit.TEXT_FAINT, true)
         } else {
             var y = resultsTop + 2 - scrollOffset
-            for (entry in filteredList) {
+            // indexed on purpose: indexOf() here would be a linear scan per drawn row,
+            // i.e. quadratic in the result count, every frame
+            for ((index, entry) in filteredList.withIndex()) {
                 if (y + rowHeight > resultsTop - rowHeight && y < resultsBottom + rowHeight) {
-                    val hovered = mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
+                    val pointedAt = mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
                                   mouseY >= y && mouseY <= y + rowHeight &&
                                   mouseY >= resultsTop && mouseY <= resultsBottom
+                    // The keyboard selection is drawn exactly like hover, so there is one
+                    // visual language for "this is the row you are about to open".
+                    val hovered = pointedAt || index == selectedIndex
 
                     if (hovered) {
                         UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
@@ -497,7 +520,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
 
         // Footer
         UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth,
-            Translations.tr("ESC to close  \u2022  Click for details"))
+            Translations.tr("\u2191\u2193 browse  \u2022  Enter to open  \u2022  ESC to close"))
 
         // Render search field and other widgets
         renderWidgets(context, mouseX, mouseY, delta)
@@ -674,25 +697,25 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
 
             // Check results click
             if (filteredList.isNotEmpty()) {
-                val resultsTop2 = if (showingHistory) panelTop + 37 else panelTop + 59
-                val resultsBottom2 = height - 25 - 16
                 if (mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
-                    mouseY >= resultsTop2 && mouseY <= resultsBottom2) {
-                    val relativeY = mouseY.toInt() - resultsTop2 + scrollOffset - 2
+                    mouseY >= resultsTopY && mouseY <= resultsBottomY) {
+                    val relativeY = mouseY.toInt() - resultsTopY + scrollOffset - 2
                     val index = relativeY / rowHeight
                     if (index >= 0 && index < filteredList.size) {
-                        when (val entry = filteredList[index]) {
-                            is PokemonEntry.Regular ->
-                                client?.setScreen(PokemonDetailScreen(entry.species, this, allSpeciesSorted))
-                            is PokemonEntry.Mega ->
-                                client?.setScreen(PokemonDetailScreen(entry.species, this, allSpeciesSorted, entry.form.name))
-                        }
+                        openEntry(index)
                         return true
                     }
                 }
             }
         }
         return super.mouseClickedScaled(mouseX, mouseY, button)
+    }
+
+    override fun mouseMoved(mouseX: Double, mouseY: Double) {
+        // Taking the mouse back drops the keyboard highlight, so only one row is ever
+        // offered at a time.
+        if (selectedIndex >= 0) selectedIndex = -1
+        super.mouseMoved(mouseX, mouseY)
     }
 
     override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
@@ -737,10 +760,56 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         return true
     }
 
+    /** Open a result; shared by the mouse and by Enter so they cannot diverge. */
+    private fun openEntry(index: Int) {
+        val entry = filteredList.getOrNull(index) ?: return
+        when (entry) {
+            is PokemonEntry.Regular ->
+                client?.setScreen(PokemonDetailScreen(entry.species, this, allSpeciesSorted))
+            is PokemonEntry.Mega ->
+                client?.setScreen(PokemonDetailScreen(entry.species, this, allSpeciesSorted, entry.form.name))
+        }
+    }
+
+    /** Scroll just enough to bring the keyboard selection into view. */
+    private fun revealSelection() {
+        if (selectedIndex < 0) return
+        val viewport = resultsBottomY - resultsTopY
+        val top = selectedIndex * rowHeight
+        val bottom = top + rowHeight
+        if (top < scrollOffset) scrollOffset = top
+        else if (bottom > scrollOffset + viewport) scrollOffset = bottom - viewport
+        val maxScroll = (filteredList.size * rowHeight + 4 - viewport).coerceAtLeast(0)
+        scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+        savedScrollOffset = scrollOffset
+    }
+
+    private fun moveSelection(delta: Int) {
+        if (filteredList.isEmpty()) return
+        selectedIndex = when {
+            selectedIndex < 0 -> if (delta > 0) 0 else filteredList.lastIndex
+            else -> (selectedIndex + delta).coerceIn(0, filteredList.lastIndex)
+        }
+        revealSelection()
+    }
+
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            close()
-            return true
+        when (keyCode) {
+            GLFW.GLFW_KEY_ESCAPE -> { close(); return true }
+            GLFW.GLFW_KEY_DOWN -> { moveSelection(1); return true }
+            GLFW.GLFW_KEY_UP -> { moveSelection(-1); return true }
+            GLFW.GLFW_KEY_PAGE_DOWN -> { moveSelection(8); return true }
+            GLFW.GLFW_KEY_PAGE_UP -> { moveSelection(-8); return true }
+            GLFW.GLFW_KEY_HOME -> if (selectedIndex >= 0) { selectedIndex = 0; revealSelection(); return true }
+            GLFW.GLFW_KEY_END -> if (selectedIndex >= 0) {
+                selectedIndex = filteredList.lastIndex; revealSelection(); return true
+            }
+            GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> {
+                // Enter with nothing selected opens the first result: after typing a name,
+                // that is almost always the one wanted.
+                openEntry(if (selectedIndex >= 0) selectedIndex else 0)
+                return true
+            }
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
     }

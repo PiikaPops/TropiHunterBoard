@@ -43,6 +43,12 @@ object ClearWarningOverlay {
         HunterBoard.LOGGER.info("ClearWarning: armed from $source — ${text.trim()}")
     }
 
+    /** A pending countdown belongs to the world that announced it. */
+    fun resetSession() {
+        clearTime = 0L
+        lastSoundSecond = -1
+    }
+
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, isOverlay ->
             if (isOverlay) return@register

@@ -48,6 +48,22 @@ object CatchDetector {
     // "Votre équipe est pleine ! Crabicoque a été ajouté(e) à votre PC."
     private val PC_FR_REGEX = Regex("""Votre équipe est pleine ! (.+) a été ajouté(?:e)? à votre PC\.""")
 
+    /**
+     * Forget the tracked party when leaving a world.
+     *
+     * Party monitoring works by diffing UUIDs against the previous tick. Carrying that set
+     * into another world means every Pokemon in the new party reads as a fresh arrival,
+     * which is a catch signal — so a world change could mark hunts as caught on its own.
+     */
+    fun resetSession() {
+        knownUuids.clear()
+        initialized = false
+        tickSkip = 0
+        pendingCatch = null
+        pendingCompletionTime = null
+        lastMatchTime = 0L
+    }
+
     fun register() {
         // Signal 1a: Party monitoring — detects new Pokémon in party
         ClientTickEvents.END_CLIENT_TICK.register tickListener@{ client ->

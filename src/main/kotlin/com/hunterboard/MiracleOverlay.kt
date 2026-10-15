@@ -11,6 +11,10 @@ import net.minecraft.util.Identifier
 object MiracleOverlay {
 
     // Active boosts: keyword -> expiry timestamp in ms
+    private val HOURS_REGEX = Regex("""(\d+) hours?|(\d+) heures?""")
+    private val MINUTES_REGEX = Regex("""(\d+) minutes?""")
+    private val SECONDS_REGEX = Regex("""(\d+) seconds?|(\d+) secondes?""")
+
     private val activeBoosts = linkedMapOf<String, Long>()
     // Display names: keyword -> full name (e.g., "Shiny" -> "Shiny x2")
     private val boostDisplayNames = linkedMapOf<String, String>()
@@ -62,6 +66,41 @@ object MiracleOverlay {
         }
     }
 
+    /** Address the current boosts were announced on; null in single player. */
+    private var boostsFrom: String? = null
+
+    /**
+     * Forget the boosts only when the player joins a *different* network.
+     *
+     * A Tropimon miracle applies to every server of the network, and the network runs
+     * several of them behind one proxy — so hopping from the hub to a map must not wipe a
+     * boost that is still running. Expiry is wall-clock, so carrying it across is correct.
+     * The comparison is on the client-facing address, which is what stays constant across
+     * a proxy's backends and turns null in single player.
+     */
+    fun onJoin() {
+        val now = currentServerAddress()
+        if (now != boostsFrom) {
+            activeBoosts.clear()
+            boostDisplayNames.clear()
+            cachedLines = emptyList()
+            boostsFrom = now
+        }
+    }
+
+    private fun currentServerAddress(): String? = try {
+        net.minecraft.client.MinecraftClient.getInstance().currentServerEntry?.address
+    } catch (_: Exception) { null }
+
+    /**
+     * The single place a boost is written, so the network it came from is always recorded
+     * with it — three call sites used to assign the map directly.
+     */
+    private fun setBoost(keyword: String, expiresAt: Long) {
+        activeBoosts[keyword] = expiresAt
+        boostsFrom = currentServerAddress()
+    }
+
     fun loadPosition() {
         panelX = if (ModConfig.miraclePosX >= 0) ModConfig.miraclePosX else null
         panelY = if (ModConfig.miraclePosY >= 0) ModConfig.miraclePosY else null
@@ -90,7 +129,7 @@ object MiracleOverlay {
             val keyword = matchBoostKeyword(boostName) ?: return
             boostDisplayNames[keyword] = boostName
             val totalMs = parseTimeMs(extendMatch.groupValues[2])
-            if (totalMs > 0) activeBoosts[keyword] = System.currentTimeMillis() + totalMs
+            if (totalMs > 0) setBoost(keyword, System.currentTimeMillis() + totalMs)
             else addOrExtend(keyword)
             playMiracleSound()
             return
@@ -101,20 +140,20 @@ object MiracleOverlay {
         val keyword = matchBoostKeyword(boostName) ?: return
         boostDisplayNames[keyword] = boostName
         val totalMs = parseTimeMs(listMatch.groupValues[2])
-        if (totalMs > 0) activeBoosts[keyword] = System.currentTimeMillis() + totalMs
+        if (totalMs > 0) setBoost(keyword, System.currentTimeMillis() + totalMs)
     }
 
     private fun addOrExtend(boostName: String) {
         val now = System.currentTimeMillis()
         val existing = activeBoosts[boostName]
-        activeBoosts[boostName] = if (existing != null && existing > now) existing + HOUR_MS
-                                   else now + HOUR_MS
+        setBoost(boostName, if (existing != null && existing > now) existing + HOUR_MS
+                            else now + HOUR_MS)
     }
 
     private fun parseTimeMs(timeStr: String): Long {
-        val h = Regex("""(\d+) hours?|(\d+) heures?""").find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
-        val m = Regex("""(\d+) minutes?""").find(timeStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-        val s = Regex("""(\d+) seconds?|(\d+) secondes?""").find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
+        val h = HOURS_REGEX.find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
+        val m = MINUTES_REGEX.find(timeStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val s = SECONDS_REGEX.find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
         return (h * 3600 + m * 60 + s) * 1000L
     }
 

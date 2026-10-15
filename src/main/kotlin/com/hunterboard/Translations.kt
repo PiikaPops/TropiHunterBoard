@@ -441,6 +441,7 @@ object Translations {
         // Options screen
         "Options" to "Options",
         "Theme" to "Thème",
+        "↑↓ browse  •  Enter to open  •  ESC to close" to "↑↓ parcourir  •  Entrée pour ouvrir  •  ÉCHAP pour fermer",
         "Generation" to "Génération",
         "Added to another structure" to "Ajouté à une autre structure",
         "Inside" to "Dans",

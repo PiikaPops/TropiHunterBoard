@@ -25,6 +25,22 @@ object HunterBoard : ClientModInitializer {
             HabitatStructures.invalidate()
             TmData.invalidate()
             BiomeTagResolver.clearCache()
+
+            // Session state, as opposed to data caches: these describe the world just
+            // left, and carrying them into the next one is wrong rather than merely
+            // stale. BoardState is deliberately not among them — the hunting board is
+            // saved to disk on purpose, so it survives restarts and world changes.
+            CatchDetector.resetSession()
+            ClearWarningOverlay.resetSession()
+            BattleHuntOverlay.invalidateCache()
+        }
+
+        // Miracles are network-wide on Tropimon, which runs several servers behind one
+        // proxy, so they must survive a hop between them and only be dropped on joining
+        // somewhere else. That is a question about the server being joined, so it is
+        // answered on JOIN rather than on DISCONNECT.
+        ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
+            MiracleOverlay.onJoin()
         }
 
         // Register mod sounds
