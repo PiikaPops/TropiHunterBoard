@@ -380,6 +380,63 @@ object UiKit {
         return thumbY to thumbH
     }
 
+    // ---- Polygon primitives -------------------------------------------------------
+    // DrawContext only exposes axis-aligned fills, so lines and polygons are rasterised
+    // by hand. Cheap enough for a five-sided radar chart drawn once per frame.
+
+    /** 1px line between two points (DDA). */
+    fun line(ctx: DrawContext, x1: Int, y1: Int, x2: Int, y2: Int, color: Int) {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val steps = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+        if (steps == 0) {
+            ctx.fill(x1, y1, x1 + 1, y1 + 1, color)
+            return
+        }
+        for (i in 0..steps) {
+            val x = x1 + dx * i / steps
+            val y = y1 + dy * i / steps
+            ctx.fill(x, y, x + 1, y + 1, color)
+        }
+    }
+
+    /** Closed outline through the given points. */
+    fun polygon(ctx: DrawContext, xs: IntArray, ys: IntArray, color: Int) {
+        if (xs.size < 2 || xs.size != ys.size) return
+        for (i in xs.indices) {
+            val j = (i + 1) % xs.size
+            line(ctx, xs[i], ys[i], xs[j], ys[j], color)
+        }
+    }
+
+    /** Scanline fill of a simple polygon. */
+    fun fillPolygon(ctx: DrawContext, xs: IntArray, ys: IntArray, color: Int) {
+        if (xs.size < 3 || xs.size != ys.size) return
+        val top = ys.min()
+        val bottom = ys.max()
+        val crossings = ArrayList<Int>(xs.size)
+        for (y in top..bottom) {
+            crossings.clear()
+            var j = xs.size - 1
+            for (i in xs.indices) {
+                val yi = ys[i]
+                val yj = ys[j]
+                if ((yi <= y && yj > y) || (yj <= y && yi > y)) {
+                    val t = (y - yi).toDouble() / (yj - yi).toDouble()
+                    crossings.add((xs[i] + t * (xs[j] - xs[i])).toInt())
+                }
+                j = i
+            }
+            if (crossings.size < 2) continue
+            crossings.sort()
+            var k = 0
+            while (k + 1 < crossings.size) {
+                ctx.fill(crossings[k], y, crossings[k + 1] + 1, y + 1, color)
+                k += 2
+            }
+        }
+    }
+
     /** Standard row highlight for hoverable list rows. */
     fun rowHighlight(ctx: DrawContext, x: Int, y: Int, w: Int, h: Int) {
         if (isBevel) {

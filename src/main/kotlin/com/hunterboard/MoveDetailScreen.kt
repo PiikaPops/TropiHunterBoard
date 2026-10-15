@@ -6,13 +6,16 @@ import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.item.ItemStack
+import net.minecraft.registry.Registries
 import net.minecraft.text.Text
+import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 
 class MoveDetailScreen(
     private val move: MoveTemplate,
     private val parent: Screen
-) : Screen(Text.literal("Move Detail")) {
+) : ScaledScreen(Text.literal("Move Detail")) {
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
@@ -55,7 +58,8 @@ class MoveDetailScreen(
     private val MODEL_SIZE = 22
     private val MODEL_OFFSET_Y = -3
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        hoveredIngredient = null
         pokemonBounds.clear()
         UiKit.screenDim(context, width, height)
 
@@ -94,7 +98,7 @@ class MoveDetailScreen(
         sbContentTop = contentTop
         sbContentBottom = contentBottom
 
-        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+        scissor(context, panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
 
         val leftX = panelX + 10
         val contentW = panelWidth - 20
@@ -144,6 +148,21 @@ class MoveDetailScreen(
             y += 10
         }
         y += 8
+
+        // === Technical Machine (Cobblemon 1.8 brought TMs into the base mod) ===
+        TmData.ensureLoaded()
+        val tm = TmData.forMove(move.name)
+        if (tm != null) {
+            val methods = tm.obtainMethods.joinToString(", ") { TmData.obtainMethodName(it) }
+            val tmHeader = if (methods.isEmpty()) Translations.tr("Technical Machine")
+                           else "${Translations.tr("Technical Machine")} \u2014 $methods"
+            context.drawText(textRenderer, tmHeader, leftX, y, 0xFF66CCEE.toInt(), true)
+            y += 12
+            if (tm.recipe.isNotEmpty()) {
+                y = renderTmRecipe(context, tm, leftX + 2, y, mouseX, mouseY)
+            }
+            y += 6
+        }
 
         context.fill(panelX + 10, y, panelX + panelWidth - 10, y + 1, UiKit.BORDER_DIM)
         y += 6
@@ -244,6 +263,52 @@ class MoveDetailScreen(
         // Footer
                 val hint: String = Translations.tr("ESC / Click Back to return")
         UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
+
+        hoveredIngredient?.let {
+            context.drawTooltip(textRenderer, listOf(Text.literal(it)), mouseX, mouseY)
+        }
+    }
+
+    /** Ingredient hovered this frame; the tooltip is drawn after the scissor is lifted. */
+    private var hoveredIngredient: String? = null
+
+    /**
+     * The TM recipe as real item slots rather than a text list — a crafting recipe is
+     * far easier to read as icons, and the count badge comes free with the stack.
+     */
+    private fun renderTmRecipe(context: DrawContext, tm: TmInfo, x: Int, startY: Int, mouseX: Int, mouseY: Int): Int {
+        val slot = 18
+        val gap = 2
+        var sx = x
+        for (ingredient in tm.recipe) {
+            try {
+                val item = Registries.ITEM.get(Identifier.of(ingredient.item))
+                val stack = ItemStack(item, ingredient.count)
+                val hovered = mouseX >= sx && mouseX <= sx + slot && mouseY >= startY && mouseY <= startY + slot
+
+                context.fill(sx, startY, sx + slot, startY + slot,
+                    if (hovered) UiKit.SURFACE_HOVER else UiKit.SURFACE_SUNKEN)
+                drawBorder(context, sx, startY, slot, slot,
+                    if (hovered) UiKit.accent() else UiKit.BORDER_DIM)
+
+                if (!stack.isEmpty) {
+                    context.drawItem(stack, sx + 1, startY + 1)
+                    if (ingredient.count > 1) {
+                        val count = "${ingredient.count}"
+                        context.drawText(textRenderer, count,
+                            sx + slot - 1 - textRenderer.getWidth(count), startY + slot - 8,
+                            0xFFFFFFFF.toInt(), true)
+                    }
+                    if (hovered) hoveredIngredient = stack.name.string
+                } else {
+                    // unknown item (another mod's recipe) — still show the count
+                    context.drawText(textRenderer, "${ingredient.count}", sx + 5, startY + 5, UiKit.TEXT_FAINT, true)
+                    if (hovered) hoveredIngredient = ingredient.item
+                }
+            } catch (_: Exception) {}
+            sx += slot + gap
+        }
+        return startY + slot + 2
     }
 
     // ---- Icon grid (2 columns, model + name) ----
@@ -395,7 +460,7 @@ class MoveDetailScreen(
         return result + ellipsis
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
             val panelX = (width - panelWidth) / 2
@@ -460,10 +525,10 @@ class MoveDetailScreen(
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val contentAreaHeight = sbContentBottom - sbContentTop
             val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
@@ -474,15 +539,15 @@ class MoveDetailScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val contentAreaHeight = sbContentBottom - sbContentTop
         if (contentAreaHeight <= 0) return true
         val maxScroll = maxOf(0, contentHeight - contentAreaHeight)

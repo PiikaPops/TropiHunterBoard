@@ -15,7 +15,7 @@ class SoundPickerScreen(
     private val parent: Screen,
     private val currentSound: String,
     private val onSelect: (String) -> Unit
-) : Screen(Text.literal("Sound Picker")) {
+) : ScaledScreen(Text.literal("Sound Picker")) {
 
     private lateinit var searchField: TextFieldWidget
     private var allSounds: List<Identifier> = emptyList()
@@ -109,7 +109,7 @@ class SoundPickerScreen(
 
     private fun currentListSize(): Int = if (activeTab == 0) filteredSounds.size else filteredCustom.size
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
@@ -165,7 +165,7 @@ class SoundPickerScreen(
         val resultsBottom = panelBottom - 16
         val resultsAreaHeight = resultsBottom - resultsTop
 
-        context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
+        scissor(context, panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (activeTab == 0) {
             renderMinecraftList(context, panelX, panelWidth, resultsTop, resultsBottom, mouseX, mouseY)
@@ -224,7 +224,7 @@ class SoundPickerScreen(
             context.drawText(textRenderer, hint, hintX, panelBottom - 10, UiKit.TEXT_FAINT, true)
         }
 
-        super.render(context, mouseX, mouseY, delta)
+        renderWidgets(context, mouseX, mouseY, delta)
     }
 
     private fun renderMinecraftList(context: DrawContext, panelX: Int, panelWidth: Int, resultsTop: Int, resultsBottom: Int, mouseX: Int, mouseY: Int) {
@@ -320,8 +320,8 @@ class SoundPickerScreen(
         }
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (button != 0) return super.mouseClicked(mouseX, mouseY, button)
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button != 0) return super.mouseClickedScaled(mouseX, mouseY, button)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -402,7 +402,7 @@ class SoundPickerScreen(
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
     private fun handleRowClick(mouseX: Double, panelX: Int, soundId: String, isCustom: Boolean): Boolean {
@@ -437,7 +437,7 @@ class SoundPickerScreen(
         return true
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val panelTop = 25
             val panelBottom = height - 25
@@ -453,15 +453,15 @@ class SoundPickerScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val panelBottom = height - 25
         val resultsTop = panelTop + 54

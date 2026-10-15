@@ -109,8 +109,23 @@ object ModConfig {
     var clearWarningSoundId: String = "minecraft:entity.experience_orb.pickup"
         private set
 
-    // Show session playtime on the HUD
-    var showPlaytime: Boolean = true
+    // Show session playtime on the HUD. Off by default: it is a niche readout, and the
+    // toggle used to be unreachable, so it stayed on for everyone who never found it.
+    var showPlaytime: Boolean = false
+
+    /** How the wiki lays out spawn conditions: "table" (default) or "text". */
+    var spawnDisplayMode: String = "table"
+        private set
+
+    /**
+     * Largest effective GUI scale the mod's screens will use; 0 follows Minecraft.
+     *
+     * Minecraft's scale multiplies every pixel, so at scale 3 a 1080p screen leaves only
+     * 640 GUI pixels across and the spawn table (about 700) ran off the edge. Capping it
+     * draws the screens through a matrix instead of shrinking the panels, so nothing is
+     * cut off and the text stays pixel-aligned. Never scales anything up.
+     */
+    var uiScaleCap: Int = 2
         private set
 
     // UI theme (see UiKit for palettes). Order = cycle order of the options button.
@@ -177,11 +192,53 @@ object ModConfig {
     }
 
     /** Scale factor for merged HUD based on global size preset */
-    fun hudScale(): Float = sizeToScale(hudSizePreset)
+    // ---- HUD scale -----------------------------------------------------------------
+    // The four-step presets could not cover a high GUI scale, so each HUD now carries a
+    // free factor set by dragging its corner. A value below zero means "never set", and
+    // the old preset is used instead — that keeps existing configs looking the same.
+
+    const val MIN_HUD_SCALE = 0.35f
+    const val MAX_HUD_SCALE = 4.0f
+
+    var mergedScaleValue: Float = -1f
+    var huntScaleValue: Float = -1f
+    var raidScaleValue: Float = -1f
+    var miracleScaleValue: Float = -1f
+
+    fun hudScale(): Float =
+        if (mergedScaleValue > 0f) mergedScaleValue else sizeToScale(hudSizePreset)
 
     /** Scale factor per individual HUD */
-    fun raidScale(): Float = sizeToScale(raidSizePreset)
-    fun miracleScale(): Float = sizeToScale(miracleSizePreset)
+    fun huntScale(): Float = when {
+        mergedHudMode -> hudScale()
+        huntScaleValue > 0f -> huntScaleValue
+        else -> sizeToScale(huntSizePreset)
+    }
+
+    fun raidScale(): Float =
+        if (raidScaleValue > 0f) raidScaleValue else sizeToScale(raidSizePreset)
+
+    fun miracleScale(): Float =
+        if (miracleScaleValue > 0f) miracleScaleValue else sizeToScale(miracleSizePreset)
+
+    private fun clampScale(value: Float) = value.coerceIn(MIN_HUD_SCALE, MAX_HUD_SCALE)
+
+    fun setHuntScale(value: Float) {
+        if (mergedHudMode) mergedScaleValue = clampScale(value) else huntScaleValue = clampScale(value)
+        save()
+    }
+
+    fun setRaidScale(value: Float) { raidScaleValue = clampScale(value); save() }
+    fun setMiracleScale(value: Float) { miracleScaleValue = clampScale(value); save() }
+
+    /** Back to the preset-derived size. */
+    fun resetHudScales() {
+        mergedScaleValue = -1f
+        huntScaleValue = -1f
+        raidScaleValue = -1f
+        miracleScaleValue = -1f
+        save()
+    }
 
     private fun sizeToScale(preset: Int): Float = when (preset) {
         0 -> 0.80f; 1 -> 1.00f; 2 -> 1.30f; 3 -> 1.60f; else -> 1.00f
@@ -384,6 +441,23 @@ object ModConfig {
         save()
     }
 
+    fun toggleSpawnDisplayMode() {
+        spawnDisplayMode = if (spawnDisplayMode == "table") "text" else "table"
+        save()
+    }
+
+    /** Cycle the interface scale cap (order of UiScale.CAPS). */
+    fun cycleUiScaleCap() {
+        val idx = UiScale.CAPS.indexOf(uiScaleCap)
+        uiScaleCap = UiScale.CAPS[(idx + 1) % UiScale.CAPS.size]
+        save()
+        // every open screen laid itself out with the old factor
+        try {
+            val client = net.minecraft.client.MinecraftClient.getInstance()
+            client.currentScreen?.let { it.init(client, client.window.scaledWidth, client.window.scaledHeight) }
+        } catch (_: Exception) {}
+    }
+
     fun toggleShowPlaytime() {
         showPlaytime = !showPlaytime
         save()
@@ -445,7 +519,13 @@ object ModConfig {
         pvpOpponentX = -1; pvpOpponentY = -1
         clearWarningSound = true
         clearWarningSoundId = "minecraft:entity.experience_orb.pickup"
-        showPlaytime = true
+        showPlaytime = false
+        spawnDisplayMode = "table"
+        uiScaleCap = 2
+        mergedScaleValue = -1f
+        huntScaleValue = -1f
+        raidScaleValue = -1f
+        miracleScaleValue = -1f
         uiTheme = "hunterboard"
         save()
     }
@@ -508,6 +588,12 @@ object ModConfig {
                 clearWarningSound = data.clearWarningSound
                 clearWarningSoundId = data.clearWarningSoundId
                 showPlaytime = data.showPlaytime
+                spawnDisplayMode = if (data.spawnDisplayMode == "text") "text" else "table"
+                uiScaleCap = if (data.uiScaleCap in UiScale.CAPS) data.uiScaleCap else 2
+                mergedScaleValue = data.mergedScaleValue
+                huntScaleValue = data.huntScaleValue
+                raidScaleValue = data.raidScaleValue
+                miracleScaleValue = data.miracleScaleValue
                 uiTheme = if (data.uiTheme in UI_THEMES) data.uiTheme else "hunterboard"
 
                 HunterBoard.LOGGER.info("Loaded config: color=#${"%02X%02X%02X".format(hudColorR, hudColorG, hudColorB)}, opacity=$hudOpacity%, rank=${RANKS[rank].first}")
@@ -537,7 +623,13 @@ object ModConfig {
                 clearWarningSound,
                 clearWarningSoundId,
                 showPlaytime,
-                uiTheme
+                uiTheme,
+                spawnDisplayMode,
+                uiScaleCap,
+                mergedScaleValue,
+                huntScaleValue,
+                raidScaleValue,
+                miracleScaleValue
             )
             SAVE_PATH.toFile().writeText(json.encodeToString(ConfigData.serializer(), data))
         } catch (e: Exception) {
@@ -590,7 +682,13 @@ object ModConfig {
         val pvpOpponentY: Int = -1,
         val clearWarningSound: Boolean = true,
         val clearWarningSoundId: String = "minecraft:entity.experience_orb.pickup",
-        val showPlaytime: Boolean = true,
-        val uiTheme: String = "hunterboard"
+        val showPlaytime: Boolean = false,
+        val uiTheme: String = "hunterboard",
+        val spawnDisplayMode: String = "table",
+        val uiScaleCap: Int = 2,
+        val mergedScaleValue: Float = -1f,
+        val huntScaleValue: Float = -1f,
+        val raidScaleValue: Float = -1f,
+        val miracleScaleValue: Float = -1f
     )
 }

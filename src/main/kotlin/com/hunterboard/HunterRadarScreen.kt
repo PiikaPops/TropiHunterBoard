@@ -4,6 +4,8 @@ import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import net.minecraft.client.MinecraftClient
+import com.cobblemon.mod.common.api.spawning.BestSpawner
+import com.cobblemon.mod.common.api.spawning.detail.SpawnDetail
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.text.Text
@@ -17,7 +19,7 @@ import org.lwjgl.glfw.GLFW
 class HunterRadarScreen(
     initialSlots: List<RadarSlot>,
     internal var tropiScreen: Any?
-) : Screen(Text.literal("Pokéradar")) {
+) : ScaledScreen(Text.literal("Pokéradar")) {
 
     data class RadarSlot(val species: Species, val pct: Float)
 
@@ -165,7 +167,7 @@ class HunterRadarScreen(
     // Rendering
     // ─────────────────────────────────────────────────────────────────────────
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val pX = panelX; val pY = panelY   // snapshot computed values once per frame
         UiKit.screenDim(context, width, height)
 
@@ -190,7 +192,7 @@ class HunterRadarScreen(
         context.fill(pX + 2, pY + HEADER_H - 1, pX + PANEL_W - 2, pY + HEADER_H, UiKit.withAlpha(UiKit.accent(), 0xCC))
 
         // ── Grid (scissored) ─────────────────────────────────────────────────
-        context.enableScissor(pX + 1, contentTop, pX + PADDING + GRID_W + 2, contentBottom)
+        scissor(context, pX + 1, contentTop, pX + PADDING + GRID_W + 2, contentBottom)
         hoveredSlot = -1
 
         for (dispIdx in displayIndices.indices) {
@@ -360,26 +362,50 @@ class HunterRadarScreen(
         }.getOrDefault(false)
     }
 
+    /**
+     * Cobblemon 1.8 removed the SpawnBucket class: SpawnDetail.bucket is now a plain
+     * String and the per-bucket weights live in the BestSpawner config, with a separate
+     * table for fishing / Poke Snack / habitat spawns. The old reflection
+     * (`bucket.getWeight()`) silently returned 0 for every entry.
+     */
+    private val DEFAULT_WORLD_BUCKETS = mapOf(
+        "common" to 94.05, "uncommon" to 5.0, "rare" to 0.5, "ultra-rare" to 0.2, "boss" to 0.25
+    )
+    private val DEFAULT_ALT_BUCKETS = mapOf(
+        "common" to 83.25, "uncommon" to 11.25, "rare" to 4.125, "ultra-rare" to 1.375
+    )
+
+    private fun entryBucketName(entry: Any): String? = runCatching {
+        (entry as? SpawnDetail)?.bucket?.lowercase()?.trim()
+    }.getOrNull()
+
+    private fun entryPositionType(entry: Any): String = runCatching {
+        (entry as? SpawnDetail)?.spawnablePositionType?.name?.lowercase() ?: ""
+    }.getOrDefault("")
+
     private fun entryBucketWeight(entry: Any): Double {
-        return runCatching {
-            val bucket = entry.javaClass.getMethod("getBucket").invoke(entry) ?: return 0.0
-            (bucket.javaClass.getMethod("getWeight").invoke(bucket) as? Number)?.toDouble() ?: 0.0
-        }.getOrDefault(0.0)
+        val bucket = entryBucketName(entry) ?: return 0.0
+        val isAlternate = entryPositionType(entry) == "fishing"
+        val configured = runCatching {
+            val config = BestSpawner.config
+            val table = if (isAlternate) config.fishingBuckets else config.worldBuckets
+            table[bucket]?.toDouble()
+        }.getOrNull()
+        if (configured != null && configured > 0.0) return configured
+        val fallback = if (isAlternate) DEFAULT_ALT_BUCKETS else DEFAULT_WORLD_BUCKETS
+        return fallback[bucket] ?: 0.0
     }
 
     private fun entryBucketColor(entry: Any): Int {
-        return runCatching {
-            val bucket = entry.javaClass.getMethod("getBucket").invoke(entry) ?: return UiKit.TEXT
-            val name = (bucket.javaClass.getMethod("getName").invoke(bucket) as? String)
-                ?.lowercase()?.replace("-", "_") ?: return UiKit.TEXT
-            when (name) {
-                "common"     -> 0xFF55FF55.toInt()
-                "uncommon"   -> 0xFFFFFF55.toInt()
-                "rare"       -> 0xFF55FFFF.toInt()
-                "ultra_rare" -> 0xFFFF55FF.toInt()
-                else         -> UiKit.TEXT
-            }
-        }.getOrDefault(UiKit.TEXT)
+        val name = entryBucketName(entry)?.replace("-", "_") ?: return UiKit.TEXT
+        return when (name) {
+            "common"     -> 0xFF55FF55.toInt()
+            "uncommon"   -> 0xFFFFFF55.toInt()
+            "rare"       -> 0xFF55FFFF.toInt()
+            "ultra_rare" -> 0xFFFF55FF.toInt()
+            "boss"       -> 0xFFFF5544.toInt()
+            else         -> UiKit.TEXT
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -448,7 +474,9 @@ class HunterRadarScreen(
         lines += Line("──────────────────", UiKit.BORDER)
         lines += Line("Clic → fiche wiki", 0xFF88AAFF.toInt())
 
-        val sw = client.window.scaledWidth; val sh = client.window.scaledHeight
+        // the screen's own dimensions, not the window's: under an interface scale cap the
+        // two differ, and clamping to the window would bunch the tooltip into one corner
+        val sw = width; val sh = height
         val contentW = lines.maxOfOrNull { tr.getWidth(it.text) } ?: 80
         val tooltipW = contentW + pad * 2; val tooltipH = lines.size * (fh + 1) + pad * 2
         var tx = mx + 12; var ty = my - tooltipH / 2
@@ -468,7 +496,7 @@ class HunterRadarScreen(
     // Input
     // ─────────────────────────────────────────────────────────────────────────
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val pX = panelX; val pY = panelY
 
         // Switch to TropiMod — static top-left
@@ -514,14 +542,14 @@ class HunterRadarScreen(
                 return true
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        sbDragging = false; return super.mouseReleased(mouseX, mouseY, button)
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        sbDragging = false; return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dx: Double, dy: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, dx: Double, dy: Double): Boolean {
         if (sbDragging && button == 0 && maxScroll > 0) {
             val trackH = contentAreaH - 4
             val thumbH = maxOf(16, (contentAreaH.toFloat() / contentH * trackH).toInt())
@@ -531,10 +559,10 @@ class HunterRadarScreen(
                     .coerceIn(0, maxScroll)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dx, dy)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, dx, dy)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, h: Double, v: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, h: Double, v: Double): Boolean {
         scrollOffset = (scrollOffset - (v * 20).toInt()).coerceIn(0, maxScroll); return true
     }
 

@@ -13,7 +13,7 @@ import net.minecraft.util.Util
 import org.lwjgl.glfw.GLFW
 import java.net.URI
 
-class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
+class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
 
     companion object {
         var savedScrollOffset = 0
@@ -105,6 +105,8 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
     private var abilitiesTabW = 0
     private var itemsTabX = 0
     private var itemsTabW = 0
+    private var habitatsTabX = 0
+    private var habitatsTabW = 0
     private val tabH = 12
 
     // Sort / filter
@@ -246,7 +248,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         }
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // Hide search bar when showing history
         searchField.visible = !showingHistory
 
@@ -291,14 +293,17 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         val movesLabel: String = Translations.tr("Moves")
         val abilitiesLabel: String = Translations.tr("Abilities")
         val itemsLabel: String = Translations.tr("Items")
+        val habitatsLabel: String = Translations.tr("Habitats")
         val pokTabW = textRenderer.getWidth(pokemonLabel) + 8
         movesTabW = textRenderer.getWidth(movesLabel) + 8
         abilitiesTabW = textRenderer.getWidth(abilitiesLabel) + 8
         itemsTabW = textRenderer.getWidth(itemsLabel) + 8
+        habitatsTabW = textRenderer.getWidth(habitatsLabel) + 8
         val pokTabX = panelX + 8
         movesTabX = pokTabX + pokTabW + 2
         abilitiesTabX = movesTabX + movesTabW + 2
         itemsTabX = abilitiesTabX + abilitiesTabW + 2
+        habitatsTabX = itemsTabX + itemsTabW + 2
         val tY = panelTop + 20
 
         // Pokemon tab (active)
@@ -315,6 +320,11 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         // Items tab (inactive)
         val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
         UiKit.tab(context, textRenderer, itemsTabX, tY, itemsTabW, tabH, itemsLabel, false, itemTabHovered)
+
+
+        // Habitats tab (inactive)
+        val habitatTabHovered = mouseX in habitatsTabX..(habitatsTabX + habitatsTabW) && mouseY in tY..(tY + tabH)
+        UiKit.tab(context, textRenderer, habitatsTabX, tY, habitatsTabW, tabH, habitatsLabel, false, habitatTabHovered)
 
         // Language toggle button (right side of tab row)
         val langLabel = Translations.nameLanguageLabel()
@@ -352,7 +362,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, UiKit.BORDER_DIM)
 
         // Scissor for scrollable results
-        context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
+        scissor(context, panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (filteredList.isEmpty()) {
             val noResult: String = if (showingHistory) Translations.tr("No history yet") else Translations.tr("No Pok\u00e9mon found")
@@ -490,7 +500,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             Translations.tr("ESC to close  \u2022  Click for details"))
 
         // Render search field and other widgets
-        super.render(context, mouseX, mouseY, delta)
+        renderWidgets(context, mouseX, mouseY, delta)
 
         // Donors button (bottom-left of screen)
         val donorsText = "\u2605 ${Translations.tr("Generous Souls")}"
@@ -523,7 +533,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
         }
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             // Sort dropdown / type sub-menu clicks (handle first, before anything else)
             if (showSortDropdown) {
@@ -628,6 +638,14 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                 return true
             }
 
+
+            // Habitats tab click
+            if (mouseX >= habitatsTabX && mouseX <= habitatsTabX + habitatsTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(HabitatSearchScreen())
+                return true
+            }
+
             // Check scrollbar click
             val contentHeight = filteredList.size * rowHeight + 4
             val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
@@ -674,10 +692,10 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val panelTop = 25
             val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
@@ -695,18 +713,18 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) {
             isScrollbarDragging = false
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val panelBottom = height - 25
         val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
@@ -733,6 +751,7 @@ class PokemonSearchScreen : Screen(Text.literal("Pokemon Search")) {
             "uncommon" -> 0xFFFFDD55.toInt()
             "rare" -> 0xFF55AAFF.toInt()
             "ultra-rare" -> 0xFFBB66FF.toInt()
+            "boss" -> 0xFFFF5544.toInt()
             else -> 0xFF888888.toInt()
         }
     }

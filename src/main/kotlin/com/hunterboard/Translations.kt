@@ -126,6 +126,7 @@ object Translations {
             "uncommon" -> "Peu commun"
             "rare" -> "Rare"
             "ultra-rare" -> "Ultra-rare"
+            "boss" -> "Boss"
             else -> bucket.split("-").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
         }
     }
@@ -172,9 +173,11 @@ object Translations {
         if (context.isEmpty() || context == "grounded") return ""
         if (!isFrench()) {
             return when (context) {
+                "fishing" -> "Fishing"
                 "submerged" -> "Underwater"
                 "surface" -> "Water Surface"
                 "seafloor" -> "Seafloor"
+                "lavafloor" -> "Lava Floor"
                 else -> context.replaceFirstChar { it.uppercase() }
             }
         }
@@ -183,6 +186,7 @@ object Translations {
             "submerged" -> "Sous l'eau"
             "surface" -> "Surface de l'eau"
             "seafloor" -> "Fond marin"
+            "lavafloor" -> "Fond de lave"
             else -> context.replaceFirstChar { it.uppercase() }
         }
     }
@@ -251,9 +255,19 @@ object Translations {
                     val lvl = part.removePrefix("lure:")
                     if (isFrench()) "Appât $lvl" else "Lure $lvl"
                 }
+                part == "pokesnack" -> if (isFrench()) "Poké-Snack" else "Poké Snack"
+                part.startsWith("bait:") -> {
+                    val id = part.removePrefix("bait:")
+                    if (isFrench()) "Appât ${itemName(id)}" else "Bait ${itemName(id)}"
+                }
+                part.startsWith("rod:") -> {
+                    val id = part.removePrefix("rod:")
+                    if (isFrench()) "Canne ${itemName(id)}" else "Rod ${itemName(id)}"
+                }
                 part.startsWith("moon:") -> {
-                    val phase = part.removePrefix("moon:").toIntOrNull()
-                    if (phase != null) formatMoonPhase(phase) else part
+                    // 1.8 moonPhase is a range, so this can be "moon:0/1/7"
+                    val phases = part.removePrefix("moon:").split("/").mapNotNull { it.toIntOrNull() }
+                    if (phases.isNotEmpty()) phases.joinToString(", ") { formatMoonPhase(it) } else part
                 }
                 else -> part.replaceFirstChar { it.uppercase() }
             }
@@ -274,6 +288,32 @@ object Translations {
             blockId.substringAfter(":").replace("_", " ")
                 .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
         }
+    }
+
+    /** Localised item name for an id like "cobblemon:love_rod"; falls back to a prettified path. */
+    fun itemName(itemId: String): String {
+        val id = itemId.removePrefix("#")
+        try {
+            val item = Registries.ITEM.get(Identifier.of(id))
+            val name = item.name.string
+            if (name.isNotEmpty() && !name.startsWith("item.") && !name.startsWith("block.")) return name
+        } catch (_: Exception) {}
+        return id.substringAfter(":").replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+    }
+
+    /** "minecraft:the_nether" -> "The Nether" / "Le Nether" */
+    fun dimensionName(dimensionId: String): String {
+        val path = dimensionId.substringAfter(":")
+        if (isFrench()) {
+            when (path) {
+                "overworld" -> return "Surface"
+                "the_nether" -> return "Nether"
+                "the_end" -> return "End"
+            }
+        }
+        return path.replace("_", " ")
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
     }
 
     private val FR = mapOf(
@@ -401,6 +441,33 @@ object Translations {
         // Options screen
         "Options" to "Options",
         "Theme" to "Thème",
+        "Generation" to "Génération",
+        "Added to another structure" to "Ajouté à une autre structure",
+        "Inside" to "Dans",
+        "Dimension" to "Dimension",
+        "Overworld" to "Surface",
+        "The Nether" to "Nether",
+        "The End" to "l'End",
+        "Placed by" to "Posé par",
+        "Jigsaw structure" to "Structure (jigsaw)",
+        "Worldgen feature" to "Feature de worldgen",
+        "Spacing" to "Espacement",
+        "chunks" to "chunks",
+        "min" to "min",
+        "Share of the set" to "Part du set",
+        "Start height" to "Hauteur de départ",
+        "Terrain" to "Terrain",
+        "Frequency" to "Fréquence",
+        "chunk in" to "chunk sur",
+        "Attempts" to "Tentatives",
+        "Height" to "Hauteur",
+        "Search" to "Recherche",
+        "Offset" to "Décalage",
+        "Step" to "Étape",
+        "Placement unknown" to "Placement inconnu",
+        "Filler" to "Filler",
+        "Interface scale" to "Échelle de l'interface",
+        "Minecraft GUI scale" to "Échelle GUI de Minecraft",
         "Cobblemon Theme" to "Thème Cobblemon",
         "HunterBoard Theme" to "Thème HunterBoard",
         "Polaris Theme" to "Thème Polaris",
@@ -496,6 +563,99 @@ object Translations {
         "Playtime" to "Temps connecté",
         "Clear Sound" to "Son Clear",
         "Slime Chunk" to "Chunk à Slime",
+        // Cobblemon 1.8
+        "Poke Snack only" to "Poké-Snack uniquement",
+        "Also via Poke Snack" to "Aussi via Poké-Snack",
+        "Rod:" to "Canne :",
+        "Bait:" to "Appât :",
+        "Lure" to "Leurre",
+        "Depth:" to "Profondeur :",
+        "Fluid:" to "Fluide :",
+        "Space:" to "Espace :",
+        "Herd" to "Groupe",
+        "Held:" to "Objet tenu :",
+        "Marker:" to "Marqueur :",
+        "Dimension:" to "Dimension :",
+        "Habitats:" to "Habitats :",
+        "Wiki" to "Wiki",
+        "Drag a corner to resize" to "Glisse un coin pour redimensionner",
+        "Spawn display" to "Affichage des spawns",
+        "Weight" to "Poids",
+        "Not in biomes" to "Biomes exclus",
+        "Time/Weather" to "Temps/Météo",
+        "Multipliers" to "Multiplicateurs",
+        "Context" to "Contexte",
+        "Presets" to "Presets",
+        "Can see sky" to "Ciel visible",
+        "Grounded" to "Au sol",
+        "Habitats" to "Habitats",
+        "Habitat" to "Habitat",
+        "Phases" to "Phases",
+        "filled = base · outline = trained cap" to "plein = base · contour = max entraîné",
+        "Table" to "Tableau",
+        "Text" to "Texte",
+        "Rarity" to "Raret\u00e9",
+        "Biomes" to "Biomes",
+        "Time" to "Temps",
+        "Weather" to "M\u00e9t\u00e9o",
+        "Conditions" to "Conditions",
+        "Outdoor" to "Ext\u00e9rieur",
+        "Underground" to "Souterrain",
+        "Fishing" to "P\u00eache",
+        "Snack" to "Snack",
+        "Generates in:" to "Appara\u00eet dans :",
+        "Biomes unknown" to "Biomes inconnus",
+        "Habitat Search" to "Recherche d'habitats",
+        "No habitat found" to "Aucun habitat trouv\u00e9",
+        "species" to "esp\u00e8ces",
+        "phases" to "phases",
+        "Any phase" to "Toute phase",
+        "Preview unavailable" to "Aper\u00e7u indisponible",
+        "Habitat block" to "Bloc d'habitat",
+        "Unknown pool" to "Pool inconnu",
+        "Nothing this phase" to "Rien \u00e0 cette phase",
+        "Next phase in" to "Phase suivante dans",
+        "random daily" to "al\u00e9atoire/jour",
+        "fixed shuffle" to "ordre fixe",
+        "in order" to "dans l'ordre",
+        "Placed as a worldgen feature" to "Plac\u00e9 par une feature de worldgen",
+        "Back" to "Retour",
+
+        "Phase" to "Phase",
+        // Cobblemon 1.8 wiki additions
+        "Alpha boss herd" to "Horde boss Alpha",
+        "Alpha:" to "Alpha :",
+        "Sizes" to "Tailles",
+        "Riding" to "Monte",
+        "Land" to "Terre",
+        "Water" to "Eau",
+        "Air" to "Air",
+        "Spd" to "Vit.",
+        "Accel" to "Accél.",
+        "Jump" to "Saut",
+        "Stam" to "End.",
+        "Skill" to "Habileté",
+        "with a craftable TM" to "avec une MT fabricable",
+        "Baits" to "Appâts",
+        "Bait Search" to "Recherche d'appâts",
+        "No bait found" to "Aucun appât trouvé",
+        "Nature" to "Nature",
+        "Egg Group" to "Groupe d'œuf",
+        "Bite time" to "Temps de morsure",
+        "Shiny chance" to "Chance de shiny",
+        "Shiny" to "Shiny",
+        "rolls" to "relances",
+        "Gender" to "Genre",
+        "Drops" to "Butin",
+        "Hidden Ability" to "Talent caché",
+        "Alpha chance" to "Chance d'Alpha",
+        "Level" to "Niveau",
+        "Mark" to "Marque",
+        "Friendship" to "Bonheur",
+        "Technical Machine" to "Machine Technique",
+        "Craftable" to "Fabricable",
+        "Must be unlocked" to "\u00c0 d\u00e9bloquer",
+        "Advancement reward" to "R\u00e9compense de progr\u00e8s",
         "Body Weight:" to "Poids :",
         "Preset:" to "Preset :",
 

@@ -11,7 +11,7 @@ import kotlin.math.roundToInt
 
 class OptionsScreen(
     private val parent: Screen
-) : Screen(Text.literal("Options")) {
+) : ScaledScreen(Text.literal("Options")) {
 
     // Slider drag state
     private var draggingSlider: String? = null // "r", "g", "b", "opacity", "raidVol", "huntSize", "raidSize", "miracleSize", "mergedSize"
@@ -72,7 +72,36 @@ class OptionsScreen(
         addDrawableChild(hexField)
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    /**
+     * A button's clickable area, recorded while it is drawn.
+     *
+     * render() and mouseClicked() used to walk `y` down the screen independently, and
+     * they had drifted apart — separators counted 8 pixels in one and 9 in the other,
+     * and the size-slider block 24 against 82. By the Playtime toggle the two were
+     * about 60 pixels apart, so clicking it did nothing. Recording the real rectangle
+     * at draw time removes the whole class of bug.
+     */
+    private class ClickTarget(
+        val x: Int, val y: Int, val w: Int, val h: Int, val action: () -> Unit
+    )
+
+    private val clickTargets = mutableListOf<ClickTarget>()
+
+    /**
+     * A slider's grab area, recorded while it is drawn.
+     *
+     * Sliders were still located by the old parallel y-walk in mouseClicked, so adding
+     * the Wiki section (42 px) to render() shifted every slider's hitbox by that much.
+     * Recording the real rectangle removes the drift for good; mouseDragged already
+     * derived its X geometry independently, so only the initial grab was wrong.
+     */
+    private class SliderBound(val id: String, val x: Int, val y: Int, val w: Int, val h: Int)
+
+    private val sliderBounds = mutableListOf<SliderBound>()
+
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        clickTargets.clear()
+        sliderBounds.clear()
         UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
@@ -115,7 +144,7 @@ class OptionsScreen(
         val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
         scrollOffset = scrollOffset.coerceIn(0, maxScroll)
 
-        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+        scissor(context, panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
 
         var y = contentTop + 6 - scrollOffset
 
@@ -127,6 +156,7 @@ class OptionsScreen(
         val themeName: String = themeDisplayName(ModConfig.uiTheme)
         val themeBtnW = themeButtonWidth()
         val themeHov = mouseX >= leftX && mouseX <= leftX + themeBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, themeBtnW, 14) { ModConfig.toggleUiTheme() })
         renderButton(context, leftX, y, themeBtnW, 14, themeName, themeHov)
         y += 20
 
@@ -140,6 +170,7 @@ class OptionsScreen(
         val hrLabel = "Interface: ${if (ModConfig.useHunterRadar) "HunterBoard" else "TropiMod"}"
         val hrBtnW = textRenderer.getWidth("Interface: HunterBoard") + 10
         val hrHov = mouseX >= leftX && mouseX <= leftX + hrBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, hrBtnW, 14) { ModConfig.toggleUseHunterRadar() })
         context.fill(leftX, y, leftX + hrBtnW, y + 14,
             if (ModConfig.useHunterRadar) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, hrBtnW, 14,
@@ -147,6 +178,40 @@ class OptionsScreen(
         context.drawText(textRenderer, hrLabel, leftX + 5, y + 3,
             if (ModConfig.useHunterRadar) UiKit.accent() else UiKit.TEXT_FAINT, true)
         y += 20
+
+        context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
+        y += 8
+
+        // ========== WIKI SECTION ==========
+        context.drawText(textRenderer, Translations.tr("Wiki"), leftX, y, UiKit.accent(), true)
+        y += 14
+
+        val sdLabel = "${Translations.tr("Spawn display")}: " +
+            if (ModConfig.spawnDisplayMode == "table") Translations.tr("Table") else Translations.tr("Text")
+        val sdBtnW = textRenderer.getWidth("${Translations.tr("Spawn display")}: ${Translations.tr("Table")}") + 10
+        val sdHov = mouseX >= leftX && mouseX <= leftX + sdBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, sdBtnW, 14) { ModConfig.toggleSpawnDisplayMode() })
+        context.fill(leftX, y, leftX + sdBtnW, y + 14, (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt())
+        drawBorder(context, leftX, y, sdBtnW, 14, if (sdHov) UiKit.accent() else UiKit.BORDER)
+        context.drawText(textRenderer, sdLabel, leftX + 5, y + 3, UiKit.accent(), true)
+        y += 20
+
+        // Interface scale cap: what the mod's screens use when Minecraft's GUI scale is
+        // set higher. Capping draws them through a matrix instead of shrinking panels.
+        val usLabel = "${Translations.tr("Interface scale")}: ${UiScale.capLabel(ModConfig.uiScaleCap)}"
+        val usBtnW = textRenderer.getWidth(
+            "${Translations.tr("Interface scale")}: ${Translations.tr("Minecraft")}") + 10
+        val usHov = mouseX >= leftX && mouseX <= leftX + usBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, usBtnW, 14) { ModConfig.cycleUiScaleCap() })
+        context.fill(leftX, y, leftX + usBtnW, y + 14, (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt())
+        drawBorder(context, leftX, y, usBtnW, 14, if (usHov) UiKit.accent() else UiKit.BORDER)
+        context.drawText(textRenderer, usLabel, leftX + 5, y + 3, UiKit.accent(), true)
+        y += 16
+
+        val guiNow = try { client?.window?.scaleFactor ?: 1.0 } catch (_: Exception) { 1.0 }
+        val guiHint = "${Translations.tr("Minecraft GUI scale")}: ${guiNow.toInt()}x"
+        context.drawText(textRenderer, guiHint, leftX + 2, y, UiKit.TEXT_FAINT, true)
+        y += 14
 
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
         y += 8
@@ -163,12 +228,14 @@ class OptionsScreen(
         val widestMode: String = Translations.tr("Compact")
         val modeBtnW = textRenderer.getWidth("$modeLabel $widestMode") + 10
         val modeHovered = mouseX >= leftX && mouseX <= leftX + modeBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, modeBtnW, 14) { BoardState.setDisplayMode((BoardState.displayMode + 1) % 5) })
         renderButton(context, leftX, y, modeBtnW, 14, modeText, modeHovered)
 
         val posLabel: String = Translations.tr("Position")
         val posBtnW = textRenderer.getWidth(posLabel) + 10
         val posBtnX = rightX - posBtnW
         val posHovered = mouseX >= posBtnX && mouseX <= posBtnX + posBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(posBtnX, y, posBtnW, 14) { client?.setScreen(HudPositionScreen(this)) })
         renderButton(context, posBtnX, y, posBtnW, 14, posLabel, posHovered)
         y += 18
 
@@ -176,12 +243,14 @@ class OptionsScreen(
         val gridLabel: String = if (ModConfig.gridLayout) Translations.tr("List Display") else Translations.tr("Square Display")
         val gridBtnW = textRenderer.getWidth(gridLabel) + 10
         val gridHovered = mouseX >= leftX && mouseX <= leftX + gridBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, gridBtnW, 14) { ModConfig.toggleGridLayout() })
         renderButton(context, leftX, y, gridBtnW, 14, gridLabel, gridHovered)
 
         val paLabel: String = if (ModConfig.usePixelArt) Translations.tr("3D Models") else Translations.tr("2D Model")
         val paBtnW = textRenderer.getWidth(paLabel) + 10
         val paStart = leftX + gridBtnW + 6
         val paHov = mouseX >= paStart && mouseX <= paStart + paBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(paStart, y, paBtnW, 14) { ModConfig.togglePixelArt() })
         renderButton(context, paStart, y, paBtnW, 14, paLabel, paHov)
         y += 18
 
@@ -204,6 +273,7 @@ class OptionsScreen(
         val raidLabel = "Raid: ${if (ModConfig.showRaidHud) "ON" else "OFF"}"
         val raidToggleW = textRenderer.getWidth("Raid: OFF") + 10
         val raidHov = mouseX >= vx && mouseX <= vx + raidToggleW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(vx, y, raidToggleW, 14) { ModConfig.toggleRaidHud() })
         context.fill(vx, y, vx + raidToggleW, y + 14,
             if (ModConfig.showRaidHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, raidToggleW, 14,
@@ -215,6 +285,7 @@ class OptionsScreen(
         val miracleLabel = "Miracle: ${if (ModConfig.showMiracleHud) "ON" else "OFF"}"
         val miracleToggleW = textRenderer.getWidth("Miracle: OFF") + 10
         val miracleHov = mouseX >= vx && mouseX <= vx + miracleToggleW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(vx, y, miracleToggleW, 14) { ModConfig.toggleMiracleHud() })
         context.fill(vx, y, vx + miracleToggleW, y + 14,
             if (ModConfig.showMiracleHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, miracleToggleW, 14,
@@ -226,6 +297,7 @@ class OptionsScreen(
         val huntLabel = "Hunt: ${if (ModConfig.showHuntHud) "ON" else "OFF"}"
         val huntToggleW = textRenderer.getWidth("Hunt: OFF") + 10
         val huntHov = mouseX >= vx && mouseX <= vx + huntToggleW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(vx, y, huntToggleW, 14) { ModConfig.toggleHuntHud() })
         context.fill(vx, y, vx + huntToggleW, y + 14,
             if (ModConfig.showHuntHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, vx, y, huntToggleW, 14,
@@ -238,6 +310,7 @@ class OptionsScreen(
         val fcLabel = "${Translations.tr("Full Clear")}: ${if (ModConfig.fullClearMode) "ON" else "OFF"}"
         val fcBtnW = textRenderer.getWidth("${Translations.tr("Full Clear")}: OFF") + 10
         val fcHov = mouseX >= leftX && mouseX <= leftX + fcBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, fcBtnW, 14) { ModConfig.toggleFullClear() })
         context.fill(leftX, y, leftX + fcBtnW, y + 14,
             if (ModConfig.fullClearMode) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, fcBtnW, 14,
@@ -249,6 +322,7 @@ class OptionsScreen(
         val mhLabel = "${Translations.tr("Merged HUD")}: ${if (ModConfig.mergedHudMode) "ON" else "OFF"}"
         val mhBtnW = textRenderer.getWidth("${Translations.tr("Merged HUD")}: OFF") + 10
         val mhHov = mouseX >= mhStart && mouseX <= mhStart + mhBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(mhStart, y, mhBtnW, 14) { ModConfig.toggleMergedHud() })
         context.fill(mhStart, y, mhStart + mhBtnW, y + 14,
             if (ModConfig.mergedHudMode) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, mhStart, y, mhBtnW, 14,
@@ -261,6 +335,7 @@ class OptionsScreen(
         val ahLabel = "${Translations.tr("Auto Hide")}: ${if (ModConfig.autoHideOnComplete) "ON" else "OFF"}"
         val ahBtnW = textRenderer.getWidth("${Translations.tr("Auto Hide")}: OFF") + 10
         val ahHov = mouseX >= leftX && mouseX <= leftX + ahBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, ahBtnW, 14) { ModConfig.toggleAutoHideOnComplete() })
         context.fill(leftX, y, leftX + ahBtnW, y + 14,
             if (ModConfig.autoHideOnComplete) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, ahBtnW, 14,
@@ -273,6 +348,7 @@ class OptionsScreen(
         val hbLabel = "${Translations.tr("Hide in Battle")}: ${if (ModConfig.hideHudInBattle) "ON" else "OFF"}"
         val hbBtnW = textRenderer.getWidth("${Translations.tr("Hide in Battle")}: OFF") + 10
         val hbHov = mouseX >= leftX && mouseX <= leftX + hbBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, hbBtnW, 14) { ModConfig.toggleHideHudInBattle() })
         context.fill(leftX, y, leftX + hbBtnW, y + 14,
             if (ModConfig.hideHudInBattle) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, hbBtnW, 14,
@@ -284,6 +360,7 @@ class OptionsScreen(
         val hcLabel = "${Translations.tr("Hide Caught")}: ${if (ModConfig.hideCaughtInHud) "ON" else "OFF"}"
         val hcBtnW = textRenderer.getWidth("${Translations.tr("Hide Caught")}: OFF") + 10
         val hcHov = mouseX >= hcStart && mouseX <= hcStart + hcBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(hcStart, y, hcBtnW, 14) { ModConfig.toggleHideCaughtInHud() })
         context.fill(hcStart, y, hcStart + hcBtnW, y + 14,
             if (ModConfig.hideCaughtInHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, hcStart, y, hcBtnW, 14,
@@ -296,6 +373,7 @@ class OptionsScreen(
         val bhLabel = "${Translations.tr("Battle Hunt HUD")}: ${if (ModConfig.showBattleHuntHud) "ON" else "OFF"}"
         val bhBtnW = textRenderer.getWidth("${Translations.tr("Battle Hunt HUD")}: OFF") + 10
         val bhHov = mouseX >= leftX && mouseX <= leftX + bhBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, bhBtnW, 14) { ModConfig.toggleBattleHuntHud() })
         context.fill(leftX, y, leftX + bhBtnW, y + 14,
             if (ModConfig.showBattleHuntHud) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, bhBtnW, 14,
@@ -308,6 +386,7 @@ class OptionsScreen(
         val pvpLabel = "PvP Overlay: ${if (ModConfig.pvpOverlayEnabled) "ON" else "OFF"}"
         val pvpBtnW = textRenderer.getWidth("PvP Overlay: OFF") + 10
         val pvpHov = mouseX >= pvpStart && mouseX <= pvpStart + pvpBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(pvpStart, y, pvpBtnW, 14) { ModConfig.togglePvpOverlay() })
         context.fill(pvpStart, y, pvpStart + pvpBtnW, y + 14,
             if (ModConfig.pvpOverlayEnabled) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, pvpStart, y, pvpBtnW, 14,
@@ -320,6 +399,7 @@ class OptionsScreen(
         val bdLabel = "${Translations.tr("Hide Raid Messages")}: ${if (ModConfig.hideBossDamageChat) "ON" else "OFF"}"
         val bdBtnW = textRenderer.getWidth("${Translations.tr("Hide Raid Messages")}: OFF") + 10
         val bdHov = mouseX >= leftX && mouseX <= leftX + bdBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, bdBtnW, 14) { ModConfig.toggleHideBossDamageChat() })
         context.fill(leftX, y, leftX + bdBtnW, y + 14,
             if (ModConfig.hideBossDamageChat) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, bdBtnW, 14,
@@ -332,6 +412,7 @@ class OptionsScreen(
         val ptLabel = "${Translations.tr("Playtime")}: ${if (ModConfig.showPlaytime) "ON" else "OFF"}"
         val ptBtnW = textRenderer.getWidth("${Translations.tr("Playtime")}: OFF") + 10
         val ptHov = mouseX >= leftX && mouseX <= leftX + ptBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, ptBtnW, 14) { ModConfig.toggleShowPlaytime() })
         context.fill(leftX, y, leftX + ptBtnW, y + 14,
             if (ModConfig.showPlaytime) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, ptBtnW, 14,
@@ -402,6 +483,7 @@ class OptionsScreen(
         val csLabel = "${Translations.tr("Clear Sound")}: ${if (ModConfig.clearWarningSound) "ON" else "OFF"}"
         val csBtnW = textRenderer.getWidth("${Translations.tr("Clear Sound")}: OFF") + 10
         val csHov = mouseX >= leftX && mouseX <= leftX + csBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, csBtnW, 14) { ModConfig.toggleClearWarningSound() })
         context.fill(leftX, y, leftX + csBtnW, y + 14,
             if (ModConfig.clearWarningSound) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, csBtnW, 14,
@@ -414,6 +496,7 @@ class OptionsScreen(
         val rnLabel = "${Translations.tr("Raid Sound")}: ${if (ModConfig.raidNotification) "ON" else "OFF"}"
         val rnBtnW = textRenderer.getWidth("${Translations.tr("Raid Sound")}: OFF") + 10
         val rnHov = mouseX >= leftX && mouseX <= leftX + rnBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, rnBtnW, 14) { ModConfig.toggleRaidNotification() })
         context.fill(leftX, y, leftX + rnBtnW, y + 14,
             if (ModConfig.raidNotification) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, rnBtnW, 14,
@@ -425,6 +508,7 @@ class OptionsScreen(
         val mnLabel = "${Translations.tr("Miracle Sound")}: ${if (ModConfig.miracleNotification) "ON" else "OFF"}"
         val mnBtnW = textRenderer.getWidth("${Translations.tr("Miracle Sound")}: OFF") + 10
         val mnHov = mouseX >= mnStart && mouseX <= mnStart + mnBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(mnStart, y, mnBtnW, 14) { ModConfig.toggleMiracleNotification() })
         context.fill(mnStart, y, mnStart + mnBtnW, y + 14,
             if (ModConfig.miracleNotification) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, mnStart, y, mnBtnW, 14,
@@ -437,6 +521,7 @@ class OptionsScreen(
         val rpLabel = "${Translations.tr("Repeat")}: ${if (ModConfig.raidSoundRepeat) "5x" else "1x"}"
         val rpBtnW = textRenderer.getWidth("${Translations.tr("Repeat")}: 5x") + 10
         val rpHov = mouseX >= leftX && mouseX <= leftX + rpBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, rpBtnW, 14) { ModConfig.toggleRaidSoundRepeat() })
         context.fill(leftX, y, leftX + rpBtnW, y + 14,
             if (ModConfig.raidSoundRepeat) (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt() else UiKit.SURFACE)
         drawBorder(context, leftX, y, rpBtnW, 14,
@@ -460,6 +545,7 @@ class OptionsScreen(
         val ssLabel = "${Translations.tr("Start Sound")}: $ssName"
         val ssBtnW = textRenderer.getWidth(ssLabel) + 10
         val ssHov = mouseX >= leftX && mouseX <= leftX + ssBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, ssBtnW, 14) { client?.setScreen(SoundPickerScreen(this, ModConfig.raidStartSound) { selected -> ModConfig.setRaidStartSound(selected) }) })
         renderButton(context, leftX, y, ssBtnW, 14, ssLabel, ssHov)
         y += 18
 
@@ -469,6 +555,7 @@ class OptionsScreen(
         val wsLabel = "${Translations.tr("Warning Sound")}: $wsName"
         val wsBtnW = textRenderer.getWidth(wsLabel) + 10
         val wsHov = mouseX >= leftX && mouseX <= leftX + wsBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, wsBtnW, 14) { client?.setScreen(SoundPickerScreen(this, ModConfig.raidWarningSound) { selected -> ModConfig.setRaidWarningSound(selected) }) })
         renderButton(context, leftX, y, wsBtnW, 14, wsLabel, wsHov)
         y += 18
 
@@ -478,6 +565,7 @@ class OptionsScreen(
         val msLabel = "${Translations.tr("Miracle Notif Sound")}: $msName"
         val msBtnW = textRenderer.getWidth(msLabel) + 10
         val msHov = mouseX >= leftX && mouseX <= leftX + msBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, msBtnW, 14) { client?.setScreen(SoundPickerScreen(this, ModConfig.miracleSound) { selected -> ModConfig.setMiracleSound(selected) }) })
         renderButton(context, leftX, y, msBtnW, 14, msLabel, msHov)
         y += 18
 
@@ -487,6 +575,7 @@ class OptionsScreen(
         val cwsLabel = "${Translations.tr("Clear Warning Sound")}: $cwsSoundName"
         val cwsBtnW = textRenderer.getWidth(cwsLabel) + 10
         val cwsHov = mouseX >= leftX && mouseX <= leftX + cwsBtnW && mouseY >= y && mouseY <= y + 14
+        clickTargets.add(ClickTarget(leftX, y, cwsBtnW, 14) { client?.setScreen(SoundPickerScreen(this, ModConfig.clearWarningSoundId) { selected -> ModConfig.setClearWarningSound(selected) }) })
         renderButton(context, leftX, y, cwsBtnW, 14, cwsLabel, cwsHov)
         y += 20
 
@@ -506,6 +595,13 @@ class OptionsScreen(
             val btnW = textRenderer.getWidth(translatedLabel) + 10
             val isSelected = i == ModConfig.rank
             val isHov = mouseX >= rx && mouseX <= rx + btnW && mouseY >= y && mouseY <= y + 16
+            val rankIndex = i
+            clickTargets.add(ClickTarget(rx, y, btnW, 16) {
+                ModConfig.setRank(rankIndex)
+                if (BoardState.displayCount > ModConfig.maxHunts()) {
+                    BoardState.setDisplayCount(ModConfig.maxHunts())
+                }
+            })
             val bg = when {
                 isSelected -> (UiKit.accent() and 0x00FFFFFF) or 0x33000000.toInt()
                 isHov -> UiKit.SURFACE_HOVER
@@ -556,7 +652,7 @@ class OptionsScreen(
         val versionX = (width - textRenderer.getWidth(versionText)) / 2
         context.drawText(textRenderer, versionText, versionX, height - 12, UiKit.TEXT_MUTED, true)
 
-        super.render(context, mouseX, mouseY, delta)
+        renderWidgets(context, mouseX, mouseY, delta)
     }
 
     /** Render a step slider with 4 discrete stops (0-3) */
@@ -574,6 +670,7 @@ class OptionsScreen(
 
         // Cache bar geometry for drag handling
         stepSliderBars[sliderId] = Pair(barX, barW)
+        sliderBounds.add(SliderBound(sliderId, barX - 2, y, barW + 4, sliderH))
 
         // Label (left-aligned)
         context.drawText(textRenderer, label, x, y + 2, UiKit.TEXT_MUTED, true)
@@ -622,6 +719,8 @@ class OptionsScreen(
 
         if (label != null) context.drawText(textRenderer, label, x, y + 1, color, true)
 
+        sliderBounds.add(SliderBound(sliderId, barX - 2, y, barW + 4, sliderH))
+
         context.fill(barX, y + 3, barX + barW, y + 7, UiKit.SURFACE)
         val fillW = (value * barW / 255).coerceIn(0, barW)
         context.fill(barX, y + 3, barX + fillW, y + 7, color)
@@ -634,8 +733,8 @@ class OptionsScreen(
         return y + sliderH + 2
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (button != 0) return super.mouseClicked(mouseX, mouseY, button)
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button != 0) return super.mouseClickedScaled(mouseX, mouseY, button)
 
         val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
         val panelX = (width - panelWidth) / 2
@@ -683,7 +782,27 @@ class OptionsScreen(
         }
 
         // Ignore clicks outside content area
-        if (mouseY < cTop || mouseY > cBottom) return super.mouseClicked(mouseX, mouseY, button)
+        if (mouseY < cTop || mouseY > cBottom) return super.mouseClickedScaled(mouseX, mouseY, button)
+
+        // Buttons whose bounds were recorded while drawing take precedence
+        for (target in clickTargets) {
+            if (mouseX >= target.x && mouseX <= target.x + target.w &&
+                mouseY >= target.y.toDouble() && mouseY <= (target.y + target.h).toDouble()) {
+                target.action()
+                return true
+            }
+        }
+
+        // Same for sliders: grab the one under the cursor, then let the drag handler
+        // apply the value so the two paths cannot compute it differently.
+        for (slider in sliderBounds) {
+            if (mouseX >= slider.x && mouseX <= slider.x + slider.w &&
+                mouseY >= slider.y.toDouble() && mouseY <= (slider.y + slider.h).toDouble()) {
+                draggingSlider = slider.id
+                mouseDragged(mouseX, mouseY, button, 0.0, 0.0)
+                return true
+            }
+        }
 
         val leftX = panelX + 12
         val rightX = panelX + panelWidth - 12
@@ -698,6 +817,7 @@ class OptionsScreen(
             ModConfig.toggleUiTheme()
             return true
         }
+
         y += 20
         y += 9 // separator
 
@@ -1011,7 +1131,7 @@ class OptionsScreen(
             rx += btnW + 3
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
     /** Handle click on a step slider. Returns true if the click was consumed. */
@@ -1050,7 +1170,7 @@ class OptionsScreen(
         }
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val contentAreaHeight = contentBottom - contentTop
             val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
@@ -1094,16 +1214,16 @@ class OptionsScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
         if (button == 0 && draggingSlider != null) { draggingSlider = null; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val contentAreaHeight = contentBottom - contentTop
         if (contentAreaHeight <= 0) return true
         val maxScroll = maxOf(0, contentHeight - contentAreaHeight)

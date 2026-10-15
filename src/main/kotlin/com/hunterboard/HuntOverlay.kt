@@ -36,12 +36,25 @@ object HuntOverlay {
         val modelBaseScale: Float
     )
 
-    private val SIZE_PRESETS = arrayOf(
-        SizeLayout(rowHeight = 17, modelSize = 15, padding = 4, headerHeight = 11, modelBaseScale = 0.65f), // 0 Small
-        SizeLayout(rowHeight = 24, modelSize = 22, padding = 5, headerHeight = 14, modelBaseScale = 0.85f), // 1 Normal
-        SizeLayout(rowHeight = 36, modelSize = 32, padding = 6, headerHeight = 18, modelBaseScale = 1.20f), // 2 Large
-        SizeLayout(rowHeight = 50, modelSize = 44, padding = 7, headerHeight = 22, modelBaseScale = 1.60f)  // 3 Extra Large
-    )
+    /**
+     * Layout for a free scale factor, scale 1.0 matching what used to be "Normal".
+     *
+     * The hunt HUD sizes itself in real pixels rather than by scaling the matrix,
+     * because each row hosts a Cobblemon [ModelWidget] built at a fixed pixel size:
+     * scaling the matrix around it would leave the model at its old dimensions and
+     * misplace it. Sizes are therefore recomputed and the widgets rebuilt whenever the
+     * layout actually changes.
+     */
+    private fun layoutFor(scale: Float): SizeLayout {
+        val s = scale.coerceIn(ModConfig.MIN_HUD_SCALE, ModConfig.MAX_HUD_SCALE)
+        return SizeLayout(
+            rowHeight = kotlin.math.max(9, kotlin.math.round(24f * s).toInt()),
+            modelSize = kotlin.math.max(7, kotlin.math.round(22f * s).toInt()),
+            padding = kotlin.math.max(2, kotlin.math.round(5f * s).toInt()),
+            headerHeight = kotlin.math.max(7, kotlin.math.round(14f * s).toInt()),
+            modelBaseScale = 0.85f * s
+        )
+    }
 
     // Cached model widgets (used when usePixelArt = false)
     private var cachedWidgets: List<ModelWidget> = emptyList()
@@ -57,7 +70,7 @@ object HuntOverlay {
     private var cachedDisplayMode: Int = -1
     private var cachedDisplayCount: Int = -1
     private var cachedRank: Int = -1
-    private var cachedSizePreset: Int = -1
+    private var cachedLayout: SizeLayout? = null
     private var cachedGridLayout: Boolean = false
     private var cachedSpriteLoadedCount: Int = -1
 
@@ -153,15 +166,14 @@ object HuntOverlay {
         } else {
             displayTargets.mapIndexed { i, t -> i to t }
         }
-        val effectiveHuntSize = if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset
-        val layout = SIZE_PRESETS[effectiveHuntSize.coerceIn(0, 3)]
+        val layout = layoutFor(ModConfig.huntScale())
 
         // Rebuild caches if board data, display settings, or size changed
         if (hasHuntData && (BoardState.lastUpdated != lastBoardUpdate
             || mode != cachedDisplayMode
             || BoardState.displayCount != cachedDisplayCount
             || ModConfig.rank != cachedRank
-            || effectiveHuntSize != cachedSizePreset
+            || layout != cachedLayout
             || ModConfig.gridLayout != cachedGridLayout
             || ModConfig.usePixelArt != cachedUsePixelArt
             || (ModConfig.usePixelArt && SpriteHelper.loadedCount != cachedSpriteLoadedCount))
@@ -179,7 +191,7 @@ object HuntOverlay {
             cachedDisplayMode = mode
             cachedDisplayCount = BoardState.displayCount
             cachedRank = ModConfig.rank
-            cachedSizePreset = effectiveHuntSize
+            cachedLayout = layout
             cachedGridLayout = ModConfig.gridLayout
             cachedUsePixelArt = ModConfig.usePixelArt
             cachedSpriteLoadedCount = SpriteHelper.loadedCount
@@ -541,7 +553,7 @@ object HuntOverlay {
         mode: Int
     ): Int {
         if (targets.isEmpty()) return 80
-        val layout = SIZE_PRESETS[(if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset).coerceIn(0, 3)]
+        val layout = layoutFor(ModConfig.huntScale())
         val MODEL_SIZE = layout.modelSize
         val PADDING = layout.padding
 
@@ -638,7 +650,7 @@ object HuntOverlay {
     private fun renderPlaceholder(context: DrawContext) {
         val client = MinecraftClient.getInstance()
         val textRenderer = client.textRenderer
-        val layout = SIZE_PRESETS[(if (ModConfig.mergedHudMode) ModConfig.hudSizePreset else ModConfig.huntSizePreset).coerceIn(0, 3)]
+        val layout = layoutFor(ModConfig.huntScale())
         val PADDING = layout.padding
 
         val text = Translations.tr("Click on a hunting board")

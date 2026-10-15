@@ -8,27 +8,52 @@ import net.minecraft.sound.SoundEvents
 import net.minecraft.util.Identifier
 
 /**
- * Detects "Suppression des objets au sol dans 1 minute" chat message
- * and shows a red countdown above the XP bar during the last 10 seconds.
- * Plays the configured sound once per second for each of the 10 remaining seconds.
+ * Counts down to the server's one-minute clear warning.
+ *
+ * Tropimon announces three separate clears — ground items, entities, and Cobblemon
+ * entities — and they arrive together, within the same second. The last of the three is
+ * the one that matters to a hunter: it despawns the wild Pokemon. One countdown covers
+ * all three; a second announcement simply restarts the same timer.
+ *
+ * The wording is matched loosely on purpose. Enumerating the exact sentences is what left
+ * two of the three undetected when the server added them, and the English text of the new
+ * ones is unknown — so the shape of the sentence is matched instead of its content.
  */
 object ClearWarningOverlay {
 
     private var clearTime: Long = 0L
     private var lastSoundSecond: Int = -1
 
-    private val CLEAR_FR_REGEX = Regex("""Suppression des objets au sol dans 1 minute""", RegexOption.IGNORE_CASE)
-    private val CLEAR_EN_REGEX = Regex("""Ground items will be cleared in 1 minute""", RegexOption.IGNORE_CASE)
+    // "Suppression des objets au sol dans 1 minute"
+    // "Suppression des entités dans 1 minute"
+    // "Suppression des entités Cobblemon dans 1 minute."
+    private val CLEAR_FR_REGEX =
+        Regex("""Suppression des .{1,40}? dans 1 minute""", RegexOption.IGNORE_CASE)
+    // "Ground items will be cleared in 1 minute" and whatever the two newer ones read as
+    private val CLEAR_EN_REGEX =
+        Regex(""".{1,40}? will be cleared in 1 minute""", RegexOption.IGNORE_CASE)
+
+    private fun isClearWarning(text: String): Boolean =
+        CLEAR_FR_REGEX.containsMatchIn(text) || CLEAR_EN_REGEX.containsMatchIn(text)
+
+    /** Start (or restart) the one-minute countdown. */
+    private fun arm(text: String, source: String) {
+        clearTime = System.currentTimeMillis() + 60_000L
+        lastSoundSecond = -1
+        HunterBoard.LOGGER.info("ClearWarning: armed from $source — ${text.trim()}")
+    }
 
     fun register() {
         ClientReceiveMessageEvents.GAME.register { message, isOverlay ->
             if (isOverlay) return@register
             val text = message.string
-            if (CLEAR_FR_REGEX.containsMatchIn(text) || CLEAR_EN_REGEX.containsMatchIn(text)) {
-                clearTime = System.currentTimeMillis() + 60_000L
-                lastSoundSecond = -1
-                HunterBoard.LOGGER.info("ClearWarning: item clear detected, countdown set")
-            }
+            if (isClearWarning(text)) arm(text, "chat")
+        }
+
+        // The item-clear warning may also arrive as a notification rather than a chat
+        // line; the text is matched the same way either way.
+        TropiNotifications.onNotification { notif ->
+            if (isClearWarning(notif.text)) arm(notif.text, "notification")
         }
 
         HudRenderCallback.EVENT.register { context, _ ->

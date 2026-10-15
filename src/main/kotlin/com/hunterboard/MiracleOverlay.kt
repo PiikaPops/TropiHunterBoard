@@ -51,6 +51,12 @@ object MiracleOverlay {
         ClientReceiveMessageEvents.CHAT.register { message, _, _, _, _ ->
             handleText(message.string)
         }
+        // Boost announcements moved to the notification channel. They kept the very same
+        // translation keys (chat.tropimon.boost.activated / .extended), so the rebuilt
+        // sentence is the one the regexes below were already written for.
+        TropiNotifications.onNotification { notif ->
+            if (notif.text.isNotEmpty()) handleText(notif.text)
+        }
         HudRenderCallback.EVENT.register { context, _ ->
             try { render(context) } catch (_: Exception) {}
         }

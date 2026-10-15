@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -15,6 +16,16 @@ object HunterBoard : ClientModInitializer {
 
     override fun onInitializeClient() {
         LOGGER.info("HunterBoard initializing...")
+
+        // Spawn pools, habitats, baits and biome tags all come from the server.
+        // Drop them on disconnect so they cannot leak into the next world.
+        ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
+            SpawnData.invalidate()
+            HabitatData.invalidate()
+            HabitatStructures.invalidate()
+            TmData.invalidate()
+            BiomeTagResolver.clearCache()
+        }
 
         // Register mod sounds
         ModSounds.register()

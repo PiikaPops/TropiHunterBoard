@@ -16,7 +16,7 @@ import net.minecraft.util.Util
 import org.lwjgl.glfw.GLFW
 import java.net.URI
 
-class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
+class SpawnInfoScreen : ScaledScreen(Text.literal("Spawn Info")) {
 
     companion object {
         private const val MODEL_SIZE = 36
@@ -27,6 +27,8 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     private var contentHeight = 0
     private var modelWidgets: List<ModelWidget?> = emptyList()
     private var hoveredBiomeDetail: BiomeDetail? = null
+    /** Habitat row under the cursor; its biomes are shown as a tooltip. */
+    private var hoveredHabitatId: String? = null
 
     // Option button bounds
     private val optBtnSize = 24
@@ -84,6 +86,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
     override fun init() {
         super.init()
         SpawnData.ensureLoaded()
+        HabitatData.ensureLoaded()
         buildModelWidgets()
         buildBallCache()
         buildCardHeightCache()
@@ -101,7 +104,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val visibleTargets = BoardState.targets.take(ModConfig.maxHunts())
         cachedCardHeights = visibleTargets.map { target ->
             val spawns = SpawnData.getSpawns(target.speciesId)
-            val cardContentH = calculateCardContentHeight(spawns, maxTextW)
+            val cardContentH = calculateCardContentHeight(spawns, maxTextW, HabitatData.habitatLines(target.speciesId))
             maxOf(cardContentH, MODEL_SIZE + 12)
         }
     }
@@ -150,19 +153,21 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             "uncommon" -> 0xFFFFDD55.toInt()
             "rare" -> 0xFF55AAFF.toInt()
             "ultra-rare" -> 0xFFBB66FF.toInt()
+            "boss" -> 0xFFFF5544.toInt()
             else -> UiKit.TEXT_MUTED
         }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // Rebuild sprite cache when new sprites finish downloading
         if (ModConfig.usePixelArt && SpriteHelper.loadedCount != lastSpriteLoadedCount) {
             buildSpriteCache()
             lastSpriteLoadedCount = SpriteHelper.loadedCount
         }
         hoveredBiomeDetail = null
+        hoveredHabitatId = null
         // Dark overlay
         UiKit.screenDim(context, width, height)
 
@@ -216,7 +221,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val contentBottom = panelBottom - 16
         val contentAreaHeight = contentBottom - contentTop
 
-        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+        scissor(context, panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
 
         val cardX = panelX + 6
         val cardWidth = panelWidth - 12
@@ -331,7 +336,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
                 // Use cached card height
                 val cardHeight = cachedCardHeights.getOrElse(index) {
-                    val cardContentH = calculateCardContentHeight(spawns, maxTextW)
+                    val cardContentH = calculateCardContentHeight(spawns, maxTextW, HabitatData.habitatLines(target.speciesId))
                     maxOf(cardContentH, MODEL_SIZE + 12)
                 }
 
@@ -441,7 +446,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                     // Spawn conditions - with rarity per line
                     val seen = mutableSetOf<String>()
                     for (spawn in spawns) {
-                        val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}|${spawn.spawnContext}|${spawn.minY}|${spawn.maxY}|${spawn.minSkyLight}|${spawn.maxSkyLight}|${spawn.presets}|${spawn.formLabel}"
+                        val key = SpawnData.dedupKey(spawn)
                         if (key in seen) continue
                         seen.add(key)
 
@@ -527,9 +532,9 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                             val lightLabel: String = Translations.tr("Light:")
                             extras.add("$lightLabel $lMin-$lMax")
                         }
-                        if (spawn.moonPhase != null) {
+                        SpawnData.moonPhaseLabel(spawn)?.let { phases ->
                             val moonLabel: String = Translations.tr("Moon:")
-                            extras.add("$moonLabel ${Translations.formatMoonPhase(spawn.moonPhase)}")
+                            extras.add("$moonLabel $phases")
                         }
                         if (extras.isNotEmpty()) {
                             context.drawText(textRenderer, "  ${extras.joinToString(" | ")}", textContentX + 4, textY, 0xFF887755.toInt(), true)
@@ -564,6 +569,12 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                             }
                         }
 
+                        // Cobblemon 1.8 extras (Poke Snack, fishing, depth, herd, held items…)
+                        for (line in SpawnData.extraLines(spawn)) {
+                            context.drawText(textRenderer, line.text, textContentX + 4, textY, line.color, true)
+                            textY += 10
+                        }
+
                         if (spawn.requiresSlimeChunk) {
                             val scLabel: String = Translations.tr("Slime Chunk")
                             context.drawText(textRenderer, "  ★ $scLabel", textContentX + 4, textY, 0xFF55FF55.toInt(), true)
@@ -583,6 +594,19 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 } else {
                     val noDataText: String = if (SpawnData.loadError != null) Translations.tr("Error loading data") else Translations.tr("No spawn data")
                     context.drawText(textRenderer, noDataText, textContentX, textY, UiKit.TEXT_FAINT, true)
+                    textY += 12
+                }
+
+                // Cobblemon 1.8: habitat blocks are a separate spawn pool
+                for (line in HabitatData.habitatLines(target.speciesId)) {
+                    context.drawText(textRenderer, line.text, textContentX + 4, textY, line.color, true)
+                    if (line.habitatId != null &&
+                        mouseX >= textContentX + 4 && mouseX <= textContentX + 4 + textRenderer.getWidth(line.text) &&
+                        mouseY >= textY && mouseY < textY + 10 &&
+                        mouseY >= contentTop && mouseY <= contentBottom) {
+                        hoveredHabitatId = line.habitatId
+                    }
+                    textY += 10
                 }
 
                 // Toggle button (right side of card)
@@ -692,8 +716,28 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             context.drawTooltip(textRenderer, listOf(Text.literal(hoveredBallName)), mouseX, mouseY)
         }
 
+        hoveredHabitatId?.let { habitatId ->
+            // Same panel as a spawn-condition biome tag: grouped by mod, multi-column.
+            val grouped = HabitatData.biomeDetailsFor(habitatId)
+                .mapNotNull { it.tagId }
+                .flatMap { BiomeTagResolver.resolveGrouped(it) }
+            val title = BiomeDetail(HabitatData.displayNameOf(habitatId), null)
+            if (grouped.isNotEmpty()) {
+                renderBiomeTooltip(context, grouped, title, mouseX, mouseY)
+            } else {
+                context.drawTooltip(
+                    textRenderer,
+                    listOf(
+                        Text.literal(HabitatData.displayNameOf(habitatId)),
+                        Text.literal("  " + Translations.tr("Placed as a worldgen feature"))
+                    ),
+                    mouseX, mouseY
+                )
+            }
+        }
+
         if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
-            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
+            val resolved = BiomeTagResolver.resolveGrouped(hoveredBiomeDetail!!.tagId!!)
             if (resolved.isNotEmpty()) {
                 renderBiomeTooltip(context, resolved, hoveredBiomeDetail!!, mouseX, mouseY)
             }
@@ -702,7 +746,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         context.matrices.pop()
     }
 
-    private fun calculateCardContentHeight(spawns: List<SpawnEntry>, maxTextW: Int): Int {
+    private fun calculateCardContentHeight(spawns: List<SpawnEntry>, maxTextW: Int, habitatLines: List<SpawnLine>): Int {
         var h = 6   // top padding
         h += 13     // name line
 
@@ -712,7 +756,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             h += 13 // level line
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}|${spawn.spawnContext}|${spawn.minY}|${spawn.maxY}|${spawn.minSkyLight}|${spawn.maxSkyLight}|${spawn.presets}|${spawn.formLabel}"
+                val key = SpawnData.dedupKey(spawn)
                 if (key in seen) continue
                 seen.add(key)
 
@@ -740,8 +784,11 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 val hasExtras = spawn.minY != null || spawn.maxY != null ||
                     spawn.minSkyLight != null || spawn.maxSkyLight != null ||
                     spawn.minLight != null || spawn.maxLight != null ||
-                    spawn.moonPhase != null
+                    SpawnData.moonPhaseLabel(spawn) != null
                 if (hasExtras) h += 10
+
+                // Cobblemon 1.8 extras — same list the render pass draws
+                h += SpawnData.extraLines(spawn).size * 10
 
                 // Block requirements
                 val hasBlocks = spawn.neededBaseBlocks.isNotEmpty() || spawn.neededNearbyBlocks.isNotEmpty()
@@ -761,12 +808,22 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             }
         }
 
+        // Cobblemon 1.8 habitat blocks
+        h += habitatLines.size * 10
+
         h += 4 // bottom padding
         return h
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
+            // Habitat row click -> its wiki page
+            hoveredHabitatId?.let { habitatId ->
+                client?.setScreen(HabitatDetailScreen(habitatId, this))
+                return true
+            }
+
+
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
             val panelTop = 25
@@ -855,10 +912,10 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val contentAreaHeight = sbContentBottom - sbContentTop
             val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
@@ -870,15 +927,15 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) {
             isScrollbarDragging = false
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
     private fun renderBiomesInline(
@@ -942,7 +999,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         return lineCount * 10
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val panelBottom = height - 25
         val contentTop = panelTop + 24
@@ -969,7 +1026,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
 
     private fun renderBiomeTooltip(
         context: DrawContext,
-        biomes: List<String>,
+        biomes: List<BiomeLine>,
         detail: BiomeDetail,
         mouseX: Int,
         mouseY: Int
@@ -979,6 +1036,7 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         val titleText = Translations.biomeName(detail)
         val titleColor = UiKit.accent()
         val biomeColor = UiKit.TEXT_MUTED
+        val headerColor = 0xFF88AACC.toInt()
         val bgColor = 0xF0100010.toInt()
         val borderColor = 0xFF5000A0.toInt()
         val screenMargin = 4
@@ -995,21 +1053,27 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
             numCols++
         }
 
-        // Split biomes into columns
         val rowsPerCol = (biomes.size + numCols - 1) / numCols
-        val columns = (0 until numCols).map { col ->
-            val start = col * rowsPerCol
-            biomes.subList(start, minOf(start + rowsPerCol, biomes.size))
+        val columns = mutableListOf<List<BiomeLine>>()
+        var cursor = 0
+        for (col in 0 until numCols) {
+            if (cursor >= biomes.size) { columns.add(emptyList()); continue }
+            var end = minOf(cursor + rowsPerCol, biomes.size)
+            // never leave a mod heading stranded as the last line of a column
+            if (end < biomes.size && end - 1 > cursor && biomes[end - 1].isHeader) end--
+            columns.add(biomes.subList(cursor, end))
+            cursor = end
         }
 
-        // Calculate column widths
         val colWidths = columns.mapIndexed { i, col ->
-            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth("  $it") } ?: 0
+            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth(if (it.isHeader) it.text else "  ${it.text}") } ?: 0
             if (i == 0) maxOf(textRenderer.getWidth(titleText), biomeMaxW) else biomeMaxW
         }
 
         val tooltipW = colWidths.sum() + colGap * (numCols - 1) + padding * 2
-        val tooltipH = padding + (rowsPerCol + 1) * lineHeight + padding
+        // measured, not estimated: the heading nudge can make one column a line taller
+        val maxRows = columns.maxOfOrNull { it.size } ?: 0
+        val tooltipH = padding + (maxRows + 1) * lineHeight + padding
 
         var tx = mouseX + 12
         var ty = mouseY - 12
@@ -1027,8 +1091,12 @@ class SpawnInfoScreen : Screen(Text.literal("Spawn Info")) {
         var colX = tx + padding
         for ((i, col) in columns.withIndex()) {
             var textY = ty + padding + lineHeight
-            for (name in col) {
-                context.drawText(textRenderer, "  $name", colX, textY, biomeColor, true)
+            for (line in col) {
+                if (line.isHeader) {
+                    context.drawText(textRenderer, line.text, colX, textY, headerColor, true)
+                } else {
+                    context.drawText(textRenderer, "  ${line.text}", colX, textY, biomeColor, true)
+                }
                 textY += lineHeight
             }
             colX += colWidths[i] + colGap

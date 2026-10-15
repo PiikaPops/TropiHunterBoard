@@ -12,6 +12,15 @@ base {
     archivesName.set(project.property("archives_base_name") as String)
 }
 
+// Cobblemon release this build is compiled against ("1.8.0+1.21.1" -> "1.8.0").
+// It goes in the ARCHIVE NAME only: fabric.mod.json keeps the plain mod version,
+// because UpdateChecker.isNewer() parses it numerically and a suffix would skew it.
+val cobblemonCompat = (project.property("cobblemon_version") as String).substringBefore("+")
+
+tasks.withType<AbstractArchiveTask>().configureEach {
+    archiveVersion.set("${project.version}+cobblemon.$cobblemonCompat")
+}
+
 repositories {
     mavenCentral()
     maven("https://maven.fabricmc.net/")

@@ -14,6 +14,21 @@ class HudPositionScreen(
     private var dragOffsetX = 0
     private var dragOffsetY = 0
 
+    // Corner-drag resizing. The starting size and scale are frozen when the handle is
+    // grabbed: deriving the new scale from the live size would feed back on itself and
+    // make the HUD run away from the cursor.
+    private val HANDLE = 9
+    private var resizingPanel: String? = null
+    private var resizeOriginX = 0
+    private var resizeOriginY = 0
+    private var resizeStartW = 1
+    private var resizeStartH = 1
+    private var resizeStartScale = 1f
+
+    private var originalHuntScale = 1f
+    private var originalRaidScale = 1f
+    private var originalMiracleScale = 1f
+
     // Snap-to-align
     private val SNAP_DIST = 7
     private var snapGuideX: Int? = null
@@ -35,7 +50,35 @@ class HudPositionScreen(
         originalRaidY = RaidTimerOverlay.panelY
         originalMiracleX = MiracleOverlay.panelX
         originalMiracleY = MiracleOverlay.panelY
+        originalHuntScale = ModConfig.huntScale()
+        originalRaidScale = ModConfig.raidScale()
+        originalMiracleScale = ModConfig.miracleScale()
         HuntOverlay.forceVisible = true
+    }
+
+    /** The three HUDs as (id, x, y, w, h), skipping the ones not on screen. */
+    private fun panels(): List<Triple<String, IntArray, Float>> {
+        val list = mutableListOf<Triple<String, IntArray, Float>>()
+        list.add(Triple("hunt",
+            intArrayOf(HuntOverlay.renderedX, HuntOverlay.renderedY, HuntOverlay.renderedW, HuntOverlay.renderedH),
+            ModConfig.huntScale()))
+        if (RaidTimerOverlay.renderedW > 0) list.add(Triple("raid",
+            intArrayOf(RaidTimerOverlay.renderedX, RaidTimerOverlay.renderedY,
+                RaidTimerOverlay.renderedW, RaidTimerOverlay.renderedH),
+            ModConfig.raidScale()))
+        if (MiracleOverlay.renderedW > 0) list.add(Triple("miracle",
+            intArrayOf(MiracleOverlay.renderedX, MiracleOverlay.renderedY,
+                MiracleOverlay.renderedW, MiracleOverlay.renderedH),
+            ModConfig.miracleScale()))
+        return list
+    }
+
+    private fun applyScale(panel: String, scale: Float) {
+        when (panel) {
+            "hunt" -> ModConfig.setHuntScale(scale)
+            "raid" -> ModConfig.setRaidScale(scale)
+            "miracle" -> ModConfig.setMiracleScale(scale)
+        }
     }
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
@@ -49,9 +92,42 @@ class HudPositionScreen(
             snapGuideY?.let { context.fill(0, it, width, it + 1, 0x66FFFF00.toInt()) }
         }
 
+        // Outline every HUD and put a grab handle on its bottom-right corner
+        for ((id, box, scale) in panels()) {
+            val (px, py, pw, ph) = listOf(box[0], box[1], box[2], box[3])
+            if (pw <= 0 || ph <= 0) continue
+
+            val active = resizingPanel == id || draggingPanel == id
+            val outline = if (active) UiKit.accent() else 0x66FFFFFF
+            context.fill(px, py, px + pw, py + 1, outline)
+            context.fill(px, py + ph - 1, px + pw, py + ph, outline)
+            context.fill(px, py, px + 1, py + ph, outline)
+            context.fill(px + pw - 1, py, px + pw, py + ph, outline)
+
+            val hx = px + pw - HANDLE
+            val hy = py + ph - HANDLE
+            val handleHot = resizingPanel == id ||
+                (mouseX >= hx && mouseX <= hx + HANDLE && mouseY >= hy && mouseY <= hy + HANDLE)
+            context.fill(hx, hy, hx + HANDLE, hy + HANDLE,
+                if (handleHot) UiKit.accent() else 0xAAFFFFFF.toInt())
+            // three diagonal notches, the usual "resize" hint
+            for (i in 1..3) {
+                context.fill(hx + HANDLE - i * 2 - 1, hy + i * 2, hx + HANDLE - i * 2, hy + i * 2 + 1, 0xFF202020.toInt())
+            }
+
+            if (handleHot || active) {
+                val pct = "${kotlin.math.round(scale * 100f).toInt()}%"
+                context.drawText(textRenderer, pct, px + pw + 4, py + ph - 8, UiKit.accent(), true)
+            }
+        }
+
         val instructionText: String = Translations.tr("Drag to move HUD")
         val instrX = (width - textRenderer.getWidth(instructionText)) / 2
         context.drawText(textRenderer, instructionText, instrX, 10, 0xFFFFFFFF.toInt(), true)
+
+        val resizeHint: String = Translations.tr("Drag a corner to resize")
+        context.drawText(textRenderer, resizeHint,
+            (width - textRenderer.getWidth(resizeHint)) / 2, 22, 0xFFBBBBBB.toInt(), true)
 
         // Confirm button centered on screen
         val confirmLabel: String = Translations.tr("Confirm")
@@ -90,6 +166,22 @@ class HudPositionScreen(
             return true
         }
 
+        // A corner handle wins over dragging the panel body
+        for ((id, box, scale) in panels()) {
+            val handleX = box[0] + box[2] - HANDLE
+            val handleY = box[1] + box[3] - HANDLE
+            if (box[2] > 0 && mouseX >= handleX && mouseX <= handleX + HANDLE &&
+                mouseY >= handleY.toDouble() && mouseY <= (handleY + HANDLE).toDouble()) {
+                resizingPanel = id
+                resizeOriginX = box[0]
+                resizeOriginY = box[1]
+                resizeStartW = box[2].coerceAtLeast(1)
+                resizeStartH = box[3].coerceAtLeast(1)
+                resizeStartScale = scale
+                return true
+            }
+        }
+
         // Check click on hunt overlay
         val hx = HuntOverlay.renderedX; val hy = HuntOverlay.renderedY
         val hw = HuntOverlay.renderedW; val hh = HuntOverlay.renderedH
@@ -124,6 +216,16 @@ class HudPositionScreen(
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        val resizing = resizingPanel
+        if (resizing != null && button == 0) {
+            // Whichever axis the cursor moved furthest along drives the scale, so the
+            // HUD keeps its proportions instead of stretching.
+            val wantW = (mouseX - resizeOriginX).toFloat().coerceAtLeast(8f)
+            val wantH = (mouseY - resizeOriginY).toFloat().coerceAtLeast(8f)
+            val ratio = kotlin.math.max(wantW / resizeStartW, wantH / resizeStartH)
+            applyScale(resizing, resizeStartScale * ratio)
+            return true
+        }
         if (draggingPanel != null && button == 0) {
             val sw = client?.window?.scaledWidth  ?: width
             val sh = client?.window?.scaledHeight ?: height
@@ -164,6 +266,10 @@ class HudPositionScreen(
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button == 0 && resizingPanel != null) {
+            resizingPanel = null
+            return true
+        }
         if (button == 0 && draggingPanel != null) {
             draggingPanel = null
             snapGuideX = null
@@ -261,6 +367,10 @@ class HudPositionScreen(
         RaidTimerOverlay.panelY = originalRaidY
         MiracleOverlay.panelX = originalMiracleX
         MiracleOverlay.panelY = originalMiracleY
+        // sizes are cancelled too: a resize is applied live, like a move
+        ModConfig.setHuntScale(originalHuntScale)
+        ModConfig.setRaidScale(originalRaidScale)
+        ModConfig.setMiracleScale(originalMiracleScale)
         HuntOverlay.forceVisible = false
         client?.setScreen(parent)
     }
