@@ -59,6 +59,7 @@ object HuntOverlay {
     // Cached model widgets (used when usePixelArt = false)
     private var cachedWidgets: List<ModelWidget> = emptyList()
     private var lastBoardUpdate: Long = 0
+    private var cachedTargetsRef: List<HuntTarget>? = null
 
     // Cached sprite identifiers (used when usePixelArt = true)
     private var cachedSpriteIds: List<Identifier?> = emptyList()
@@ -82,6 +83,11 @@ object HuntOverlay {
     private var cachedTotal: Int = 0
     private var cachedReward: Int = 0
     private var cachedFooterColor: Int = 0
+
+    // Weekly-reset watch. Five seconds is far finer than the minute the countdown shows,
+    // and the check is a timestamp comparison, so there is no reason to run it per tick.
+    private var resetCheckTicks = 0
+    private const val RESET_CHECK_INTERVAL_TICKS = 100
 
     // Biome highlight cache
     private var cachedBiomeHighlight: List<Boolean> = emptyList()
@@ -108,8 +114,20 @@ object HuntOverlay {
         loadPosition()
 
         HudRenderCallback.EVENT.register { context, _ ->
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             safeRender(context)
         }
+
+        // The weekly reset also has to be noticed by a player who is already online when it
+        // passes. On a tick rather than in render() so a hidden HUD does not leave a stale
+        // board behind for BattleHuntOverlay and the radar to read.
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register {
+            if (++resetCheckTicks >= RESET_CHECK_INTERVAL_TICKS) {
+                resetCheckTicks = 0
+                try { BoardState.checkWeeklyReset() } catch (_: Exception) {}
+            }
+        }
+
         HunterBoard.LOGGER.info("Hunt overlay registered")
     }
 
@@ -118,8 +136,19 @@ object HuntOverlay {
         panelY = if (ModConfig.hudPosY >= 0) ModConfig.hudPosY else null
     }
 
+    private var loggedRenderError = false
+
     private fun safeRender(context: DrawContext) {
-        try { render(context) } catch (_: Exception) {}
+        try {
+            render(context)
+        } catch (e: Exception) {
+            // Still never crash the HUD pass — but a panel that vanishes because render
+            // throws every frame must leave a trace, or it cannot be told from a hidden one.
+            if (!loggedRenderError) {
+                loggedRenderError = true
+                HunterBoard.LOGGER.error("Hunt HUD failed to render", e)
+            }
+        }
     }
 
     private fun render(context: DrawContext) {
@@ -169,7 +198,11 @@ object HuntOverlay {
         val layout = layoutFor(ModConfig.huntScale())
 
         // Rebuild caches if board data, display settings, or size changed
+        // The targets list is also compared by identity: an auto-validated catch replaces it
+        // without touching lastUpdated (which dates the board for the weekly reset), and the
+        // footer's count and reward used to stay at their pre-catch values.
         if (hasHuntData && (BoardState.lastUpdated != lastBoardUpdate
+            || BoardState.targets !== cachedTargetsRef
             || mode != cachedDisplayMode
             || BoardState.displayCount != cachedDisplayCount
             || ModConfig.rank != cachedRank
@@ -196,6 +229,7 @@ object HuntOverlay {
             cachedUsePixelArt = ModConfig.usePixelArt
             cachedSpriteLoadedCount = SpriteHelper.loadedCount
             lastBoardUpdate = BoardState.lastUpdated
+            cachedTargetsRef = BoardState.targets
             lastBiomeCheck = 0 // Force immediate biome re-check
         }
 
@@ -244,8 +278,8 @@ object HuntOverlay {
             gridCellH = MODEL_SIZE + 18
             panelW = cachedPanelWidth
             huntContentH = if (isBravo) {
-                // Bravo mode: header + one text line + padding
-                headerH + 12 + PADDING
+                // Bravo mode: header + one text line (+ the reset countdown) + padding
+                headerH + 12 + PADDING + (if (ModConfig.huntResetTimer) 10 else 0)
             } else if (ModConfig.gridLayout) {
                 headerH + gridRows * gridCellH + PADDING + footerH
             } else {
@@ -377,6 +411,12 @@ object HuntOverlay {
                 context.drawTexture(bravoFrames[frameIndex], topLineX + bravoTextW + 2, lineY - 1, 0f, 0f,
                     BRAVO_GIF_SIZE, BRAVO_GIF_SIZE, BRAVO_GIF_SIZE, BRAVO_GIF_SIZE)
             } catch (_: Exception) {}
+            // A finished board is exactly when the next one is awaited: keep the countdown.
+            if (ModConfig.huntResetTimer) {
+                val resetText = (if (Translations.isFrench()) "Reset : " else "Reset: ") + HuntSchedule.remainingLabel()
+                context.drawText(textRenderer, resetText, x + (panelW - textRenderer.getWidth(resetText)) / 2,
+                    lineY + 11, UiKit.TEXT_MUTED, true)
+            }
         } else if (ModConfig.gridLayout) {
             // ========== GRID RENDERING ==========
             val isLastRow = { r: Int -> r == gridRows - 1 }
@@ -510,6 +550,17 @@ object HuntOverlay {
         if (mode <= 2) {
             val remainText = "${cachedRemaining}/${cachedTotal} | ${cachedReward}$"
             context.drawText(textRenderer, remainText, x, currentY + 2, cachedFooterColor, true)
+            // Time left on this week's board, dimmer than the count so it reads as context
+            // rather than as part of the score. Only in the text modes: the icon modes
+            // centre a bare "3/6" in a panel too narrow to hold it.
+            if (ModConfig.huntResetTimer) {
+                val resetText = " • " + HuntSchedule.remainingLabel()
+                context.drawText(
+                    textRenderer, resetText,
+                    x + textRenderer.getWidth(remainText), currentY + 2,
+                    UiKit.TEXT_MUTED, true
+                )
+            }
         } else {
             val remainText = "${cachedRemaining}/${cachedTotal}"
             context.drawText(textRenderer, remainText, x + (panelW - textRenderer.getWidth(remainText)) / 2, currentY + 1, cachedFooterColor, true)
@@ -566,11 +617,26 @@ object HuntOverlay {
             maxOf(raidW, miracleW)
         } else 0
 
+        // The footer never used to influence the width, so "6/6 | 12000$" could already
+        // run past the panel edge on a narrow board. Adding the reset countdown to that
+        // line makes the overrun likely rather than rare, so the footer is measured here —
+        // from the countdown's worst case, since the live value changes every minute while
+        // this width is cached until the board does.
+        val footerMinWidth = if (mode <= 2) {
+            val uncaught = targets.filter { !it.isCaught }
+            val counts = "${uncaught.size}/${targets.size} | ${uncaught.sumOf { it.reward }}$"
+            val timer = if (ModConfig.huntResetTimer) {
+                textRenderer.getWidth(" • ") +
+                    (HuntSchedule.labelSamples().maxOfOrNull { textRenderer.getWidth(it) } ?: 0)
+            } else 0
+            textRenderer.getWidth(counts) + timer + PADDING
+        } else 0
+
         // Grid mode: cells based on model size
         if (ModConfig.gridLayout) {
             val cols = if (targets.size >= 5) 3 else 2
             val cellW = MODEL_SIZE + 14  // width unchanged
-            return maxOf(headerTextWidth, cols * cellW, mergedMinWidth)
+            return maxOf(headerTextWidth, cols * cellW, mergedMinWidth, footerMinWidth)
         }
 
         val modelArea = MODEL_SIZE + 4

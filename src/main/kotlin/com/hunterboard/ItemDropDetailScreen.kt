@@ -61,9 +61,7 @@ class ItemDropDetailScreen(
 
     private fun getItemDisplayName(): String {
         return try {
-            val item = Registries.ITEM.get(itemId)
-            val stack = ItemStack(item)
-            stack.name.string
+            Translations.itemName(itemId.toString())
         } catch (_: Exception) { itemId.path }
     }
 
@@ -88,8 +86,7 @@ class ItemDropDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         // Item name (centered) with icon
         val itemName = getItemDisplayName()
@@ -137,7 +134,7 @@ class ItemDropDetailScreen(
 
         // === Pokémon dropping this item ===
         val sectionLabel: String = Translations.tr("Pokémon dropping this item")
-        context.drawText(textRenderer, sectionLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, sectionLabel, leftX, y)
 
         // Toggle buttons
         val iconToggleText = "\u229E"

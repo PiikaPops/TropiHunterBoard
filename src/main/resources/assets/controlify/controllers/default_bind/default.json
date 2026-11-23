@@ -1,0 +1,28 @@
+{
+  "defaults": {
+    "hunterboard:cobblemon_send": {
+      "button": "controlify:button/west"
+    },
+    "hunterboard:party_prev": {
+      "button": "controlify:button/dpad_up"
+    },
+    "hunterboard:party_next": {
+      "button": "controlify:button/dpad_down"
+    },
+    "hunterboard:summary": {
+      "button": "controlify:button/back"
+    },
+    "controlify:swap_hands": {
+      "type": "empty"
+    },
+    "controlify:open_chat": {
+      "type": "empty"
+    },
+    "controlify:drop": {
+      "type": "empty"
+    },
+    "controlify:change_perspective": {
+      "type": "empty"
+    }
+  }
+}

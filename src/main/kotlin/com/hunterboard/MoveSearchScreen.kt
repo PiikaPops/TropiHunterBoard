@@ -79,6 +79,7 @@ class MoveSearchScreen : ScaledScreen(Text.literal("Move Search")) {
 
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 50, panelWidth - 20, 16, Text.literal(placeholder))
+        UiKit.styleField(searchField, hint = placeholder.trimEnd('.', '…') + "…")
         searchField.setMaxLength(50)
         searchField.text = savedQuery
         lastQuery = savedQuery
@@ -104,10 +105,10 @@ class MoveSearchScreen : ScaledScreen(Text.literal("Move Search")) {
         }
 
         filteredMoves = when (sortMode) {
-            1 -> searched.sortedWith(compareBy({ it.elementalType.name }, { Translations.moveDisplayName(it).lowercase() }))
-            2 -> searched.sortedWith(compareBy({ it.damageCategory.name }, { Translations.moveDisplayName(it).lowercase() }))
+            1 -> NameUtil.sortedByName(searched) { Translations.moveDisplayName(it) }.sortedBy { it.elementalType.name }
+            2 -> NameUtil.sortedByName(searched) { Translations.moveDisplayName(it) }.sortedBy { it.damageCategory.name }
             3 -> searched.sortedByDescending { it.power.toInt() }
-            else -> searched.sortedBy { Translations.moveDisplayName(it).lowercase() }
+            else -> NameUtil.sortedByName(searched) { Translations.moveDisplayName(it) }
         }
         if (query != lastQuery) {
             scrollOffset = 0
@@ -251,6 +252,8 @@ class MoveSearchScreen : ScaledScreen(Text.literal("Move Search")) {
                                   mouseY in y..(y + rowHeight) &&
                                   mouseY >= resultsTop && mouseY <= resultsBottom
 
+                    UiKit.rowStripe(context, panelX + 6, y, panelWidth - 12, rowHeight, (y - resultsTop + scrollOffset) / rowHeight)
+
                     if (hovered) {
                         UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
                     }
@@ -303,6 +306,8 @@ class MoveSearchScreen : ScaledScreen(Text.literal("Move Search")) {
         // Footer
                 val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
         UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
+
+        UiKit.fieldBackground(context, searchField)
 
         renderWidgets(context, mouseX, mouseY, delta)
     }

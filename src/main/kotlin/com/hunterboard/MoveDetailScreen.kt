@@ -80,11 +80,10 @@ class MoveDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         // Move name (centered)
-        val moveName = move.displayName.string
+        val moveName = Translations.moveDisplayName(move)
         val nameX = panelX + (panelWidth - textRenderer.getWidth(moveName)) / 2
         context.drawText(textRenderer, moveName, nameX, panelTop + 6, UiKit.TEXT, true)
 
@@ -142,7 +141,8 @@ class MoveDetailScreen(
         val descLabel: String = Translations.tr("Description") + ":"
         context.drawText(textRenderer, descLabel, leftX, y, labelColor, true)
         y += 12
-        val description = move.description.string
+        val description = move.description.string.takeUnless { it.startsWith("cobblemon.move.") }
+            ?: Translations.tr("No description")
         for (line in wrapText(description, contentW - 8)) {
             context.drawText(textRenderer, line, leftX + 4, y, UiKit.TEXT_MUTED, true)
             y += 10
@@ -169,7 +169,7 @@ class MoveDetailScreen(
 
         // === Learned By header + view toggle ===
         val learnedByLabel: String = Translations.tr("Learned By")
-        context.drawText(textRenderer, learnedByLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, learnedByLabel, leftX, y)
 
         // Toggle buttons: [⊞] icon mode  [≡] list mode
         val iconToggleText = "\u229E" // ⊞

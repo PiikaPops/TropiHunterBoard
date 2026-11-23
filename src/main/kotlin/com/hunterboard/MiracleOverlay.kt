@@ -11,6 +11,10 @@ import net.minecraft.util.Identifier
 object MiracleOverlay {
 
     // Active boosts: keyword -> expiry timestamp in ms
+    // The server sends "1 time.day" here — an untranslated key that leaks through on long
+    // boosts — so that spelling is matched alongside the real words. Without it a boost
+    // ending "dans 1 time.day et 7 heures" read as 7 hours instead of 31.
+    private val DAYS_REGEX = Regex("""(\d+) (?:time\.days?|days?|jours?)""")
     private val HOURS_REGEX = Regex("""(\d+) hours?|(\d+) heures?""")
     private val MINUTES_REGEX = Regex("""(\d+) minutes?""")
     private val SECONDS_REGEX = Regex("""(\d+) seconds?|(\d+) secondes?""")
@@ -34,6 +38,33 @@ object MiracleOverlay {
     private val LIST_REGEX_FR   = Regex("""^- (.+?) \(fin dans (.+?)\)""")
     // EN: "- Shiny x2 (end in 1 hour, 13 minutes and 38 seconds)"
     private val LIST_REGEX_EN   = Regex("""^- (.+?) \(end in (.+?)\)""")
+
+    /**
+     * Header of the recap the server sends on every connection, and on `/miracle`:
+     * "1 boost est actif", "2 boosts sont actifs", "1 boost is active".
+     *
+     * The count matters: it says how many `- ` lines follow, which is what lets the recap
+     * be treated as the authoritative list rather than merely added to.
+     *
+     * Both this and [RECAP_EMPTY_REGEX] only look at the first few characters, because the
+     * server prefixes its own messages with a single icon glyph while player chat starts
+     * with a nickname — so anchoring is what keeps a player from spoofing either line.
+     */
+    private val RECAP_HEADER_REGEX = Regex("""^.{0,3}(\d+) boosts? (?:est actif|sont actifs|is active|are active)""")
+
+    /** "Aucun boost n'est actuellement actif." / "No boosts are currently active." */
+    private val RECAP_EMPTY_REGEX = Regex("""^.{0,3}(?:Aucun boost n['’]est actuellement actif|No boosts? (?:is|are) currently active)""")
+
+    /**
+     * How many recap lines are still expected, and which boosts the current recap named.
+     *
+     * The recap is the only authoritative statement about what is running: anything the
+     * client holds that the recap does not name has ended, or belongs to another network.
+     * Pruning is deferred until the last line has arrived so the panel never blanks out
+     * mid-recap, and so a recap we fail to parse leaves the previous list standing.
+     */
+    private var recapExpected = 0
+    private val recapSeen = linkedSetOf<String>()
 
     // Panel position (null = auto bottom-right)
     var panelX: Int? = null
@@ -62,6 +93,7 @@ object MiracleOverlay {
             if (notif.text.isNotEmpty()) handleText(notif.text)
         }
         HudRenderCallback.EVENT.register { context, _ ->
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             try { render(context) } catch (_: Exception) {}
         }
     }
@@ -70,22 +102,29 @@ object MiracleOverlay {
     private var boostsFrom: String? = null
 
     /**
-     * Forget the boosts only when the player joins a *different* network.
+     * Forget the boosts only when the player joins a *positively different* network.
      *
      * A Tropimon miracle applies to every server of the network, and the network runs
      * several of them behind one proxy — so hopping from the hub to a map must not wipe a
      * boost that is still running. Expiry is wall-clock, so carrying it across is correct.
      * The comparison is on the client-facing address, which is what stays constant across
      * a proxy's backends and turns null in single player.
+     *
+     * An unknown address never clears anything. The join-time recap is a chat message, so
+     * nothing guarantees it is handled after this callback; an earlier version compared
+     * against a null and wiped the boosts the recap had just registered, which is why the
+     * panel came up empty on connecting. Keeping a stale boost for the second or two until
+     * the recap lands is recoverable — [handleText] replaces the list from it — whereas
+     * discarding a real one is not.
      */
     fun onJoin() {
         val now = currentServerAddress()
-        if (now != boostsFrom) {
+        if (now != null && boostsFrom != null && now != boostsFrom) {
             activeBoosts.clear()
             boostDisplayNames.clear()
             cachedLines = emptyList()
-            boostsFrom = now
         }
+        if (now != null) boostsFrom = now
     }
 
     private fun currentServerAddress(): String? = try {
@@ -98,7 +137,9 @@ object MiracleOverlay {
      */
     private fun setBoost(keyword: String, expiresAt: Long) {
         activeBoosts[keyword] = expiresAt
-        boostsFrom = currentServerAddress()
+        // Only a known address is recorded: overwriting it with null would make the next
+        // join unable to tell this network from another one.
+        currentServerAddress()?.let { boostsFrom = it }
     }
 
     fun loadPosition() {
@@ -112,6 +153,23 @@ object MiracleOverlay {
     }
 
     private fun handleText(text: String) {
+        // "Aucun boost n'est actuellement actif." — the server stating there is nothing
+        // running. This is the one line that used to be ignored, so a boost list carried
+        // over from an earlier session kept being displayed against it.
+        if (RECAP_EMPTY_REGEX.containsMatchIn(text)) {
+            activeBoosts.clear()
+            boostDisplayNames.clear()
+            cachedLines = emptyList()
+            recapExpected = 0
+            recapSeen.clear()
+            return
+        }
+        // Recap header: the lines that follow are the full list, so note how many to expect.
+        RECAP_HEADER_REGEX.find(text)?.let { header ->
+            recapExpected = header.groupValues[1].toIntOrNull() ?: 0
+            recapSeen.clear()
+            return
+        }
         // Real-time activation: add 1h (stackable)
         val triggerMatch = BOOST_REGEX_FR.find(text) ?: BOOST_REGEX_EN.find(text)
         if (triggerMatch != null) {
@@ -141,6 +199,19 @@ object MiracleOverlay {
         boostDisplayNames[keyword] = boostName
         val totalMs = parseTimeMs(listMatch.groupValues[2])
         if (totalMs > 0) setBoost(keyword, System.currentTimeMillis() + totalMs)
+
+        // Once the recap has named everything it announced, drop whatever it did not
+        // mention: that boost has ended, or came from a network the player has left.
+        if (recapExpected > 0) {
+            recapSeen.add(keyword)
+            if (recapSeen.size >= recapExpected) {
+                activeBoosts.keys.retainAll(recapSeen)
+                boostDisplayNames.keys.retainAll(recapSeen)
+                cachedLines = emptyList()
+                recapExpected = 0
+                recapSeen.clear()
+            }
+        }
     }
 
     private fun addOrExtend(boostName: String) {
@@ -151,10 +222,11 @@ object MiracleOverlay {
     }
 
     private fun parseTimeMs(timeStr: String): Long {
+        val d = DAYS_REGEX.find(timeStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val h = HOURS_REGEX.find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
         val m = MINUTES_REGEX.find(timeStr)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val s = SECONDS_REGEX.find(timeStr)?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } }?.toLongOrNull() ?: 0L
-        return (h * 3600 + m * 60 + s) * 1000L
+        return (d * 86400 + h * 3600 + m * 60 + s) * 1000L
     }
 
     private fun render(context: DrawContext) {

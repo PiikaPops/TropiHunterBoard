@@ -1,0 +1,14 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.hunterboard.mixin.controller",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "InteractWheelAimMixin",
+        "MouseAccessor",
+        "EntryListAccessor"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

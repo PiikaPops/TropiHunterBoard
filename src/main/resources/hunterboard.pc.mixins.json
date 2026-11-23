@@ -1,0 +1,13 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.hunterboard.mixin.pc",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "ClosePcMixin",
+        "PcMovementMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

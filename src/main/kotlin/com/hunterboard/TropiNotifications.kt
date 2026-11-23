@@ -47,7 +47,14 @@ object TropiNotifications {
         /** e.g. "tropimon:pokemon_capture" — set only on notifications with a custom renderer. */
         val rendererId: String,
         /** Structured payload: species, level, shiny, ivTotal… depending on the notification. */
-        val data: Map<String, String>
+        val data: Map<String, String>,
+        /**
+         * The value of each stat cell, in order. The capture card puts the six IVs there
+         * (HP, Atk, Def, SpA, SpD, Spe), which `data` only gives as a total.
+         */
+        val stats: List<String> = emptyList(),
+        /** The card offers a "decline" answer — on the capture card, "Release [N]". */
+        val declinable: Boolean = false
     )
 
     private val listeners = mutableListOf<(Notif) -> Unit>()
@@ -131,7 +138,11 @@ object TropiNotifications {
             descArgKeys = rawArgs(call(raw, "description")),
             text = localize(descKey, args),
             rendererId = call(raw, "rendererId")?.toString() ?: "",
-            data = data
+            data = data,
+            stats = (call(raw, "stats") as? List<*>).orEmpty().map { stat ->
+                stat?.let { textValue(call(it, "value")) } ?: ""
+            },
+            declinable = call(raw, "decline") != null
         )
     }
 

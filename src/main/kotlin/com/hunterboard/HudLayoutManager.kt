@@ -11,6 +11,16 @@ object HudLayoutManager {
 
     private val huds = mutableListOf<HudRect>()
 
+    /**
+     * Minecraft's "hide the interface" (F1) is on: HunterBoard's HUDs follow it. Fabric's HUD
+     * callback still runs with the interface hidden, so each HUD has to ask. The HUD position
+     * editor keeps showing them, since it is where they are placed.
+     */
+    fun hiddenByPlayer(): Boolean {
+        val client = net.minecraft.client.MinecraftClient.getInstance()
+        return client.options.hudHidden && client.currentScreen !is HudPositionScreen
+    }
+
     fun beginFrame() {
         huds.clear()
     }

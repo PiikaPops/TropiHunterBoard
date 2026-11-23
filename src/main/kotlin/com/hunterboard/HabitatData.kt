@@ -1,6 +1,5 @@
 package com.hunterboard
 
-import com.cobblemon.mod.common.api.habitats.HabitatPools
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import net.minecraft.client.MinecraftClient
@@ -54,127 +53,42 @@ object HabitatData {
     fun getHabitats(pokemonName: String): List<HabitatEntry> =
         habitatMap[normalizeKey(pokemonName)] ?: emptyList()
 
+    /** Bumped whenever the data is dropped, so open screens know to read it again. */
+    var revision = 0
+        private set
+
     fun invalidate() {
         habitatMap = emptyMap()
         lineCache.clear()
         biomeSpecIndex = null
         isLoaded = false
+        revision++
     }
 
-    fun ensureLoaded() {
-        if (isLoaded) return
-        loadFromCobblemon()
-        if (!isLoaded) loadFromResources()
-    }
+    /** True when there is no habitat at all to show (relay file not received, or option off). */
+    fun isEmpty(): Boolean { ensureLoaded(); return habitatMap.isEmpty() }
 
     /**
-     * Lay the Tropimon server's habitat pools over whatever was just loaded.
-     *
-     * 46 of the 53 pools the server ships differ from Cobblemon's — different species,
-     * and often a different number of phases. Nothing about that reaches the client
-     * (`HabitatPools.sync()` sends no packet), so the pools are replaced wholesale here,
-     * by habitat id: every entry belonging to a pool the server redefines is dropped
-     * before the server's own spawns are read in.
+     * The habitats are the Tropimon server's and nothing else: the file [HabitatFeed] gets
+     * from HunterBoard's relay. Cobblemon never sends habitat pools to players and Tropimon
+     * replaces all 51 of them, so Cobblemon's own (in its jar) would only be wrong here;
+     * without the relay's file the wiki shows no habitat and says why.
      */
-    private fun applyTropimonOverrides(map: MutableMap<String, MutableList<HabitatEntry>>) {
+    fun ensureLoaded() {
+        if (isLoaded) return
+        val map = mutableMapOf<String, MutableList<HabitatEntry>>()
         val files = try { TropimonData.habitatPoolFiles() } catch (_: Exception) { emptyList() }
-        if (files.isEmpty()) return
-
-        val overridden = files.map { "cobblemon:" + it.fileName.removeSuffix(".json") }.toSet()
-        for (entries in map.values) entries.removeAll { it.habitatId in overridden }
-
-        var read = 0
         for (file in files) {
             try {
-                val root = JsonParser.parseString(file.json).asJsonObject
-                val before = map.values.sumOf { it.size }
-                parseHabitatFile(root, file.fileName.removeSuffix(".json"), map)
-                read += map.values.sumOf { it.size } - before
+                parseHabitatFile(JsonParser.parseString(file.json).asJsonObject, file.fileName.removeSuffix(".json"), map)
             } catch (e: Exception) {
                 HunterBoard.LOGGER.warn("Tropimon habitat file ${file.fileName} unreadable: ${e.message}")
             }
         }
-        // a species can end up with no habitat left at all
         map.entries.removeAll { it.value.isEmpty() }
-        HunterBoard.LOGGER.info("Tropimon overrides: ${overridden.size} habitat pools replaced, $read spawns applied")
-    }
-
-    /** Live registry — populated on the client once the server syncs its habitat pools. */
-    private fun loadFromCobblemon() {
-        try {
-            val pools = HabitatPools.habitatPoolsById
-            if (pools.isEmpty()) return
-
-            val map = mutableMapOf<String, MutableList<HabitatEntry>>()
-            for ((id, pool) in pools) {
-                val habitatId = id.toString()
-                val habitatName = try { pool.name } catch (_: Exception) { habitatId }
-                for (spawn in pool.spawns) {
-                    try {
-                        val species = spawn.species?.name?.lowercase() ?: continue
-                        val levels = spawn.levelRange
-                        map.getOrPut(normalizeKey(species)) { mutableListOf() }.add(
-                            HabitatEntry(
-                                habitatId = habitatId,
-                                habitatName = habitatName,
-                                bucket = spawn.bucket,
-                                lvMin = levels?.first ?: 0,
-                                lvMax = levels?.last ?: 0,
-                                weight = spawn.weight,
-                                phases = spawn.phases?.ranges
-                                    ?.filter { it.last - it.first in 0..31 }
-                                    ?.flatMap { it.toList() }?.distinct()?.sorted()
-                                    ?: emptyList(),
-                                positionType = spawn.spawnablePositionType?.lowercase() ?: "",
-                                time = spawn.timeRange?.let { identifyTimeRange(it) } ?: "any",
-                                minLight = spawn.minLight,
-                                maxLight = spawn.maxLight
-                            )
-                        )
-                    } catch (_: Exception) {}
-                }
-            }
-
-            if (map.isNotEmpty()) {
-                applyTropimonOverrides(map)
-                habitatMap = map
-                isLoaded = true
-                HunterBoard.LOGGER.info("Loaded habitat data from Cobblemon API: ${map.size} species")
-            }
-        } catch (e: Exception) {
-            HunterBoard.LOGGER.warn("Failed to load habitat data from API: ${e.message}")
-        }
-    }
-
-    private fun identifyTimeRange(timeRange: Any): String {
-        return try {
-            val ranges = (timeRange as? com.cobblemon.mod.common.api.spawning.TimeRange)?.ranges ?: return "any"
-            for ((name, range) in com.cobblemon.mod.common.api.spawning.TimeRange.timeRanges) {
-                if (range.ranges == ranges) return name
-            }
-            "any"
-        } catch (_: Exception) { "any" }
-    }
-
-    /** Fallback: read the habitat pool JSON straight out of the Cobblemon jar. */
-    private fun loadFromResources() {
-        try {
-            val map = mutableMapOf<String, MutableList<HabitatEntry>>()
-
-            CobblemonResources.forEachJson("habitat_pools") { file ->
-                val fileName = file.fileName.toString().removeSuffix(".json")
-                parseHabitatFile(JsonParser.parseString(Files.readString(file)).asJsonObject, fileName, map)
-            }
-
-            if (map.isNotEmpty()) {
-                applyTropimonOverrides(map)
-                habitatMap = map
-                isLoaded = true
-                HunterBoard.LOGGER.info("Loaded habitat data from Cobblemon resources: ${map.size} species")
-            }
-        } catch (e: Exception) {
-            HunterBoard.LOGGER.warn("Failed to load habitat data from resources: ${e.message}")
-        }
+        habitatMap = map
+        isLoaded = true
+        if (files.isNotEmpty()) HunterBoard.LOGGER.info("Tropimon habitats: ${files.size} pools, ${map.size} species")
     }
 
     private fun parseHabitatFile(root: JsonObject, fileName: String, map: MutableMap<String, MutableList<HabitatEntry>>) {
@@ -336,12 +250,7 @@ object HabitatData {
     fun biomeTagLabel(habitatId: String): String? {
         val specs = specsFor(habitatId)
         if (specs.isEmpty()) return null
-        return specs.joinToString(", ") { spec ->
-            spec.removePrefix("#").substringAfter(":")
-                .removePrefix("is_").replace("/", " ").replace("_", " ")
-                .split(" ").filter { it.isNotEmpty() }
-                .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        }
+        return specs.joinToString(", ") { spec -> Translations.biomeLabel(if (spec.startsWith("#")) spec else "#$spec") }
     }
 
     /** Every habitat we know about, sorted by display name. */

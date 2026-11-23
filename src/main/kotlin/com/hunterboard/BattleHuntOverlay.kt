@@ -17,6 +17,7 @@ object BattleHuntOverlay {
 
     fun register() {
         HudRenderCallback.EVENT.register { context, _ ->
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             try { render(context) } catch (_: Exception) {}
         }
     }

@@ -101,6 +101,7 @@ class PokemonDetailScreen(
     private val cosmeticBtnW = 14
     private val cosmeticBtnH = 14
 
+
     // Scrollbar drag state
     private var isScrollbarDragging = false
     private var scrollbarDragStartY = 0
@@ -132,6 +133,7 @@ class PokemonDetailScreen(
 
     companion object {
         private const val MODEL_SIZE = 80
+
         private const val STAT_BAR_MAX = 255
         private const val HOVER_DELAY_MS = 500L
 
@@ -287,8 +289,7 @@ class PokemonDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY >= panelTop + 5 && mouseY <= panelTop + 17
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         val displayName: String = try { Translations.dualSpeciesName(species.name) } catch (_: Exception) { species.name.replaceFirstChar { it.uppercase() } }
         context.drawText(textRenderer, displayName,
@@ -318,10 +319,12 @@ class PokemonDetailScreen(
         context.drawText(textRenderer, nextText, nextBtnX, navY,
             if (nextHovered) UiKit.accent() else if (hasNext) UiKit.TEXT else UiKit.BORDER_DIM, true)
 
-        context.fillGradient(panelX + 1, panelTop + 1, panelX + panelWidth - 1, panelTop + 17,
-            UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, UiKit.withAlpha(UiKit.accent(), 0xCC))
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, UiKit.withAlpha(UiKit.accent(), 0x33))
+        if (!UiKit.isModern) {   // the new interface's panel brings its own title bar
+            context.fillGradient(panelX + 1, panelTop + 1, panelX + panelWidth - 1, panelTop + 17,
+                UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
+            context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, UiKit.withAlpha(UiKit.accent(), 0xCC))
+            context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, UiKit.withAlpha(UiKit.accent(), 0x33))
+        }
 
         // ========== F4: FORM TABS (if multiple forms, with horizontal scroll) ==========
         var formTabsEndY = panelTop + 22
@@ -340,7 +343,7 @@ class PokemonDetailScreen(
                 when {
                     formName.isBlank() || formName.equals("Standard", ignoreCase = true) -> Translations.tr("Standard")
                     formName.lowercase().startsWith("mega") -> PokemonEntry.megaLabel(formName)
-                    else -> Translations.tr(formName)
+                    else -> Translations.formLabel(formName)
                 }
             }
             val tabWidths = tabLabels.map { textRenderer.getWidth(it) + 10 }
@@ -440,6 +443,7 @@ class PokemonDetailScreen(
         // ========== ROW 1: Model + Info (left) | Base Stats (right) ==========
 
         // --- LEFT: Model + Types + Abilities + EV Yield ---
+        UiKit.portrait(context, leftX - 2, y - 6, MODEL_SIZE + 4, MODEL_SIZE + 4)
         if (modelWidget != null) {
             try {
                 modelRenderX = leftX
@@ -637,7 +641,7 @@ class PokemonDetailScreen(
 
         // --- RIGHT: Base Stats (F4: use form overrides if available) ---
         val baseStatsLabel: String = Translations.tr("Base Stats")
-        context.drawText(textRenderer, baseStatsLabel, midX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, baseStatsLabel, midX, y)
         var statsY = y + 13
 
         val statEntries = listOf(
@@ -685,7 +689,7 @@ class PokemonDetailScreen(
 
         // ========== TYPE CHART (full width) ==========
         val chartLabel: String = Translations.tr("Type Chart")
-        context.drawText(textRenderer, chartLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, chartLabel, leftX, y)
         y += 13
         try {
             val chartForm = currentForm()
@@ -717,7 +721,7 @@ class PokemonDetailScreen(
             // Evolution chain
             if (hasEvo) {
                 val evoLabel: String = Translations.tr("Evolution")
-                context.drawText(textRenderer, evoLabel, leftX, evoEndY, UiKit.accent(), true)
+                UiKit.sectionTitle(context, textRenderer, evoLabel, leftX, evoEndY)
                 evoEndY += 13
                 try {
                     evoEndY = renderEvolutionChain(context, evoTree!!, leftX + 4, evoEndY, halfW - 12, mouseX, mouseY, contentTop, contentBottom)
@@ -750,7 +754,7 @@ class PokemonDetailScreen(
 
             // Dropped Items on the right
             val dropsLabel: String = Translations.tr("Dropped Items")
-            context.drawText(textRenderer, dropsLabel, midX, row2StartY, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, dropsLabel, midX, row2StartY)
             val dropY = renderDroppedItems(context, midX, row2StartY + 13, halfW, mouseX, mouseY)
 
             // Vertical separator
@@ -761,7 +765,7 @@ class PokemonDetailScreen(
         } else {
             // No evolution, no mega — Dropped Items takes full width
             val dropsLabel: String = Translations.tr("Dropped Items")
-            context.drawText(textRenderer, dropsLabel, leftX, y, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, dropsLabel, leftX, y)
             y = renderDroppedItems(context, leftX, y + 13, panelWidth - 20, mouseX, mouseY) + 4
         }
 
@@ -771,7 +775,7 @@ class PokemonDetailScreen(
 
         // ========== SPAWN CONDITIONS (full width) ==========
         val spawnLabel: String = Translations.tr("Spawn Conditions")
-        context.drawText(textRenderer, spawnLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, spawnLabel, leftX, y)
         var spawnY = y + 13
         val fullContentW = panelWidth - 20
 
@@ -955,7 +959,7 @@ class PokemonDetailScreen(
             context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
             y += 8
 
-            context.drawText(textRenderer, Translations.tr("Habitats"), leftX, y, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, Translations.tr("Habitats"), leftX, y)
             y += 13
             y = if (ModConfig.spawnDisplayMode == "table") {
                 renderHabitatTable(context, habitatEntries, y, panelX, panelWidth, leftX,
@@ -1157,11 +1161,18 @@ class PokemonDetailScreen(
         }
 
         // Footer
+        if (UiKit.isModern) {
+            val fr = Translations.isFrench()
+            val browse = if (allSpecies != null) (if (fr) "\u2190 \u2192 Pokémon précédent / suivant  \u2022  " else "\u2190 \u2192 previous / next Pokémon  \u2022  ") else ""
+            UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth,
+                browse + (if (fr) "Échap pour revenir" else "Esc to go back"))
+        } else {
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, UiKit.SURFACE_SUNKEN)
         context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, UiKit.BORDER_DIM)
         val hint: String = Translations.tr("ESC / Click Back to return")
         context.drawText(textRenderer, hint,
             panelX + (panelWidth - textRenderer.getWidth(hint)) / 2, panelBottom - 10, UiKit.TEXT_FAINT, true)
+        }
 
         hoveredHabitatId?.let { habitatId ->
             // Lifted above the panel like the biome tooltip below: without the Z offset
@@ -1207,7 +1218,8 @@ class PokemonDetailScreen(
     private fun renderDroppedItems(context: DrawContext, startX: Int, startY: Int, maxWidth: Int, mouseX: Int, mouseY: Int): Int {
         var dropY = startY
         try {
-            val entries = species.drops.entries
+            // items that do not exist (see DropData.isRealItem) would show as "Air"
+            val entries = species.drops.entries.filterIsInstance<ItemDropEntry>().filter { DropData.isRealItem(it.item) }
             if (entries.isEmpty()) {
                 val noneText: String = Translations.tr("None")
                 context.drawText(textRenderer, noneText, startX + 4, dropY, UiKit.TEXT_FAINT, true)
@@ -1221,7 +1233,7 @@ class PokemonDetailScreen(
                             context.drawItem(stack, startX + 4, dropY - 4)
                         }
                         val textStartX = startX + 24
-                        val itemNameStr = item.name.string
+                        val itemNameStr = Translations.itemName(entry.item.toString())
                         val nameW = textRenderer.getWidth(itemNameStr)
                         val hovered = mouseX >= textStartX && mouseX <= textStartX + nameW &&
                                       mouseY >= dropY && mouseY < dropY + 10
@@ -1302,7 +1314,7 @@ class PokemonDetailScreen(
     ): Int {
         val baseName: String = node.species?.translatedName?.string ?: node.speciesName.replaceFirstChar { it.uppercase() }
         val name: String = if (node.formAspect != null) {
-            val aspectLabel = node.formAspect.replaceFirstChar { it.uppercase() }
+            val aspectLabel = Translations.formLabel(node.formAspect.replaceFirstChar { it.uppercase() })   // "Alolan" → "Alola"
             "$baseName ($aspectLabel)"
         } else baseName
         val nameW = textRenderer.getWidth(name)
@@ -1752,7 +1764,7 @@ class PokemonDetailScreen(
                 .filter { behaviours[it] != null }
             if (styles.isEmpty()) return y
 
-            context.drawText(textRenderer, Translations.tr("Riding"), midX, y, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, Translations.tr("Riding"), midX, y)
             y += 12
 
             // tabs, only when the species really can do several things
@@ -2197,6 +2209,11 @@ class PokemonDetailScreen(
         }
     }
 
+    /** Previous / next Pokémon: a new page, opened at its top. */
+    private fun openSibling(target: Species) {
+        client?.setScreen(PokemonDetailScreen(target, parent, allSpecies))
+    }
+
     override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             // Riding style tabs
@@ -2271,13 +2288,13 @@ class PokemonDetailScreen(
             if (hasPrev && mouseX >= prevBtnX && mouseX <= prevBtnX + navW &&
                 mouseY >= navY.toDouble() && mouseY <= navY + 10.0) {
                 val prevSpecies = allSpecies!![currentIndex - 1]
-                client?.setScreen(PokemonDetailScreen(prevSpecies, parent, allSpecies))
+                openSibling(prevSpecies)
                 return true
             }
             if (hasNext && mouseX >= nextBtnX && mouseX <= nextBtnX + navW &&
                 mouseY >= navY.toDouble() && mouseY <= navY + 10.0) {
                 val nextSpecies = allSpecies!![currentIndex + 1]
-                client?.setScreen(PokemonDetailScreen(nextSpecies, parent, allSpecies))
+                openSibling(nextSpecies)
                 return true
             }
 
@@ -2479,11 +2496,11 @@ class PokemonDetailScreen(
         }
         // F2: Arrow key navigation
         if (keyCode == GLFW.GLFW_KEY_LEFT && allSpecies != null && currentIndex > 0) {
-            client?.setScreen(PokemonDetailScreen(allSpecies[currentIndex - 1], parent, allSpecies))
+            openSibling(allSpecies[currentIndex - 1])
             return true
         }
         if (keyCode == GLFW.GLFW_KEY_RIGHT && allSpecies != null && currentIndex >= 0 && currentIndex < allSpecies.size - 1) {
-            client?.setScreen(PokemonDetailScreen(allSpecies[currentIndex + 1], parent, allSpecies))
+            openSibling(allSpecies[currentIndex + 1])
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)

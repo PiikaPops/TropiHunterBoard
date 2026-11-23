@@ -1,0 +1,13 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.hunterboard.mixin.render",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "PosableModelHatMixin",
+        "ModelWidgetScissorMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

@@ -12,6 +12,7 @@ object PlaytimeOverlay {
     fun register() {
         HudRenderCallback.EVENT.register { context, _ ->
             if (!ModConfig.showPlaytime) return@register
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             val client = MinecraftClient.getInstance()
             if (client.player == null) return@register
 

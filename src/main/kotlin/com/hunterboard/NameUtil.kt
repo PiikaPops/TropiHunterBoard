@@ -13,6 +13,25 @@ import java.text.Normalizer
 object NameUtil {
 
     /**
+     * Dictionary order for names shown in lists: "Électrik" between "Eau" and "Feu", not
+     * after "Zinzolin" as a raw string sort puts it (É is U+00C9, far beyond Z). Accents
+     * only break ties ("Pêche" right after "Peche"), and case is ignored.
+     *
+     * Collator is not thread-safe, so each call site's sort runs on the render thread
+     * as before; the instance is only shared there.
+     */
+    private val collator: java.text.Collator = java.text.Collator.getInstance(java.util.Locale.FRENCH).apply {
+        strength = java.text.Collator.SECONDARY
+    }
+    val ALPHABETICAL: Comparator<String> = Comparator { a, b -> collator.compare(a, b) }
+
+    /** Sorts [items] by the name [key] gives, in dictionary order. */
+    fun <T> sortedByName(items: Iterable<T>, key: (T) -> String): List<T> {
+        // Each name is computed once; translating it can cost more than comparing it.
+        return items.map { it to key(it) }.sortedWith(compareBy(ALPHABETICAL) { it.second }).map { it.first }
+    }
+
+    /**
      * Canonical key: gender symbols mapped to f/m, diacritics stripped
      * (é→e, à→a…), then everything non a-z0-9 removed.
      *

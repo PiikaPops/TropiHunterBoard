@@ -76,8 +76,7 @@ class AbilityDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         // Ability name (centered)
         val abilityName: String = Text.translatable(abilityTemplate.displayName).string
@@ -124,7 +123,7 @@ class AbilityDetailScreen(
 
         // === Pokémon with this ability ===
         val sectionLabel: String = Translations.tr("Pokémon with this ability")
-        context.drawText(textRenderer, sectionLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, sectionLabel, leftX, y)
 
         // Toggle buttons
         val iconToggleText = "\u229E"

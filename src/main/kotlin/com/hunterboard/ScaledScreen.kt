@@ -15,10 +15,15 @@ import net.minecraft.text.Text
  *
  * Two things do not go through the matrix and are handled here:
  *
- *  - **Sizes.** `Screen.init(client, width, height)` is final, but it assigns `width` and
- *    `height` and then calls `clearAndInit()`, which is not — so the virtual dimensions
- *    are substituted there, once, before any layout runs. Window resizes route through
- *    the same path, and each pass starts from the real size, so it stays idempotent.
+ *  - **Sizes.** `Screen.init(client, width, height)` is final. It assigns the real `width`
+ *    and `height`, then calls `init()` the first time a screen is shown, and
+ *    `initTabNavigation()` → `clearAndInit()` → `init()` every later time (back from a
+ *    sub-screen, window resize). Both paths end in `init()`, which every screen here
+ *    begins with `super.init()`: the virtual dimensions are substituted there, before any
+ *    layout runs. They are worked out from the window each time, never from `width`, so a
+ *    second pass cannot shrink them twice. (Doing it in `clearAndInit()` alone missed the
+ *    first showing: a screen opened at Minecraft's scale and switched to the capped one
+ *    when it was come back to.)
  *  - **Mouse input.** Coordinates arrive in real GUI pixels and are converted before the
  *    screen sees them, so hit-tests match what was drawn. Subclasses override the
  *    `*Scaled` variants; the originals are final so a conversion cannot be forgotten.
@@ -29,18 +34,20 @@ import net.minecraft.text.Text
  */
 abstract class ScaledScreen(title: Text) : Screen(title) {
 
-    /** Virtual pixels → real GUI pixels. 1.0 when the interface is not being capped. */
-    protected var uiFactor = 1f
+    /**
+     * Virtual pixels → real GUI pixels. 1.0 when the interface is not being capped. Public for
+     * the controller support, whose cursor works in real GUI pixels.
+     */
+    var uiFactor = 1f
         private set
 
-    final override fun clearAndInit() {
+    override fun init() {
         uiFactor = UiScale.factor()
-        if (uiFactor < 1f) {
-            // round up: a panel anchored to the right edge should never land off-screen
-            width = kotlin.math.ceil(width / uiFactor).toInt()
-            height = kotlin.math.ceil(height / uiFactor).toInt()
-        }
-        super.clearAndInit()
+        val window = client?.window ?: return
+        // round up: a panel anchored to the right edge should never land off-screen
+        width = if (uiFactor < 1f) kotlin.math.ceil(window.scaledWidth / uiFactor).toInt() else window.scaledWidth
+        height = if (uiFactor < 1f) kotlin.math.ceil(window.scaledHeight / uiFactor).toInt() else window.scaledHeight
+        super.init()
     }
 
     // ── rendering ────────────────────────────────────────────────────────────────

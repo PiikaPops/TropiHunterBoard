@@ -171,57 +171,80 @@ object RadarEnhancer {
     // Pool data extraction via reflection
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * The radar's list, read exactly the way Tropimon's own screen reads it.
+     *
+     * The server sends a `RadarPool`: one map from a spawn id ("geodude", "farfetch'd",
+     * "numel-herd-2", "abomasnow-alpha-2") to that spawn's chance **per spawn attempt**,
+     * already in percent. The chances only add up to 100 where every bucket has something
+     * to offer: in the deep dark, a cave or water the common bucket is empty, the rest of
+     * the attempts produce nothing, and the total falls to 5–75 %. Tropimon shows the
+     * values as they are; so does this — rescaling them to 100 % made every deep dark
+     * spawn look up to twenty times likelier than Tropimon's radar said.
+     *
+     * Which entries are shown follows Tropimon too (`PokeRadarEntry.normalize`, then a
+     * species lookup): an id that names no species, a herd or an alpha, is left out by
+     * both radars.
+     */
     fun extractPoolData(screen: Any): List<HunterRadarScreen.RadarSlot> {
-        var cls: Class<*>? = screen.javaClass
-        while (cls != null) {
-            for (f in cls.declaredFields) {
-                try {
-                    f.isAccessible = true
-                    val obj = f.get(screen) ?: continue
-                    val objCls = obj.javaClass.name
-                    if (!objCls.startsWith("fr.")) continue
-                    HunterBoard.LOGGER.info("[RadarEnhancer] DEBUG field '${f.name}': $objCls")
-                    for (innerF in obj.javaClass.declaredFields) {
-                        try {
-                            innerF.isAccessible = true
-                            val v = innerF.get(obj)
-                            HunterBoard.LOGGER.info("[RadarEnhancer] DEBUG  inner '${innerF.name}': ${v?.javaClass?.name} = $v")
-                            if (v !is Map<*, *> || v.isEmpty()) continue
-                            val weighted: List<Pair<String, Double>> = try {
-                                v.entries.mapNotNull { entry ->
-                                    val id = cleanSpeciesId(entry.key) ?: return@mapNotNull null
-                                    val weight = (entry.value as? Number)?.toDouble() ?: 0.0
-                                    if (weight <= 0.0) return@mapNotNull null
-                                    Pair(id, weight)
-                                }.sortedByDescending { it.second }
-                            } catch (e: Exception) {
-                                HunterBoard.LOGGER.warn("[RadarEnhancer] Exception building weighted list: ${e::class.java.name}: ${e.message}")
-                                continue
-                            }
-                            if (weighted.isEmpty()) continue
-                            val total = weighted.sumOf { it.second }
-                            val slots = weighted.mapNotNull { pair ->
-                                val species = try {
-                                    PokemonSpecies.getByName(pair.first)
-                                } catch (e: Exception) {
-                                    HunterBoard.LOGGER.warn("[RadarEnhancer] getByName threw for '${pair.first}': ${e.message}")
-                                    null
-                                } ?: return@mapNotNull null
-                                val pct = if (total > 0.0) (pair.second / total * 100).toFloat() else 0f
-                                HunterRadarScreen.RadarSlot(species, pct)
-                            }
-                            HunterBoard.LOGGER.info("[RadarEnhancer] DEBUG  weighted=${weighted.size} slots=${slots.size} first='${weighted.firstOrNull()?.first}'")
-                            if (slots.isNotEmpty()) return slots
-                        } catch (e: Exception) {
-                            HunterBoard.LOGGER.warn("[RadarEnhancer] Exception in inner field loop: ${e::class.java.name}: ${e.message}")
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-            cls = cls.superclass ?: break
-            if (cls.name == "net.minecraft.class_437") break
+        val pool = findPoolMap(screen) ?: return emptyList()
+        val slots = mutableListOf<HunterRadarScreen.RadarSlot>()
+        var total = 0.0
+        val unresolved = mutableListOf<String>()
+        for ((key, value) in pool) {
+            val id = key as? String ?: continue
+            val chance = (value as? Number)?.toFloat() ?: continue
+            if (id.isEmpty() || chance <= 0f) continue
+            total += chance
+            val species = speciesForRadarId(id)
+            if (species == null) { unresolved += id; continue }
+            slots += HunterRadarScreen.RadarSlot(species, chance)
         }
-        return emptyList()
+        if (pool.isNotEmpty()) {
+            HunterBoard.LOGGER.info(
+                "[RadarEnhancer] Radar pool: ${slots.size} species, ${unresolved.size} other entries " +
+                    "(herds, alphas, unknown ids), total ${"%.2f".format(java.util.Locale.ROOT, total)}%"
+            )
+        }
+        return slots.sortedByDescending { it.pct }
+    }
+
+    /** The `RadarPool`'s map: through its getter, or the first map a "fr." field of the screen holds. */
+    private fun findPoolMap(screen: Any): Map<*, *>? {
+        var cls: Class<*>? = screen.javaClass
+        while (cls != null && cls.name != "net.minecraft.class_437") {
+            for (f in cls.declaredFields) {
+                val obj = try { f.isAccessible = true; f.get(screen) } catch (_: Exception) { null } ?: continue
+                if (!obj.javaClass.name.startsWith("fr.")) continue
+                val viaGetter = try {
+                    obj.javaClass.getMethod("getPool").invoke(obj) as? Map<*, *>
+                } catch (_: Exception) { null }
+                if (viaGetter != null) return viaGetter
+                for (inner in obj.javaClass.declaredFields) {
+                    val v = try { inner.isAccessible = true; inner.get(obj) } catch (_: Exception) { null }
+                    if (v is Map<*, *> && v.isNotEmpty()) return v
+                }
+            }
+            cls = cls.superclass
+        }
+        return null
+    }
+
+    /**
+     * Tropimon's `PokeRadarEntry.normalize` — decomposed, lower case, the punctuation of
+     * "farfetch'd" / "jangmo-o" / "mr. mime" and the gender signs dropped, anything else
+     * that is not a-z0-9 removed — then looked up as a cobblemon: species id.
+     */
+    private fun speciesForRadarId(id: String): com.cobblemon.mod.common.pokemon.Species? {
+        val normalized = java.text.Normalizer.normalize(id, java.text.Normalizer.Form.NFD)
+            .lowercase(java.util.Locale.ROOT)
+            .replace("-", "").replace(" ", "").replace(".", "").replace("'", "")
+            .replace("♀", "").replace("♂", "").replace("⚥", "")
+            .replace(Regex("[^a-z0-9]"), "")
+        if (normalized.isEmpty()) return null
+        return try {
+            PokemonSpecies.getByIdentifier(net.minecraft.util.Identifier.of("cobblemon", normalized))
+        } catch (_: Exception) { null }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -257,39 +280,5 @@ object RadarEnhancer {
         ctx.fill(bx + bw - 1, by, bx + bw, by + SWITCH_BTN_H, UiKit.accent())
         ctx.drawText(tr, SWITCH_BTN_LABEL, bx + SWITCH_BTN_PAD, by + 3,
             if (hov) 0xFFFFFFFF.toInt() else 0xFFCCCCCC.toInt(), false)
-    }
-
-    private fun cleanSpeciesId(value: Any?): String? {
-        val raw: String = when (value) {
-            is String -> value
-            null -> return null
-            else -> {
-                val s = value.toString()
-                if (s.length > 60 || s.contains('\n') || s.contains('[')) return null
-                s
-            }
-        }
-        val candidate = raw.substringAfter(':').lowercase()
-            .replace('-', '_').replace(' ', '_').trim()
-        if (candidate.length < 3 || candidate.length > 40) return null
-        if (candidate.any { !it.isLetterOrDigit() && it != '_' }) return null
-        return candidate
-    }
-
-    private fun valueToSpeciesId(value: Any?): String? {
-        val raw: String = when (value) {
-            is String -> value
-            null      -> return null
-            else      -> {
-                val s = value.toString()
-                if (s.length > 60 || s.contains('\n') || s.contains('[')) return null
-                s
-            }
-        }
-        val candidate = raw.substringAfter(':').lowercase()
-            .replace('-', '_').replace(' ', '_').trim()
-        if (candidate.length < 3 || candidate.length > 40) return null
-        if (candidate.any { !it.isLetterOrDigit() && it != '_' }) return null
-        return if (PokemonSpecies.getByName(candidate) != null) candidate else null
     }
 }

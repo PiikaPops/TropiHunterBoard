@@ -64,6 +64,7 @@ object ClearWarningOverlay {
 
         HudRenderCallback.EVENT.register { context, _ ->
             if (clearTime == 0L) return@register
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             val client = MinecraftClient.getInstance()
             if (client.player == null) return@register
             if (ModConfig.hideHudInBattle && BattleHelper.isInBattle()) return@register

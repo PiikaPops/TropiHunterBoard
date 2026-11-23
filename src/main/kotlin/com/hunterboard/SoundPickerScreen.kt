@@ -74,6 +74,7 @@ class SoundPickerScreen(
 
         val placeholder: String = Translations.tr("Search sound...")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 36, panelWidth - 20, 14, Text.literal(placeholder))
+        UiKit.styleField(searchField, hint = placeholder.trimEnd('.', '…') + "…")
         searchField.setMaxLength(100)
         searchField.setChangedListener { updateSearch() }
         addDrawableChild(searchField)
@@ -223,6 +224,8 @@ class SoundPickerScreen(
             val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
             context.drawText(textRenderer, hint, hintX, panelBottom - 10, UiKit.TEXT_FAINT, true)
         }
+
+        UiKit.fieldBackground(context, searchField)
 
         renderWidgets(context, mouseX, mouseY, delta)
     }

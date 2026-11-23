@@ -1085,37 +1085,47 @@ object SpawnData {
         } catch (_: Exception) { emptyList() }
     }
 
-    /** Build a human-readable label from a list of SpawningConditions */
-    private fun describeMultiplierConditions(conditions: List<SpawningCondition<*>>): String {
+    /** The label of a multiplier's conditions, read through the same path as a spawn's. */
+    private fun describeMultiplierConditions(conditions: List<SpawningCondition<*>>): String =
+        describeConditionInfo(collectConditions(conditions))
+
+    /**
+     * A multiplier's condition as tokens that [Translations.formatMultiplierCondition] names:
+     * "pokesnack", "time:night", "biome:#cobblemon:is_spooky", "near:#minecraft:lava"…
+     * Every field a spawn condition can hold is covered, so none falls back to "?" —
+     * which is what Poké Snack multipliers showed on a server, read from the files.
+     */
+    private fun describeConditionInfo(info: ConditionInfo): String {
         val parts = mutableListOf<String>()
-        for (cond in conditions) {
-            try {
-                cond.isThundering?.let { if (it) parts.add("thunder") }
-                cond.isRaining?.let { if (it && !parts.contains("thunder")) parts.add("rain") }
-                cond.timeRange?.let { parts.add(identifyTimeRange(it)) }
-                if (cond.isPokeSnack == true) parts.add("pokesnack")
-                cond.moonPhase?.let { range ->
-                    val phases = phasesOf(range)
-                    if (phases.isNotEmpty()) parts.add("moon:" + phases.joinToString("/"))
-                }
-            } catch (_: Exception) {}
-            try {
-                if (cond is FishingSpawningCondition) {
-                    val minLure = cond.minLureLevel
-                    val maxLure = cond.maxLureLevel
-                    if (minLure != null || maxLure != null) {
-                        parts.add(when {
-                            minLure != null && maxLure != null && minLure == maxLure -> "lure:$minLure"
-                            minLure != null && maxLure != null -> "lure:$minLure-$maxLure"
-                            minLure != null -> "lure:$minLure+"
-                            else -> "lure:$maxLure"
-                        })
-                    }
-                    cond.bait?.let { parts.add("bait:$it") }
-                    cond.rodType?.let { parts.add("rod:$it") }
-                }
-            } catch (_: Exception) {}
+        when (info.weather) {
+            "thunder" -> parts.add("thunder")
+            "rain" -> parts.add("rain")
+            "clear" -> parts.add("clear")
         }
+        if (info.time != "any") parts.add("time:${info.time}")
+        if (info.isPokeSnack) parts.add("pokesnack")
+        if (info.moonPhases.isNotEmpty()) parts.add("moon:" + info.moonPhases.joinToString("/"))
+        val minLure = info.minLureLevel
+        val maxLure = info.maxLureLevel
+        if (minLure != null || maxLure != null) parts.add(when {
+            minLure != null && maxLure != null && minLure == maxLure -> "lure:$minLure"
+            minLure != null && maxLure != null -> "lure:$minLure-$maxLure"
+            minLure != null -> "lure:$minLure+"
+            else -> "lure:-$maxLure"
+        })
+        info.bait?.let { parts.add("bait:$it") }
+        info.rodType?.let { parts.add("rod:$it") }
+        if (info.biomeDetails.isNotEmpty()) parts.add("biome:" + info.biomeDetails.joinToString("|") { d ->
+            d.tagId?.let { "#$it" } ?: d.biomeId ?: d.displayName
+        })
+        if (info.structures.isNotEmpty()) parts.add("structure:" + info.structures.joinToString("|"))
+        if (info.nearbyBlocks.isNotEmpty()) parts.add("near:" + info.nearbyBlocks.joinToString("|"))
+        if (info.baseBlocks.isNotEmpty()) parts.add("base:" + info.baseBlocks.joinToString("|"))
+        if (info.minLight != null || info.maxLight != null) parts.add("light:${info.minLight ?: 0}-${info.maxLight ?: 15}")
+        if (info.minSkyLight != null || info.maxSkyLight != null) parts.add("skylight:${info.minSkyLight ?: 0}-${info.maxSkyLight ?: 15}")
+        info.canSeeSky?.let { parts.add(if (it) "sky" else "nosky") }
+        if (info.minY != null || info.maxY != null) parts.add("y:${info.minY ?: ""}-${info.maxY ?: ""}")
+        if (info.slimeChunk) parts.add("slime")
         return if (parts.isEmpty()) "?" else parts.joinToString(", ")
     }
 
@@ -1328,28 +1338,9 @@ object SpawnData {
 
     private fun parseOneJsonMultiplier(wm: JsonObject): WeightMultiplierData? {
         val mult = wm.get("multiplier")?.asFloat ?: return null
-        val cond = wm.getAsJsonObject("condition")
-        val label = if (cond != null) describeJsonMultiplierCondition(cond) else "?"
-        return WeightMultiplierData(mult, label)
-    }
-
-    private fun describeJsonMultiplierCondition(cond: JsonObject): String {
-        val parts = mutableListOf<String>()
-        if (cond.has("isThundering") && cond.get("isThundering").asBoolean) parts.add("thunder")
-        if (cond.has("isRaining") && cond.get("isRaining").asBoolean && "thunder" !in parts) parts.add("rain")
-        if (cond.has("timeRange")) parts.add(cond.get("timeRange").asString)
-        val minLure = if (cond.has("minLureLevel")) cond.get("minLureLevel").asInt else null
-        val maxLure = if (cond.has("maxLureLevel")) cond.get("maxLureLevel").asInt else null
-        if (minLure != null || maxLure != null) {
-            val label = when {
-                minLure != null && maxLure != null && minLure == maxLure -> "lure:$minLure"
-                minLure != null && maxLure != null -> "lure:$minLure-$maxLure"
-                minLure != null -> "lure:$minLure+"
-                else -> "lure:$maxLure"
-            }
-            parts.add(label)
-        }
-        if (cond.has("moonPhase")) parts.add("moon:${cond.get("moonPhase").asInt}")
-        return if (parts.isEmpty()) "?" else parts.joinToString(", ")
+        val cond = wm.getAsJsonObject("condition") ?: return WeightMultiplierData(mult, "?")
+        val info = ConditionInfo()
+        parseCondition(cond, info)
+        return WeightMultiplierData(mult, describeConditionInfo(info))
     }
 }

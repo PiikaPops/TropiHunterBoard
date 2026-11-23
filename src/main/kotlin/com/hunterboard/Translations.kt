@@ -9,8 +9,10 @@ import net.minecraft.util.Identifier
 
 object Translations {
 
-    // Language override for pokemon/move names: null = follow game, "en" = English, "fr" = French
-    var nameLanguageOverride: String? = null
+    // Language override for pokemon/move names: null = follow game, "en" = English, "fr" = French.
+    // Kept in the config, so the FR/ENG button's choice survives a restart.
+    val nameLanguageOverride: String?
+        get() = ModConfig.nameLanguage.ifEmpty { null }
 
     fun isFrench(): Boolean {
         return try {
@@ -25,7 +27,7 @@ object Translations {
 
     /** Toggle between FR and EN for pokemon/move names */
     fun toggleNameLanguage() {
-        nameLanguageOverride = if (effectiveNameLanguage() == "fr") "en" else "fr"
+        ModConfig.setNameLanguage(if (effectiveNameLanguage() == "fr") "en" else "fr")
     }
 
     /** Label for the language toggle button */
@@ -81,10 +83,11 @@ object Translations {
                     ?: move.name.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
             } else {
                 CobblemonLangLoader.getFrenchMoveName(move.name)
-                    ?: move.displayName.string
+                    ?: move.displayName.string.takeUnless { it.startsWith("cobblemon.move.") }
+                    ?: prettyId(move.name)
             }
         } catch (_: Exception) {
-            move.displayName.string
+            prettyId(move.name)
         }
     }
 
@@ -139,7 +142,7 @@ object Translations {
             "any" -> "Tout moment"
             "day" -> "Jour"
             "night" -> "Nuit"
-            "dusk" -> "Crépuscule"
+            "dusk", "twilight" -> "Crépuscule"
             "dawn" -> "Aube"
             "morning" -> "Matin"
             "afternoon" -> "Après-midi"
@@ -214,22 +217,56 @@ object Translations {
                 "surface" -> "Surface"
                 "submerged" -> "Submerged"
                 "treetop" -> "Treetop"
-                else -> preset.replaceFirstChar { it.uppercase() }
+                else -> PRESETS[preset.lowercase()]?.first ?: prettyId(preset)
             }
         }
         return when (preset.lowercase()) {
             "natural" -> "Naturel"
             "urban" -> "Urbain"
-            "mansion" -> "Manoir"
+            "mansion" -> "Mansion"
             "fishing" -> "Pêche"
             "underground" -> "Souterrain"
             "foliage" -> "Feuillage"
             "surface" -> "Surface"
             "submerged" -> "Immergé"
             "treetop" -> "Cime d'arbre"
-            else -> preset.replaceFirstChar { it.uppercase() }
+            else -> PRESETS[preset.lowercase()]?.second ?: prettyId(preset)
         }
     }
+
+    /** Spawn presets named after a place: English and French. Structures keep their English name. */
+    private val PRESETS = mapOf(
+        "ancient_city" to ("Ancient City" to "Ancient City"),
+        "derelict" to ("Derelict" to "Abandonné"),
+        "desert_pyramid" to ("Desert Pyramid" to "Desert Pyramid"),
+        "jungle_pyramid" to ("Jungle Pyramid" to "Jungle Pyramid"),
+        "lava" to ("Lava" to "Lave"),
+        "mansion_bedrooms" to ("Mansion (bedrooms)" to "Mansion (bedrooms)"),
+        "mansion_dining" to ("Mansion (dining room)" to "Mansion (dining room)"),
+        "nether_fossil" to ("Nether Fossil" to "Nether Fossil"),
+        "redstone" to ("Redstone" to "Redstone"),
+        "ruined_portal" to ("Ruined Portal" to "Ruined Portal"),
+        "saccharine_tree" to ("Saccharine Tree" to "Arbre saccharin"),
+        "salt" to ("Salt" to "Sel"),
+        "stronghold" to ("Stronghold" to "Stronghold"),
+        "trail_ruins" to ("Trail Ruins" to "Trail Ruins"),
+        "water" to ("Water" to "Eau"),
+        "webs" to ("Cobwebs" to "Toiles d'araignée"),
+        "wild" to ("Wild" to "Sauvage"),
+        "ocean_monument" to ("Ocean Monument" to "Ocean Monument"),
+        "ocean_ruins" to ("Ocean Ruins" to "Ocean Ruins"),
+        "village" to ("Village" to "Village"),
+        "shipwreck" to ("Shipwreck" to "Shipwreck"),
+        "igloo" to ("Igloo" to "Igloo"),
+        "pillager_outpost" to ("Pillager Outpost" to "Pillager Outpost"),
+        "bastion_remnant" to ("Bastion Remnant" to "Bastion Remnant"),
+        "nether_fortress" to ("Nether Fortress" to "Nether Fortress"),
+        "end_city" to ("End City" to "End City"),
+    )
+
+    /** "trail_ruins" → "Trail Ruins": what an unknown id can at least look like. */
+    fun prettyId(id: String): String = id.substringAfter(':').replace('/', ' ').replace('_', ' ')
+        .split(' ').filter { it.isNotEmpty() }.joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
 
     fun categoryName(categoryKey: String): String {
         if (!isFrench()) return categoryKey.replaceFirstChar { it.uppercase() }
@@ -252,7 +289,7 @@ object Translations {
                 part == "dusk" || part == "twilight" -> if (isFrench()) "Crépuscule" else "Twilight"
                 part == "dawn" -> if (isFrench()) "Aube" else "Dawn"
                 part.startsWith("lure:") -> {
-                    val lvl = part.removePrefix("lure:")
+                    val lvl = part.removePrefix("lure:").let { if (it.startsWith("-")) "\u2264" + it.drop(1) else it }
                     if (isFrench()) "Appât $lvl" else "Lure $lvl"
                 }
                 part == "pokesnack" -> if (isFrench()) "Poké-Snack" else "Poké Snack"
@@ -269,6 +306,42 @@ object Translations {
                     val phases = part.removePrefix("moon:").split("/").mapNotNull { it.toIntOrNull() }
                     if (phases.isNotEmpty()) phases.joinToString(", ") { formatMoonPhase(it) } else part
                 }
+                part == "clear" -> formatWeather("clear")
+                part.startsWith("time:") -> formatTime(part.removePrefix("time:"))
+                part.startsWith("biome:") -> {
+                    val names = part.removePrefix("biome:").split("|").map { biomeLabel(it) }.distinct().joinToString("/")
+                    if (isFrench()) "Biome $names" else "Biome $names"
+                }
+                part.startsWith("structure:") -> {
+                    val names = part.removePrefix("structure:").split("|").joinToString("/")
+                    if (isFrench()) "Dans $names" else "In $names"
+                }
+                part.startsWith("near:") -> {
+                    val names = part.removePrefix("near:").split("|").map { blockName(it) }.distinct().joinToString("/")
+                    if (isFrench()) "Près de $names" else "Near $names"
+                }
+                part.startsWith("base:") -> {
+                    val names = part.removePrefix("base:").split("|").map { blockName(it) }.distinct().joinToString("/")
+                    if (isFrench()) "Sur $names" else "On $names"
+                }
+                part.startsWith("light:") || part.startsWith("skylight:") -> {
+                    val sky = part.startsWith("skylight:")
+                    val (lo, hi) = part.substringAfter(':').split("-").let { (it.getOrNull(0) ?: "0") to (it.getOrNull(1) ?: "15") }
+                    val word = if (sky) (if (isFrench()) "Lumière du ciel" else "Sky light") else (if (isFrench()) "Lumière" else "Light")
+                    when {
+                        hi == "15" -> "$word \u2265$lo"
+                        lo == "0" -> "$word \u2264$hi"
+                        else -> "$word $lo\u2013$hi"
+                    }
+                }
+                part == "sky" -> if (isFrench()) "Ciel visible" else "Sky visible"
+                part == "nosky" -> if (isFrench()) "Sans ciel visible" else "No sky visible"
+                part.startsWith("y:") -> {
+                    val (lo, hi) = part.removePrefix("y:").split("-", limit = 2).let { (it.getOrNull(0) ?: "") to (it.getOrNull(1) ?: "") }
+                    if (isFrench()) "Hauteur ${lo.ifEmpty { "…" }}\u2013${hi.ifEmpty { "…" }}" else "Height ${lo.ifEmpty { "…" }}\u2013${hi.ifEmpty { "…" }}"
+                }
+                part == "slime" -> tr("Slime Chunk")
+                part == "?" -> if (isFrench()) "Condition particulière" else "Special condition"
                 else -> part.replaceFirstChar { it.uppercase() }
             }
         }
@@ -278,17 +351,46 @@ object Translations {
     fun blockName(blockId: String): String {
         if (blockId.startsWith("#")) {
             val path = blockId.removePrefix("#").substringAfter(":")
-            return path.replace("_", " ").split(" ")
-                .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            BLOCK_TAGS[path]?.let { (en, fr) -> return if (isFrench()) fr else en }
+            return prettyId(path)
         }
         return try {
-            val block = Registries.BLOCK.get(Identifier.of(blockId))
-            block.name.string
+            val name = Registries.BLOCK.get(Identifier.of(blockId)).name.string
+            // a block without a name of its own (the Medicinal Leek): its item's, or its id
+            if (name.startsWith("block.")) itemName(blockId) else name
         } catch (_: Exception) {
-            blockId.substringAfter(":").replace("_", " ")
-                .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            prettyId(blockId)
         }
     }
+
+    /** The block tags spawn conditions use, English and French. */
+    private val BLOCK_TAGS = mapOf(
+        "saccharine_trees" to ("Saccharine trees" to "Arbres saccharins"),
+        "flowers" to ("Flowers" to "Fleurs"),
+        "white_flowers" to ("White flowers" to "Fleurs blanches"),
+        "red_flowers" to ("Red flowers" to "Fleurs rouges"),
+        "yellow_flowers" to ("Yellow flowers" to "Fleurs jaunes"),
+        "orange_flowers" to ("Orange flowers" to "Fleurs orange"),
+        "blue_flowers" to ("Blue flowers" to "Fleurs bleues"),
+        "pink_flowers" to ("Pink flowers" to "Fleurs roses"),
+        "iron_ores" to ("Iron ores" to "Minerais de fer"),
+        "coal_ores" to ("Coal ores" to "Minerais de charbon"),
+        "redstone_ores" to ("Redstone ores" to "Minerais de redstone"),
+        "diamond_ores" to ("Diamond ores" to "Minerais de diamant"),
+        "beehives" to ("Beehives" to "Ruches"),
+        "dead_coral" to ("Dead coral" to "Corail mort"),
+        "corals" to ("Corals" to "Coraux"),
+        "coral_blocks" to ("Coral blocks" to "Blocs de corail"),
+        "gemstones" to ("Gemstones" to "Pierres précieuses"),
+        "apricorns" to ("Apricorns" to "Noigrumes"),
+        "berries" to ("Berries" to "Baies"),
+        "sand" to ("Sand" to "Sable"),
+        "lava" to ("Lava" to "Lave"),
+        "water" to ("Water" to "Eau"),
+        "concrete_blocks" to ("Concrete" to "Béton"),
+        "logs" to ("Logs" to "Bûches"),
+        "leaves" to ("Leaves" to "Feuilles"),
+    )
 
     /** Localised item name for an id like "cobblemon:love_rod"; falls back to a prettified path. */
     fun itemName(itemId: String): String {
@@ -297,6 +399,10 @@ object Translations {
             val item = Registries.ITEM.get(Identifier.of(id))
             val name = item.name.string
             if (name.isNotEmpty() && !name.startsWith("item.") && !name.startsWith("block.")) return name
+            // Cobblemon names some block items under "item." only (the Medicinal Leek)
+            val ident = Identifier.of(id)
+            val asItem = Text.translatable("item.${ident.namespace}.${ident.path}").string
+            if (!asItem.startsWith("item.")) return asItem
         } catch (_: Exception) {}
         return id.substringAfter(":").replace("_", " ")
             .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
@@ -450,7 +556,23 @@ object Translations {
         "The Nether" to "Nether",
         "The End" to "l'End",
         "Placed by" to "Posé par",
-        "Jigsaw structure" to "Structure (jigsaw)",
+        "Jigsaw structure" to "Structure assemblée",
+        "No description" to "Pas de description",
+        "Bury" to "Enfouie",
+        "Beard Thin" to "Raccordée au terrain",
+        "Beard Box" to "Posée sur un socle",
+        "Encapsulate" to "Encastrée",
+        "Raw Generation" to "Génération brute",
+        "Lakes" to "Lacs",
+        "Local Modifications" to "Modifications locales",
+        "Underground Structures" to "Structures souterraines",
+        "Surface Structures" to "Structures de surface",
+        "Strongholds" to "Forts",
+        "Underground Ores" to "Minerais",
+        "Underground Decoration" to "Décor souterrain",
+        "Fluid Springs" to "Sources",
+        "Vegetal Decoration" to "Végétation",
+        "Top Layer Modification" to "Couche de surface",
         "Worldgen feature" to "Feature de worldgen",
         "Spacing" to "Espacement",
         "chunks" to "chunks",
@@ -466,7 +588,7 @@ object Translations {
         "Offset" to "Décalage",
         "Step" to "Étape",
         "Placement unknown" to "Placement inconnu",
-        "Filler" to "Filler",
+        "Filler" to "Remplissage",
         "Interface scale" to "Échelle de l'interface",
         "Minecraft GUI scale" to "Échelle GUI de Minecraft",
         "Cobblemon Theme" to "Thème Cobblemon",
@@ -485,6 +607,16 @@ object Translations {
         "Hyper" to "Hyper",
         "Master" to "Master",
         "hunts displayed" to "chasses affich\u00e9es",
+        "Auto" to "Auto",
+        "Detected from the server" to "D\u00e9tect\u00e9 depuis le serveur",
+        "Waiting for the server" to "En attente du serveur",
+        "Reset timer" to "Chrono de reset",
+        "Full capture card" to "Carte de capture complète",
+        "HunterBoard HUD shown" to "HUD HunterBoard affiché",
+        "HunterBoard HUD hidden" to "HUD HunterBoard masqué",
+        // Format string, not a label: the French day unit is "j", and the spacing is part
+        // of the value rather than something the caller can guess.
+        "%dd %dh" to "%dj %dh",
         "ESC to return" to "ESC pour revenir",
         "Congrats!" to "Bravo !",
         "All hunts completed!" to "Toutes les chasses termin\u00e9es !",
@@ -553,7 +685,7 @@ object Translations {
         "Refresh" to "Actualiser",
         "No custom sounds" to "Aucun son personnalisé",
         "Drop .wav or .ogg files in:" to "Déposez des fichiers .wav ou .ogg dans :",
-        "Donate to _Popichu" to "Faire un don à _Popichu",
+        "Donate to Popichu_" to "Faire un don à Popichu_",
         "Generous Souls" to "Âmes Généreuses",
         "Thank you for your support!" to "Merci pour votre soutien !",
         "Loading..." to "Chargement...",
@@ -562,6 +694,16 @@ object Translations {
 
         // Playtime / Clear sound / Slime chunk / Preset
         "Playtime" to "Temps connecté",
+        "PvP Replay" to "Replay PvP",
+        "Locator Bar" to "Barre de repères",
+        "Enabled" to "Activée",
+        "Always visible" to "Toujours visible",
+        "Hide in menus" to "Masquer en menu",
+        "Length" to "Longueur",
+        "Screen position" to "Position à l’écran",
+        "Hide Tropimon bar" to "Masquer barre Tropimon",
+        "Replay saved" to "Replay enregistré",
+        "Replay muted" to "Replay muet",
         "Clear Sound" to "Son Clear",
         "Slime Chunk" to "Chunk à Slime",
         // Cobblemon 1.8
@@ -580,6 +722,8 @@ object Translations {
         "Habitats:" to "Habitats :",
         "Wiki" to "Wiki",
         "Drag a corner to resize" to "Glisse un coin pour redimensionner",
+        "Cancel" to "Annuler",
+        "Esc also saves" to "Échap enregistre aussi",
         "Spawn display" to "Affichage des spawns",
         "Weight" to "Poids",
         "Not in biomes" to "Biomes exclus",
@@ -611,6 +755,23 @@ object Translations {
         "species" to "esp\u00e8ces",
         "phases" to "phases",
         "Any phase" to "Toute phase",
+        "Grasslands & flowers" to "Prairies et fleurs",
+        "Forests & jungles" to "Forêts et jungles",
+        "Deserts & savannas" to "Déserts et savanes",
+        "Mountains" to "Montagnes",
+        "Snow & ice" to "Neige et glace",
+        "Water & shores" to "Eaux et rivages",
+        "Villages" to "Villages",
+        "Other habitats" to "Autres habitats",
+        "Commons:" to "Communs :",
+        "Technical details" to "Détails techniques",
+        "Changes every Minecraft day" to "Change chaque jour Minecraft",
+        "of the Pokémon in this phase" to "des Pokémon de cette phase",
+        "of the Pokémon of this habitat" to "des Pokémon de cet habitat",
+        "Click to open its page" to "Clic : ouvrir sa fiche",
+        "Odds" to "Chance",
+        "Any biome" to "Tous les biomes",
+        "Village houses" to "Maisons de village",
         "Preview unavailable" to "Aper\u00e7u indisponible",
         "Habitat block" to "Bloc d'habitat",
         "Unknown pool" to "Pool inconnu",
@@ -665,6 +826,124 @@ object Translations {
         "Lv." to "Nv."
     )
 
+    /**
+     * The biomes an evolution asks for, by name: "Forêt", "Plage/Île tropicale". A tag made
+     * for the evolution ("pikachu_kantobiome") is opened up into the tags it gathers.
+     */
+    private fun evoBiomes(id: String): String {
+        if (id.isBlank()) return if (isFrench()) "Biome" else "Biome"
+        // Only a tag made for the evolution is opened up: its own name ("pikachu_kantobiome")
+        // says nothing, while "#cobblemon:is_sandy" is best left as "Sablonneux".
+        val path = id.removePrefix("#").substringAfter(':')
+        val listed = if (id.startsWith("#") && path.startsWith("evolution/"))
+            EvolutionData.biomeTagValues(id).ifEmpty { listOf(id) } else listOf(id)
+        val names = listed.map { biomeLabel(it) }.distinct()
+        // Vivillon's patterns name a dozen biomes each: the first few say enough.
+        return if (names.size <= 4) names.joinToString("/") else names.take(3).joinToString("/") + "/… (+${names.size - 3})"
+    }
+
+    /** "#cobblemon:is_forest" → "Forêt", "#cobblemon:nether/is_wasteland" → "Nether (terres désolées)", "minecraft:beach" → "Plage". */
+    fun biomeLabel(id: String): String {
+        val ns = id.removePrefix("#").substringBefore(':', "minecraft")
+        val path = id.removePrefix("#").substringAfter(':')
+        // a tag written without its "#" ("cobblemon:is_swamp") is still a tag
+        val isTag = id.startsWith("#") || path.substringAfterLast('/').startsWith("is_")
+        if (!isTag) return biomeName(ns, path)
+        val segments = (if (path.startsWith("evolution/")) listOf(path.substringAfterLast('/')) else path.split('/'))
+            .map { it.removePrefix("is_") }
+        val english = segments.joinToString(" ").split('_', ' ')
+            .filter { it.isNotEmpty() }.joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        return if (isFrench()) FR_BIOME_TAGS[english] ?: english else english
+    }
+
+    /** "attack" → "Atq", "special_defence" → "Déf.Spé". */
+    private fun statShort(stat: String): String = when (stat.lowercase().replace("defense", "defence")) {
+        "hp" -> if (isFrench()) "PV" else "HP"
+        "attack" -> if (isFrench()) "Atq" else "Atk"
+        "defence" -> if (isFrench()) "Déf" else "Def"
+        "special_attack" -> if (isFrench()) "Atq.Spé" else "Sp.Atk"
+        "special_defence" -> if (isFrench()) "Déf.Spé" else "Sp.Def"
+        "speed" -> if (isFrench()) "Vit" else "Spe"
+        else -> prettyId(stat)
+    }
+
+    /**
+     * A form's tab label. Cobblemon's "-Bias" forms ("Alola-Bias") look like the normal
+     * Pokémon but evolve into the regional form: the name alone says nothing of that.
+     */
+    fun formLabel(name: String): String {
+        if (name.endsWith("-Bias", ignoreCase = true)) {
+            val region = name.dropLast(5)
+            return if (isFrench()) "Évolue en $region" else "Evolves $region"
+        }
+        if (!isFrench()) return name
+        return FR[name] ?: FR_FORMS[name] ?: name
+    }
+
+    private val FR_FORMS = mapOf(
+        "Gmax" to "Gigamax",
+        "Partner" to "Partenaire",
+        "Therian" to "Totémique",
+        "Origin" to "Originelle",
+        "Primal" to "Primo",
+        "Eternamax" to "Infinimax",
+        "Bloodmoon" to "Lune Vermeille",
+        "Paldea-Combat" to "Paldea (Combative)",
+        "Paldea-Blaze" to "Paldea (Flamboyante)",
+        "Paldea-Aqua" to "Paldea (Aquatique)",
+        "Galar-Zen" to "Galar (Transe)",
+        "Zen" to "Transe",
+        "Ash" to "Sacha",
+        "Unbound" to "Déchaîné",
+        "Complete" to "Parfaite",
+        "Terastal" to "Téracristal",
+        "Stellar" to "Stellaire",
+        "Hero" to "Super",
+        "Low-Key" to "Grave",
+        "Low-Key-Gmax" to "Grave Gigamax",
+        "Rapid-Strike" to "Mille Poings",
+        "Rapid-Strike-Gmax" to "Mille Poings Gigamax",
+        "Dusk-Mane" to "Crinière du Couchant",
+        "Dawn-Wings" to "Ailes de l'Aurore",
+        "Ultra" to "Ultra",
+        "School" to "Banc",
+        "Busted" to "Démasqué",
+        "Noice-Face" to "Tête Dégel",
+        "Hangry" to "Affamé",
+        "Roaming" to "Marche",
+        "Three-Segment" to "Triple",
+        "White-Striped" to "Motif Blanc",
+        "Blue-Striped" to "Motif Bleu",
+        "Dusk" to "Crépusculaire",
+        "Midnight" to "Nocturne",
+        "Midday" to "Diurne",
+        "Phony" to "Contrefaçon",
+        "Antique" to "Authentique",
+        "Counterfeit" to "Imitation",
+        "Artisan" to "Onéreuse",
+        "Unremarkable" to "Médiocre",
+        "Masterpiece" to "Exceptionnelle",
+        "Archipelago" to "Archipel",
+        "Continental" to "Continental",
+        "Elegant" to "Élégant",
+        "Garden" to "Jardin",
+        "High Plains" to "Hauts-Plateaux",
+        "Icy Snow" to "Banquise",
+        "Marine" to "Marin",
+        "Meadow" to "Floral",
+        "Modern" to "Moderne",
+        "Monsoon" to "Mousson",
+        "Ocean" to "Océan",
+        "Polar" to "Polaire",
+        "River" to "Fleuve",
+        "Sandstorm" to "Sable",
+        "Savanna" to "Savane",
+        "Sun" to "Soleil",
+        "Tundra" to "Toundra",
+        "Fancy" to "Fantaisie",
+        "Pokeball" to "Poké Ball",
+    )
+
     fun formatEvoCondition(raw: String): String {
         if (raw.isEmpty()) return ""
         val parts = raw.split("+")
@@ -698,9 +977,20 @@ object Translations {
                         else -> range.replaceFirstChar { it.uppercase() }
                     }
                 }
-                part.startsWith("biome:") -> {
-                    val biome = part.removePrefix("biome:")
-                    if (isFrench()) "Biome" else "Biome"
+                part.startsWith("biome:") -> evoBiomes(part.removePrefix("biome:"))
+                // a requirement that must NOT hold; for biomes: anywhere but these
+                part.startsWith("not:") -> {
+                    val inner = part.removePrefix("not:")
+                    if (inner.startsWith("biome:")) {
+                        val names = evoBiomes(inner.removePrefix("biome:"))
+                        if (isFrench()) "Hors $names" else "Not in $names"
+                    } else if (inner.startsWith("structure:")) {
+                        val name = prettyId(inner.removePrefix("structure:").removePrefix("!").removePrefix("#"))
+                        if (isFrench()) "Hors $name" else "Outside $name"
+                    } else {
+                        val text = formatEvoCondition(inner)
+                        if (isFrench()) "Pas : $text" else "Not: $text"
+                    }
                 }
                 part.startsWith("move:") -> {
                     val moveName = part.removePrefix("move:")
@@ -749,9 +1039,15 @@ object Translations {
                     if (chance != null) "${(chance * 100).toInt()}%" else null
                 }
                 part.startsWith("party_pokemon:") -> {
-                    val pokemon = part.removePrefix("party_pokemon:")
-                    val name = pokemonName(pokemon)
-                    if (isFrench()) "Avec $name" else "With $name"
+                    val target = part.removePrefix("party_pokemon:")
+                    // "type=dark": any Pokémon of that type, not a species
+                    if (target.startsWith("type=")) {
+                        val type = formatTypeName(target.removePrefix("type="))
+                        if (isFrench()) "Pokémon $type dans l'équipe" else "$type Pokémon in party"
+                    } else {
+                        val name = pokemonName(target.substringBefore(' '))
+                        if (isFrench()) "Avec $name dans l'équipe" else "With $name in party"
+                    }
                 }
                 part.startsWith("recoil:") -> {
                     val dmg = part.removePrefix("recoil:")
@@ -772,12 +1068,14 @@ object Translations {
                     if (times.isNotEmpty()) "${label}\u00d7$times" else label
                 }
                 part.startsWith("defeat:") -> {
-                    val split = part.removePrefix("defeat:").split(":")
-                    val target = split.getOrElse(0) { "" }
-                    val count = split.getOrElse(1) { "" }
+                    // "defeat:3:bisharp held_item=cobblemon:kings_rock": the target is a property string
+                    val (count, target) = part.removePrefix("defeat:").split(":", limit = 2).let { it.getOrElse(0) { "" } to it.getOrElse(1) { "" } }
+                    val words = target.split(' ').filter { it.isNotBlank() }
+                    val species = words.firstOrNull { '=' !in it }?.let { pokemonName(it) } ?: ""
+                    val held = words.firstOrNull { it.startsWith("held_item=") }?.removePrefix("held_item=")?.let { itemName(it) }
                     val label = if (isFrench()) "Vaincre" else "Defeat"
-                    val targetName = if (target.isNotEmpty()) " ${pokemonName(target)}" else ""
-                    "$label$targetName${if (count.isNotEmpty()) "\u00d7$count" else ""}"
+                    listOfNotNull(label, count.takeIf { it.isNotEmpty() && it != "1" }, species.ifEmpty { null },
+                        held?.let { if (isFrench()) "tenant $it" else "holding $it" }).joinToString(" ")
                 }
                 part.startsWith("steps:") -> {
                     val steps = part.removePrefix("steps:")
@@ -801,9 +1099,9 @@ object Translations {
                 }
                 part.startsWith("stat_compare:") -> {
                     val split = part.removePrefix("stat_compare:").split(":")
-                    val statA = split.getOrElse(0) { "" }.replaceFirstChar { it.uppercase() }
+                    val statA = statShort(split.getOrElse(0) { "" })
                     val comp = split.getOrElse(1) { "" }
-                    val statB = split.getOrElse(2) { "" }.replaceFirstChar { it.uppercase() }
+                    val statB = statShort(split.getOrElse(2) { "" })
                     val symbol = when (comp.lowercase()) {
                         "greater_than" -> ">"
                         "less_than" -> "<"
@@ -813,10 +1111,32 @@ object Translations {
                 }
                 part.startsWith("stat_equal:") -> {
                     val split = part.removePrefix("stat_equal:").split(":")
-                    val statA = split.getOrElse(0) { "" }.replaceFirstChar { it.uppercase() }
-                    val statB = split.getOrElse(1) { "" }.replaceFirstChar { it.uppercase() }
-                    "$statA = $statB"
+                    "${statShort(split.getOrElse(0) { "" })} = ${statShort(split.getOrElse(1) { "" })}"
                 }
+                part.startsWith("crits:") -> {
+                    val n = part.removePrefix("crits:")
+                    if (isFrench()) "$n coups critiques en un combat" else "$n critical hits in one battle"
+                }
+                part.startsWith("advancement:") -> {
+                    val id = part.removePrefix("advancement:")
+                    val title = EvolutionData.advancementTitle(id) ?: prettyId(id.substringAfterLast('/'))
+                    if (isFrench()) "Succès « $title »" else "Advancement \"$title\""
+                }
+                part.startsWith("nickname:") -> {
+                    val names = part.removePrefix("nickname:").split("/")
+                    val or = if (isFrench()) " ou " else " or "
+                    if (isFrench()) "Surnommé ${names.joinToString(or)}" else "Nicknamed ${names.joinToString(or)}"
+                }
+                part.startsWith("nature:") -> {
+                    val natures = part.removePrefix("nature:").split("/").map { n ->
+                        Text.translatable("cobblemon.nature.$n").string.takeUnless { it.startsWith("cobblemon.") } ?: prettyId(n)
+                    }
+                    val shown = if (natures.size <= 4) natures.joinToString(", ")
+                                else natures.take(3).joinToString(", ") + "… (+${natures.size - 3})"
+                    (if (isFrench()) "Nature : " else "Nature: ") + shown
+                }
+                part.startsWith("coins:") -> "${part.removePrefix("coins:")} × ${itemName("cobblemon:relic_coin")}"
+                part == "individual" -> if (isFrench()) "Selon l'individu" else "Depends on the individual"
                 part == "overworld" -> null // skip, not useful info
                 part == "party" -> null // skip
                 else -> part.replace("_", " ").replaceFirstChar { it.uppercase() }
@@ -830,7 +1150,7 @@ object Translations {
         return try {
             val id = if (itemId.contains(":")) itemId else "cobblemon:$itemId"
             val stack = ItemStack(Registries.ITEM.get(Identifier.of(id)))
-            if (!stack.isEmpty) stack.name.string
+            if (!stack.isEmpty) itemName(id)
             else itemId.substringAfter(":").replace("_", " ")
                 .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
         } catch (_: Exception) {
@@ -945,6 +1265,48 @@ object Translations {
         "River" to "Rivière",
         "Swamp" to "Marais",
         "Beach" to "Plage",
+        "Cherry Blossom" to "Cerisaie",
+        "Coast" to "Côte",
+        "Cold And Temperate Ocean" to "Océan froid et tempéré",
+        "Cold Ocean" to "Océan froid",
+        "Deep Dark" to "Abîmes",
+        "Frozen Ocean" to "Océan gelé",
+        "Grassland" to "Prairie",
+        "Hills" to "Collines",
+        "Lukewarm And Temperate Ocean" to "Océan tiède et tempéré",
+        "Lukewarm Ocean" to "Océan tiède",
+        "Magical" to "Magique",
+        "Mirage Island" to "Île mirage",
+        "Nether Basalt" to "Nether (basalte)",
+        "Nether Crimson" to "Nether (carmin)",
+        "Nether Desert" to "Nether (désert)",
+        "Nether Forest" to "Nether (forêt)",
+        "Nether Frozen" to "Nether (gelé)",
+        "Nether Fungus" to "Nether (champignons)",
+        "Nether Mountain" to "Nether (montagne)",
+        "Nether Overgrowth" to "Nether (végétation)",
+        "Nether Quartz" to "Nether (quartz)",
+        "Nether Soul Fire" to "Nether (feu des âmes)",
+        "Nether Soul Sand" to "Nether (sable des âmes)",
+        "Nether Toxic" to "Nether (toxique)",
+        "Nether Warped" to "Nether (biscornu)",
+        "Nether Wasteland" to "Nether (terres désolées)",
+        "Sky" to "Ciel",
+        "Snowy Forest" to "Forêt enneigée",
+        "Snowy Plains" to "Plaines enneigées",
+        "Snowy Taiga" to "Taïga enneigée",
+        "Space Fiery" to "Espace (ardent)",
+        "Space Icy" to "Espace (glacé)",
+        "Space Mars" to "Mars",
+        "Space Mercury" to "Mercure",
+        "Space Moon" to "Lune",
+        "Space Space" to "Espace",
+        "Space Venus" to "Vénus",
+        "Stony Beach" to "Plage de pierre",
+        "Temperate Ocean" to "Océan tempéré",
+        "Thermal" to "Thermal",
+        "Warm Ocean" to "Océan chaud",
+        "Tropical Island" to "Île tropicale",
         "Jungle" to "Jungle",
         "Savanna" to "Savane",
         "Snowy" to "Enneigé",

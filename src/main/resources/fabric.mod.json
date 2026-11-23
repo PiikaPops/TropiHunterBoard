@@ -1,31 +1,42 @@
 {
-    "schemaVersion": 1,
-    "id": "hunterboard",
-    "version": "${version}",
-    "name": "HunterBoard",
-    "description": "Detects Pokemon from the Hunting Board and displays them as a HUD overlay with required Pokeballs",
-    "authors": ["HunterBoard Dev"],
-    "license": "MIT",
-    "environment": "client",
-    "entrypoints": {
-        "client": [
-            {
-                "adapter": "kotlin",
-                "value": "com.hunterboard.HunterBoard"
-            }
-        ]
-    },
-    "mixins": [
-        "hunterboard.mixins.json",
-        "hunterboard.tropimod.mixins.json"
+  "schemaVersion": 1,
+  "id": "hunterboard",
+  "version": "${version}",
+  "name": "HunterBoard",
+  "description": "Detects Pokemon from the Hunting Board and displays them as a HUD overlay with required Pokeballs",
+  "authors": [
+    "HunterBoard Dev"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "com.hunterboard.HunterBoard"
+      }
     ],
-    "depends": {
-        "fabricloader": ">=0.16.0",
-        "fabric-api": ">=0.100.0",
-        "fabric-language-kotlin": ">=1.10.0",
-        "minecraft": "~1.21.1"
-    },
-    "suggests": {
-        "cobblemon": ">=1.8.0"
-    }
+    "controlify": [
+      "com.hunterboard.controller.controlify.ControlifyCompat"
+    ]
+  },
+  "mixins": [
+    "hunterboard.mixins.json",
+    "hunterboard.tropimod.mixins.json",
+    "hunterboard.cobblemon.mixins.json",
+    "hunterboard.cobblemon.render.mixins.json",
+    "hunterboard.pc.mixins.json",
+    "hunterboard.controller.mixins.json",
+    "hunterboard.controlify.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": ">=0.100.0",
+    "fabric-language-kotlin": ">=1.10.0",
+    "minecraft": "~1.21.1"
+  },
+  "suggests": {
+    "cobblemon": ">=1.8.0",
+    "controlify": ">=3.0.0"
+  }
 }

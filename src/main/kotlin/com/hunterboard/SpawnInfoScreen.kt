@@ -25,6 +25,7 @@ class SpawnInfoScreen : ScaledScreen(Text.literal("Spawn Info")) {
 
     private var scrollOffset = 0
     private var contentHeight = 0
+
     private var modelWidgets: List<ModelWidget?> = emptyList()
     private var hoveredBiomeDetail: BiomeDetail? = null
     /** Habitat row under the cursor; its biomes are shown as a tooltip. */
@@ -206,12 +207,16 @@ class SpawnInfoScreen : ScaledScreen(Text.literal("Spawn Info")) {
         if (uncaughtCount > 0) {
             val chatHovered = mouseX >= chatBtnX && mouseX <= chatBtnX + chatBtnW &&
                               mouseY >= chatBtnY && mouseY <= chatBtnY + chatBtnH
+            if (UiKit.isModern) {
+                UiKit.button(context, textRenderer, chatBtnX, chatBtnY, chatBtnW, chatBtnH, chatLabel, chatHovered)
+            } else {
             val chatBg = if (chatHovered) 0xFF2A2A00.toInt() else UiKit.SURFACE
             context.fill(chatBtnX, chatBtnY, chatBtnX + chatBtnW, chatBtnY + chatBtnH, chatBg)
             val chatBorder = if (chatHovered) UiKit.accent() else UiKit.BORDER
             drawBorder(context, chatBtnX, chatBtnY, chatBtnW, chatBtnH, chatBorder)
             val chatColor = if (chatHovered) UiKit.accent() else UiKit.TEXT
             context.drawText(textRenderer, chatLabel, chatBtnX + 4, chatBtnY + 3, chatColor, true)
+            }
         }
 
         // Gold separator + shadow
@@ -688,7 +693,7 @@ class SpawnInfoScreen : ScaledScreen(Text.literal("Spawn Info")) {
         context.drawText(textRenderer, donorsText, donorsBtnX + 8, donorsBtnY + 4, 0xFFFFE066.toInt(), true)
 
         // Donate button (bottom-right, shifted 15% left)
-        val donateText: String = Translations.tr("Donate to _Popichu")
+        val donateText: String = Translations.tr("Donate to Popichu_")
         donateBtnW = textRenderer.getWidth(donateText) + 16
         donateBtnX = width - donateBtnW - 6 - (width * 15 / 100)
         donateBtnY = height - donateBtnH - 6

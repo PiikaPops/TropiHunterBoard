@@ -57,16 +57,37 @@ object PvpOverlay {
     // ─────────────────────────────────────────────────────────────────────────
     fun register() {
         HudRenderCallback.EVENT.register { context, _ ->
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             try { render(context) } catch (_: Exception) {}
         }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             try { handleDrag(client) } catch (_: Exception) {}
+            try { syncTick() } catch (_: Exception) {}
         }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Rendering
     // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Rebuilds the tracked battle state, once per tick.
+     *
+     * This used to run from [render], so it rebuilt both teams on every frame: for each
+     * Pokemon it allocated a fresh types list, four BattleMove objects, a held-item stack
+     * and a TrackedMon, and resolved several translated names. In a 6v6 that is on the
+     * order of a hundred objects a frame — some ten thousand a second at 100 fps — to
+     * reproduce data that only changes when the server sends a battle packet.
+     *
+     * Twenty times a second is already far faster than the battle itself moves, and the
+     * panel cannot show anything the server has not sent yet.
+     */
+    private fun syncTick() {
+        if (!ModConfig.pvpOverlayEnabled) return
+        if (!PvpDetector.pvpSessionActive) return
+        if (!BattleHelper.isInBattle()) return
+        BattleTracker.sync()
+    }
 
     private fun render(context: DrawContext) {
         if (!ModConfig.pvpOverlayEnabled) return
@@ -79,8 +100,7 @@ object PvpOverlay {
         wasInBattle = inBattle
         if (!inBattle || !PvpDetector.pvpSessionActive) return
 
-        // Sync battle state every frame
-        BattleTracker.sync()
+        // Battle state is refreshed on tick, not here — see syncTick below.
 
         val client = MinecraftClient.getInstance()
         val sw = client.window.scaledWidth

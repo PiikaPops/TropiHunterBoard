@@ -25,9 +25,7 @@ class HudPositionScreen(
     private var resizeStartH = 1
     private var resizeStartScale = 1f
 
-    private var originalHuntScale = 1f
-    private var originalRaidScale = 1f
-    private var originalMiracleScale = 1f
+    private var originalScales = FloatArray(0)
 
     // Snap-to-align
     private val SNAP_DIST = 7
@@ -39,21 +37,25 @@ class HudPositionScreen(
     private var originalHuntY: Int? = null
     private var originalRaidX: Int? = null
     private var originalRaidY: Int? = null
+    private var originalCardScale = 1f
     private var originalMiracleX: Int? = null
     private var originalMiracleY: Int? = null
 
     override fun init() {
         super.init()
-        originalHuntX = HuntOverlay.panelX
-        originalHuntY = HuntOverlay.panelY
-        originalRaidX = RaidTimerOverlay.panelX
-        originalRaidY = RaidTimerOverlay.panelY
-        originalMiracleX = MiracleOverlay.panelX
-        originalMiracleY = MiracleOverlay.panelY
-        originalHuntScale = ModConfig.huntScale()
-        originalRaidScale = ModConfig.raidScale()
-        originalMiracleScale = ModConfig.miracleScale()
+        // init() runs again on every window resize; only the first call holds the originals
+        if (originalScales.isEmpty()) {
+            originalHuntX = HuntOverlay.panelX
+            originalHuntY = HuntOverlay.panelY
+            originalRaidX = RaidTimerOverlay.panelX
+            originalRaidY = RaidTimerOverlay.panelY
+            originalMiracleX = MiracleOverlay.panelX
+            originalMiracleY = MiracleOverlay.panelY
+            originalScales = ModConfig.rawHudScales()
+            originalCardScale = ModConfig.raidCardScale
+        }
         HuntOverlay.forceVisible = true
+        RaidCard.editing = true   // a sample card, so it can be placed outside a raid
     }
 
     /** The three HUDs as (id, x, y, w, h), skipping the ones not on screen. */
@@ -70,6 +72,9 @@ class HudPositionScreen(
             intArrayOf(MiracleOverlay.renderedX, MiracleOverlay.renderedY,
                 MiracleOverlay.renderedW, MiracleOverlay.renderedH),
             ModConfig.miracleScale()))
+        if (RaidCard.renderedW > 0) list.add(Triple("raidcard",
+            intArrayOf(RaidCard.renderedX, RaidCard.renderedY, RaidCard.renderedW, RaidCard.renderedH),
+            ModConfig.raidCardScale))
         return list
     }
 
@@ -78,6 +83,7 @@ class HudPositionScreen(
             "hunt" -> ModConfig.setHuntScale(scale)
             "raid" -> ModConfig.setRaidScale(scale)
             "miracle" -> ModConfig.setMiracleScale(scale)
+            "raidcard" -> ModConfig.setRaidCardScale(scale)
         }
     }
 
@@ -129,22 +135,19 @@ class HudPositionScreen(
         context.drawText(textRenderer, resizeHint,
             (width - textRenderer.getWidth(resizeHint)) / 2, 22, 0xFFBBBBBB.toInt(), true)
 
-        // Confirm button centered on screen
-        val confirmLabel: String = Translations.tr("Confirm")
-        val btnW = textRenderer.getWidth(confirmLabel) + 20
-        val btnH = 20
-        val btnX = (width - btnW) / 2
-        val btnY = height / 2 - btnH / 2
+        // Confirm and Cancel, side by side in the middle of the screen
+        for ((label, box) in buttons()) {
+            val hovered = mouseX >= box[0] && mouseX <= box[0] + box[2] &&
+                          mouseY >= box[1] && mouseY <= box[1] + box[3]
+            UiKit.button(context, textRenderer, box[0], box[1], box[2], box[3], "", hovered)
+            val textColor = if (hovered) 0xFFFFFF00.toInt() else 0xFFFFFFFF.toInt()
+            context.drawText(textRenderer, label,
+                box[0] + (box[2] - textRenderer.getWidth(label)) / 2, box[1] + (box[3] - 8) / 2, textColor, true)
+        }
 
-        val btnHovered = mouseX >= btnX && mouseX <= btnX + btnW &&
-                         mouseY >= btnY && mouseY <= btnY + btnH
-
-        UiKit.button(context, textRenderer, btnX, btnY, btnW, btnH, "", btnHovered)
-
-        val textColor = if (btnHovered) 0xFFFFFF00.toInt() else 0xFFFFFFFF.toInt()
-        val textX = btnX + (btnW - textRenderer.getWidth(confirmLabel)) / 2
-        val textY = btnY + (btnH - 8) / 2
-        context.drawText(textRenderer, confirmLabel, textX, textY, textColor, true)
+        val escHint: String = Translations.tr("Esc also saves")
+        context.drawText(textRenderer, escHint,
+            (width - textRenderer.getWidth(escHint)) / 2, height / 2 + 14, 0xFFBBBBBB.toInt(), true)
 
         // Both HUDs render automatically via HudRenderCallback
         super.render(context, mouseX, mouseY, delta)
@@ -153,18 +156,11 @@ class HudPositionScreen(
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button)
 
-        // Confirm button
-        val confirmLabel: String = Translations.tr("Confirm")
-        val btnW = textRenderer.getWidth(confirmLabel) + 20
-        val btnH = 20
-        val btnX = (width - btnW) / 2
-        val btnY = height / 2 - btnH / 2
-
-        if (mouseX >= btnX && mouseX <= btnX + btnW &&
-            mouseY >= btnY.toDouble() && mouseY <= (btnY + btnH).toDouble()) {
-            saveAndClose()
-            return true
-        }
+        val (confirm, cancel) = buttons().map { it.second }
+        fun inside(b: IntArray) = mouseX >= b[0] && mouseX <= b[0] + b[2] &&
+            mouseY >= b[1].toDouble() && mouseY <= (b[1] + b[3]).toDouble()
+        if (inside(confirm)) { saveAndClose(); return true }
+        if (inside(cancel)) { restoreAndClose(); return true }
 
         // A corner handle wins over dragging the panel body
         for ((id, box, scale) in panels()) {
@@ -180,6 +176,15 @@ class HudPositionScreen(
                 resizeStartScale = scale
                 return true
             }
+        }
+
+        // The raid card
+        if (RaidCard.renderedW > 0 && mouseX >= RaidCard.renderedX && mouseX <= RaidCard.renderedX + RaidCard.renderedW &&
+            mouseY >= RaidCard.renderedY && mouseY <= RaidCard.renderedY + RaidCard.renderedH) {
+            draggingPanel = "raidcard"
+            dragOffsetX = (mouseX - RaidCard.renderedX).toInt()
+            dragOffsetY = (mouseY - RaidCard.renderedY).toInt()
+            return true
         }
 
         // Check click on hunt overlay
@@ -241,6 +246,15 @@ class HudPositionScreen(
                     HuntOverlay.panelX = sx.coerceIn(0, sw - HuntOverlay.renderedW) + 5
                     HuntOverlay.panelY = sy.coerceIn(0, sh - HuntOverlay.renderedH) + 5
                 }
+                "raidcard" -> {
+                    val rawX = (mouseX - dragOffsetX).toInt()
+                    val rawY = (mouseY - dragOffsetY).toInt()
+                    val (sx, gx) = snapAxis(rawX, RaidCard.renderedW, getRefX("raidcard", sw))
+                    val (sy, gy) = snapAxis(rawY, RaidCard.renderedH, getRefY("raidcard", sh))
+                    snapGuideX = gx; snapGuideY = gy
+                    RaidCard.dragX = sx.coerceIn(0, maxOf(0, sw - RaidCard.renderedW))
+                    RaidCard.dragY = sy.coerceIn(0, maxOf(0, sh - RaidCard.renderedH))
+                }
                 "raid" -> {
                     val rawX = (mouseX - dragOffsetX).toInt()
                     val rawY = (mouseY - dragOffsetY).toInt()
@@ -279,15 +293,30 @@ class HudPositionScreen(
         return super.mouseReleased(mouseX, mouseY, button)
     }
 
+    /** (label, [x, y, w, h]) of Confirm then Cancel, centred together. */
+    private fun buttons(): List<Pair<String, IntArray>> {
+        val confirm: String = Translations.tr("Confirm")
+        val cancel: String = Translations.tr("Cancel")
+        val cw = textRenderer.getWidth(confirm) + 20
+        val xw = textRenderer.getWidth(cancel) + 20
+        val h = 20
+        val gap = 6
+        val x = (width - cw - gap - xw) / 2
+        val y = height / 2 - h / 2
+        return listOf(confirm to intArrayOf(x, y, cw, h), cancel to intArrayOf(x + cw + gap, y, xw, h))
+    }
+
+    // Esc keeps what was done, as Minecraft's own option screens do. It used to throw
+    // the moves and resizes away, which looked exactly like settings that do not save.
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            restoreAndClose()
+            saveAndClose()
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    override fun close() = restoreAndClose()
+    override fun close() = saveAndClose()
 
     // ==================== Snap helpers ====================
 
@@ -296,13 +325,14 @@ class HudPositionScreen(
         "hunt"    -> HuntOverlay.renderedW.takeIf    { it > 0 }?.let { intArrayOf(HuntOverlay.renderedX,    HuntOverlay.renderedY,    HuntOverlay.renderedW,    HuntOverlay.renderedH) }
         "raid"    -> RaidTimerOverlay.renderedW.takeIf{ it > 0 }?.let { intArrayOf(RaidTimerOverlay.renderedX, RaidTimerOverlay.renderedY, RaidTimerOverlay.renderedW, RaidTimerOverlay.renderedH) }
         "miracle" -> MiracleOverlay.renderedW.takeIf  { it > 0 }?.let { intArrayOf(MiracleOverlay.renderedX,  MiracleOverlay.renderedY,  MiracleOverlay.renderedW,  MiracleOverlay.renderedH) }
+        "raidcard" -> RaidCard.renderedW.takeIf { it > 0 }?.let { intArrayOf(RaidCard.renderedX, RaidCard.renderedY, RaidCard.renderedW, RaidCard.renderedH) }
         else -> null
     }
 
     /** X reference lines: screen edges/center + edges/centers of other visible panels. */
     private fun getRefX(exclude: String, sw: Int): List<Int> {
         val refs = mutableListOf(0, sw / 2, sw)
-        for (p in listOf("hunt", "raid", "miracle")) {
+        for (p in listOf("hunt", "raid", "miracle", "raidcard")) {
             if (p == exclude) continue
             val b = getBoundsOf(p) ?: continue
             refs += listOf(b[0], b[0] + b[2] / 2, b[0] + b[2])
@@ -313,7 +343,7 @@ class HudPositionScreen(
     /** Y reference lines: screen edges/center + edges/centers of other visible panels. */
     private fun getRefY(exclude: String, sh: Int): List<Int> {
         val refs = mutableListOf(0, sh / 2, sh)
-        for (p in listOf("hunt", "raid", "miracle")) {
+        for (p in listOf("hunt", "raid", "miracle", "raidcard")) {
             if (p == exclude) continue
             val b = getBoundsOf(p) ?: continue
             refs += listOf(b[1], b[1] + b[3] / 2, b[1] + b[3])
@@ -356,11 +386,17 @@ class HudPositionScreen(
         if (mpx != null && mpy != null) ModConfig.setMiraclePosition(mpx, mpy)
         else ModConfig.resetMiraclePosition()
 
+        RaidCard.dragX?.let { x -> ModConfig.setRaidCardPosition(x, RaidCard.dragY ?: 0) }
+        RaidCard.dragX = null; RaidCard.dragY = null
+        RaidCard.editing = false
         HuntOverlay.forceVisible = false
         client?.setScreen(parent)
     }
 
     private fun restoreAndClose() {
+        RaidCard.dragX = null; RaidCard.dragY = null
+        RaidCard.editing = false
+        ModConfig.setRaidCardScale(originalCardScale)
         HuntOverlay.panelX = originalHuntX
         HuntOverlay.panelY = originalHuntY
         RaidTimerOverlay.panelX = originalRaidX
@@ -368,9 +404,7 @@ class HudPositionScreen(
         MiracleOverlay.panelX = originalMiracleX
         MiracleOverlay.panelY = originalMiracleY
         // sizes are cancelled too: a resize is applied live, like a move
-        ModConfig.setHuntScale(originalHuntScale)
-        ModConfig.setRaidScale(originalRaidScale)
-        ModConfig.setMiracleScale(originalMiracleScale)
+        ModConfig.restoreRawHudScales(originalScales)
         HuntOverlay.forceVisible = false
         client?.setScreen(parent)
     }

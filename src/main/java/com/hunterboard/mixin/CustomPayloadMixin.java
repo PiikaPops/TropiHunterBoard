@@ -1,5 +1,6 @@
 package com.hunterboard.mixin;
 
+import com.hunterboard.PlayerData;
 import com.hunterboard.TropiNotifications;
 import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.network.packet.CustomPayload;
@@ -10,7 +11,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Taps the server's notification channel.
+ * Taps the server's custom payloads: the notification channel, and the player data that
+ * carries the account's rank.
  *
  * Tropimon's announcements — hunt completions, miracles, item clears — travel on
  * `tropimon:show_notification_packet` instead of the chat, which is why three detectors
@@ -29,7 +31,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *    one cancels, so a default-priority injection here would still sit behind Fabric's.
  *    500 puts this first; Fabric then cancels as usual and its own routing is untouched.
  *
- * Only the channel name is borrowed from Tropimon; the payload is read reflectively,
+ * Only the channel names are borrowed from Tropimon; the payloads are read reflectively,
  * because the classes ship inside a proprietary mod's nested jars.
  */
 @Mixin(value = ClientCommonNetworkHandler.class, priority = 500)
@@ -53,6 +55,13 @@ public class CustomPayloadMixin {
         }
 
         TropiNotifications.noteChannel(channel);
+
+        // The same tap serves every Tropimon channel worth reading, not just notifications.
+        if (PlayerData.CHANNEL.equals(channel)) {
+            PlayerData.handlePayload(payload);
+            return;
+        }
+
         if (!NOTIFICATION_CHANNEL.equals(channel)) return;
 
         // getNotification() on Tropimon's ShowNotificationPayload

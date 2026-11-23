@@ -1,0 +1,14 @@
+{
+	"_comment": "Heads the generic rule cannot find. Key: species id path. Value: one entry per head, each listing bone names to try in order (the first present in the model wins), so regional forms with different rigs share one line. Bones missing from a model are skipped; if none match, the generic rule applies.",
+	"magneton": [["body"], ["body2"], ["body3"]],
+	"hydreigon": [["head"], ["hand_left"], ["hand_right"]],
+	"weezing": [["main_body_inflate", "main_body"], ["small_body"]],
+	"combee": [["bee_right"], ["bee_gender"], ["bee_left"]],
+	"falinks": [["torso1"], ["torso2"], ["torso3"], ["torso4"], ["torso5"], ["torso6"]],
+	"girafarig": [["head"], ["tail2"]],
+	"klink": [["gear1"], ["gear2"]],
+	"klang": [["gear3"], ["gear2"]],
+	"klinklang": [["gear3"], ["gear2"]],
+	"exeggutor": [["head"], ["head2"], ["head3"], ["tail5"]],
+	"skeledirge": [["head_top"]]
+}

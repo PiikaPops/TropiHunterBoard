@@ -1,0 +1,12 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.hunterboard.devmixin",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "DrawContextTextMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

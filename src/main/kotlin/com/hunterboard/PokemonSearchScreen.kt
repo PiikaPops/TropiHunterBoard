@@ -185,6 +185,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
 
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 37, panelWidth - 20, 16, Text.literal(placeholder))
+        UiKit.styleField(searchField, hint = placeholder.trimEnd('.', '…') + "…")
         searchField.setMaxLength(50)
         searchField.text = savedQuery
         lastQuery = savedQuery
@@ -256,10 +257,10 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         // Sort
         filteredList = when (sortMode) {
             SortMode.POKEDEX -> list
-            SortMode.ALPHABETICAL -> list.sortedBy { entry ->
+            SortMode.ALPHABETICAL -> NameUtil.sortedByName(list) { entry ->
                 when (entry) {
-                    is PokemonEntry.Regular -> Translations.speciesDisplayName(entry.species).lowercase()
-                    is PokemonEntry.Mega -> Translations.speciesDisplayName(entry.species).lowercase()
+                    is PokemonEntry.Regular -> Translations.speciesDisplayName(entry.species)
+                    is PokemonEntry.Mega -> Translations.speciesDisplayName(entry.species)
                 }
             }
             SortMode.TYPE -> list
@@ -281,6 +282,9 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
 
         // Panel + header band
         UiKit.panel(context, panelX, panelTop, panelWidth, panelHeight)
+        // What the icon-only buttons do, shown under the pointer (new interface only)
+        var tip: String? = null
+        val fr = Translations.isFrench()
         val title: String = if (showingHistory) Translations.tr("History") else Translations.tr("Pok\u00e9mon Search")
         UiKit.header(context, textRenderer, panelX, panelTop, panelWidth, title)
 
@@ -296,6 +300,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
                          mouseY >= optBtnY && mouseY <= optBtnY + optBtnSize
         UiKit.button(context, textRenderer, optBtnX, optBtnY, optBtnSize, optBtnSize, "", optHovered)
         context.drawTexture(OPTIONS_ICON, optBtnX + 4, optBtnY + 4, 0f, 0f, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8, optBtnSize - 8)
+        if (optHovered) tip = "Options"
 
         // History toggle button (right side of header, before ✕)
         val btnLabel: String = if (showingHistory) Translations.tr("All") else Translations.tr("History")
@@ -305,6 +310,8 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         val btnH = 12
         val btnHovered = mouseX >= btnX && mouseX <= btnX + btnW && mouseY >= btnY && mouseY <= btnY + btnH
         UiKit.button(context, textRenderer, btnX, btnY, btnW, btnH, btnLabel, btnHovered, showingHistory)
+        if (btnHovered) tip = if (showingHistory) (if (fr) "Revenir à tous les Pokémon" else "Back to every Pokémon")
+                              else (if (fr) "Les Pokémon consultés récemment" else "Recently viewed Pokémon")
 
         // Tabs: Pokémon | Capacités | Talents | Objets
         val pokemonLabel: String = Translations.tr("Pokémon")
@@ -351,6 +358,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         langBtnY = tY
         val langHovered = mouseX in langBtnX..(langBtnX + langBtnW) && mouseY in langBtnY..(langBtnY + langBtnH)
         UiKit.button(context, textRenderer, langBtnX, langBtnY, langBtnW, langBtnH, langLabel, langHovered)
+        if (langHovered) tip = if (fr) "Langue des noms" else "Language of the names"
 
         // Sort button (left of language button)
         val sortLabel = when (sortMode) {
@@ -363,6 +371,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         sortBtnY = tY
         val sortHovered = mouseX in sortBtnX..(sortBtnX + sortBtnW) && mouseY in sortBtnY..(sortBtnY + sortBtnH)
         UiKit.button(context, textRenderer, sortBtnX, sortBtnY, sortBtnW, sortBtnH, sortLabel, sortHovered, showSortDropdown)
+        if (sortHovered) tip = if (fr) "Trier : numéro, nom ou type" else "Sort: number, name or type"
 
         // Sprite toggle button (left of sort button)
         val spriteLabel = if (showSprites) "\u25A3" else "\u25A2" // filled/empty square icon
@@ -371,6 +380,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         spriteBtnY = tY
         val spriteHovered = mouseX in spriteBtnX..(spriteBtnX + spriteBtnW) && mouseY in spriteBtnY..(spriteBtnY + spriteBtnH)
         UiKit.button(context, textRenderer, spriteBtnX, spriteBtnY, spriteBtnW, spriteBtnH, spriteLabel, spriteHovered, showSprites)
+        if (spriteHovered) tip = if (fr) "Afficher les sprites dans la liste" else "Show sprites in the list"
 
         // Results area (higher when search bar is hidden in history mode)
         val resultsTop = if (showingHistory) panelTop + 37 else panelTop + 59
@@ -397,6 +407,8 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
                     // The keyboard selection is drawn exactly like hover, so there is one
                     // visual language for "this is the row you are about to open".
                     val hovered = pointedAt || index == selectedIndex
+
+                    UiKit.rowStripe(context, panelX + 6, y, panelWidth - 12, rowHeight, (y - resultsTop + scrollOffset) / rowHeight)
 
                     if (hovered) {
                         UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
@@ -523,6 +535,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
             Translations.tr("\u2191\u2193 browse  \u2022  Enter to open  \u2022  ESC to close"))
 
         // Render search field and other widgets
+        UiKit.fieldBackground(context, searchField)
         renderWidgets(context, mouseX, mouseY, delta)
 
         // Donors button (bottom-left of screen)
@@ -535,7 +548,7 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         UiKit.goldButton(context, textRenderer, donorsBtnX, donorsBtnY, donorsBtnW, donorsBtnH, donorsText, donorsHovered)
 
         // Donate button (bottom-right, shifted 15% left)
-        val donateText: String = Translations.tr("Donate to _Popichu")
+        val donateText: String = Translations.tr("Donate to Popichu_")
         donateBtnW = textRenderer.getWidth(donateText) + 16
         donateBtnX = width - donateBtnW - 6 - (width * 15 / 100)
         donateBtnY = height - donateBtnH - 6
@@ -553,6 +566,8 @@ class PokemonSearchScreen : ScaledScreen(Text.literal("Pokemon Search")) {
         // Sort dropdown (rendered last to be on top of everything)
         if (showSortDropdown) {
             renderSortDropdown(context, mouseX, mouseY)
+        } else if (UiKit.isModern && tip != null) {
+            context.drawTooltip(textRenderer, Text.literal(tip), mouseX, mouseY)
         }
     }
 
