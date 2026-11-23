@@ -3,5 +3,16 @@
     "key.hunterboard.info": "Ouvrir les Infos d'Apparition",
     "key.hunterboard.search": "Rechercher un Pokémon",
     "key.hunterboard.cycle_mode": "Changer le mode d'affichage du HUD",
-    "category.hunterboard": "HunterBoard"
+    "category.hunterboard": "HunterBoard",
+    "controlify.hunterboard.category": "HunterBoard (Cobblemon)",
+    "controlify.hunterboard.cobblemon_send": "Envoyer / interagir",
+    "controlify.hunterboard.cobblemon_send.desc": "La touche « lancer le Pokémon » de Cobblemon : envoie ou rappelle le Pokémon sélectionné, lance un combat, et ouvre la roue d'interaction en visant un joueur.",
+    "controlify.hunterboard.party_next": "Pokémon suivant de l'équipe",
+    "controlify.hunterboard.party_next.desc": "Sélectionne le Pokémon suivant de l'équipe (touche « décaler vers le bas » de Cobblemon).",
+    "controlify.hunterboard.party_prev": "Pokémon précédent de l'équipe",
+    "controlify.hunterboard.party_prev.desc": "Sélectionne le Pokémon précédent de l'équipe (touche « décaler vers le haut » de Cobblemon).",
+    "controlify.hunterboard.summary": "Résumé des Pokémon",
+    "controlify.hunterboard.summary.desc": "Ouvre le résumé de l'équipe de Cobblemon.",
+    "controlify.hunterboard.pokenav": "Pokédex",
+    "controlify.hunterboard.pokenav.desc": "Ouvre le Pokédex de Cobblemon (touche PokéNav)."
 }

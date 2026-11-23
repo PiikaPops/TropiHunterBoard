@@ -56,6 +56,12 @@ object KeyBindings {
                 BoardState.hudVisible = !BoardState.hudVisible
                 val state = if (BoardState.hudVisible) "ON" else "OFF"
                 HunterBoard.LOGGER.info("HunterBoard HUD: $state")
+                // Say so on screen: a HUD hidden by an accidental key press looks exactly like
+                // a HUD that broke.
+                val keyName = toggleHudKey.boundKeyLocalizedText.string
+                val msg = if (BoardState.hudVisible) Translations.tr("HunterBoard HUD shown")
+                          else "${Translations.tr("HunterBoard HUD hidden")} ($keyName)"
+                client.inGameHud.setOverlayMessage(net.minecraft.text.Text.literal(msg), false)
             }
 
             if (spawnInfoKey.wasPressed()) {

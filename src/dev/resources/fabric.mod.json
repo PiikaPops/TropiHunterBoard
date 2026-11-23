@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "hunterboard_dev",
+  "version": "1.0.0",
+  "name": "HunterBoard development tools",
+  "description": "UiTour and WikiAudit, for `gradlew runClient` only: never part of the released jar.",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "com.hunterboard.DevTools"
+      }
+    ]
+  },
+  "mixins": [
+    "hunterboard_dev.mixins.json"
+  ],
+  "depends": {
+    "hunterboard": "*"
+  }
+}

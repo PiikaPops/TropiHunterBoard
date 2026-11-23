@@ -30,6 +30,17 @@ object RaidTimerOverlay {
         LocalTime.of(21, 30)
     )
 
+    /**
+     * The scheduled raid closest to [nowMillis], as epoch milliseconds, when it is less than
+     * [withinMs] away; null for a raid a player triggered outside the timetable.
+     */
+    fun scheduledRaidNear(nowMillis: Long, withinMs: Long): Long? {
+        val now = java.time.Instant.ofEpochMilli(nowMillis).atZone(ZONE)
+        return (-1L..1L).flatMap { d -> RAID_TIMES.map { now.toLocalDate().plusDays(d).atTime(it).atZone(ZONE).toInstant().toEpochMilli() } }
+            .minByOrNull { kotlin.math.abs(it - nowMillis) }
+            ?.takeIf { kotlin.math.abs(it - nowMillis) <= withinMs }
+    }
+
     // Panel position (null = auto center-top)
     var panelX: Int? = null
     var panelY: Int? = null
@@ -64,6 +75,7 @@ object RaidTimerOverlay {
             handleChat(message.string)
         }
         HudRenderCallback.EVENT.register { context, _ ->
+            if (HudLayoutManager.hiddenByPlayer()) return@register
             try { render(context) } catch (_: Exception) {}
         }
     }

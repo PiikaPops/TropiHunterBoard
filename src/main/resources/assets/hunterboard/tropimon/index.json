@@ -1,0 +1,41 @@
+{
+  "_comment": "Dataset du serveur Tropimon, tire du modpack client (habitat pools : mod tropifurnitures ; spawn pools : mod tropimod). 'replace' = Cobblemon livre un fichier au meme chemin et le datapack le remplace entierement ; 'add' = fichier nouveau, ses spawns s'ajoutent. Les herds/ sont installes a plat. Regenere par C:/tmp/cb18/install_modpack.py contre le jar Cobblemon du modpack. Les habitat pools ne sont plus embarques : HabitatFeed les telecharge depuis le relais (tools/extract_habitats.py -> habitats.json -> GET /habitats).",
+  "source": {
+    "cobblemon": "1.8.4+1.21.1",
+    "tropimod": "1.0.0",
+    "tropifurnitures": "1.0.0"
+  },
+  "spawn_pool_world": {
+    "replace": [
+      "0014_kakuna.json",
+      "0023_ekans.json",
+      "0041_zubat.json",
+      "0048_venonat.json",
+      "0054_psyduck.json",
+      "0072_tentacool.json",
+      "0074_geodude.json",
+      "0090_shellder.json",
+      "0092_gastly.json",
+      "0129_magikarp.json",
+      "0147_dratini.json",
+      "0148_dragonair.json",
+      "0167_spinarak.json",
+      "0194_wooper.json",
+      "0211_qwilfish.json",
+      "0293_whismur.json",
+      "0355_duskull.json",
+      "0725_litten.json",
+      "0726_torracat.json",
+      "0727_incineroar.json",
+      "0725_litten_herd.json"
+    ],
+    "add": [
+      "tropimon_fillers_grounded.json",
+      "tropimon_fillers_nether.json",
+      "tropimon_fillers_soul_sand_valley.json",
+      "tropimon_fillers_submerged.json",
+      "tropimon_fillers_surface.json",
+      "tropimon_fillers_treetop.json"
+    ]
+  }
+}

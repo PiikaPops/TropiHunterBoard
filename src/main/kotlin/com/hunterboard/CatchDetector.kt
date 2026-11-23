@@ -36,10 +36,33 @@ object CatchDetector {
     private var lastMatchTime: Long = 0L
     private const val MATCH_COOLDOWN_MS = 3_000L
 
+    /** Title of the hunt-completed notification; carries the species and the ball. */
+    private const val HUNT_TITLE_KEY = "gui.tropimod.notification.hunt.title"
+    /** Renderer of the capture notification; its data map carries the caught Pokemon. */
+    private const val CAPTURE_RENDERER = "tropimon:pokemon_capture"
+    private val SPECIES_KEY_REGEX = Regex("""cobblemon\.species\.(.+)\.name""")
+    private val BALL_KEY_REGEX = Regex("""item\.cobblemon\.(.+)""")
+
     // "Your party was full! Pikachu has been added to Your PC."
     private val PC_EN_REGEX = Regex("""Your (?:party|team) (?:was|is) full! (.+) (?:has been |was )added to [Yy]our PC\.""")
     // "Votre équipe est pleine ! Crabicoque a été ajouté(e) à votre PC."
     private val PC_FR_REGEX = Regex("""Votre équipe est pleine ! (.+) a été ajouté(?:e)? à votre PC\.""")
+
+    /**
+     * Forget the tracked party when leaving a world.
+     *
+     * Party monitoring works by diffing UUIDs against the previous tick. Carrying that set
+     * into another world means every Pokemon in the new party reads as a fresh arrival,
+     * which is a catch signal — so a world change could mark hunts as caught on its own.
+     */
+    fun resetSession() {
+        knownUuids.clear()
+        initialized = false
+        tickSkip = 0
+        pendingCatch = null
+        pendingCompletionTime = null
+        lastMatchTime = 0L
+    }
 
     fun register() {
         // Signal 1a: Party monitoring — detects new Pokémon in party
@@ -102,6 +125,16 @@ object CatchDetector {
             }
         }
 
+        // Signal 2 (new): the completion announcement is a notification now, not a chat
+        // message. It is also a better signal than the old text ever was — it names the
+        // species and the ball outright, so no guessing is needed.
+        TropiNotifications.onNotification { notif ->
+            when {
+                notif.titleKey == HUNT_TITLE_KEY -> onCompletionNotification(notif)
+                notif.rendererId == CAPTURE_RENDERER -> onCaptureNotification(notif)
+            }
+        }
+
         HunterBoard.LOGGER.info("CatchDetector registered (dual-signal: catch + completion)")
     }
 
@@ -132,6 +165,51 @@ object CatchDetector {
         // Store as pending catch, wait for the completion message
         pendingCatch = PendingCatch(speciesId, ballId, now)
         HunterBoard.LOGGER.info("CatchDetector: catch pending — $speciesId (waiting for completion message)")
+    }
+
+    /**
+     * The hunt-completed notification, which states what was caught.
+     *
+     * When the species is a target and still uncaught, this is enough on its own: the
+     * server would not announce the completion otherwise. The old two-signal dance is
+     * only needed when the species cannot be read, which should not happen.
+     */
+    private fun onCompletionNotification(notif: TropiNotifications.Notif) {
+        val speciesId = notif.descArgKeys
+            .firstNotNullOfOrNull { SPECIES_KEY_REGEX.find(it)?.groupValues?.get(1) }
+        val ballId = notif.descArgKeys
+            .firstNotNullOfOrNull { BALL_KEY_REGEX.find(it)?.groupValues?.get(1) }
+
+        if (speciesId == null) {
+            HunterBoard.LOGGER.info("CatchDetector: hunt notification without a species, falling back")
+            onCompletionMessage()
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastMatchTime < MATCH_COOLDOWN_MS) return
+
+        val uncaught = BoardState.targets.take(ModConfig.maxHunts()).filter { !it.isCaught }
+        if (uncaught.any { it.speciesId == speciesId }) {
+            pendingCatch = null
+            pendingCompletionTime = null
+            confirmMatch(speciesId, ballId, "hunt-notification")
+        } else {
+            HunterBoard.LOGGER.info("CatchDetector: hunt notification for $speciesId, not an open target")
+        }
+    }
+
+    /**
+     * The capture notification, which took over from the "added to your PC" chat line.
+     *
+     * Party monitoring already sees a catch that lands in the party; this covers the case
+     * it cannot see, a full party sending the Pokemon straight to the PC.
+     */
+    private fun onCaptureNotification(notif: TropiNotifications.Notif) {
+        val raw = notif.data["species"] ?: return
+        val speciesId = raw.substringAfter(":").lowercase()
+        HunterBoard.LOGGER.info("CatchDetector: capture notification — $speciesId")
+        onCatchDetected(speciesId, null)
     }
 
     /**

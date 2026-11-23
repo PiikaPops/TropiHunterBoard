@@ -3,5 +3,16 @@
     "key.hunterboard.info": "Open Spawn Info",
     "key.hunterboard.search": "Search Pokémon",
     "key.hunterboard.cycle_mode": "Cycle HUD Display Mode",
-    "category.hunterboard": "HunterBoard"
+    "category.hunterboard": "HunterBoard",
+    "controlify.hunterboard.category": "HunterBoard (Cobblemon)",
+    "controlify.hunterboard.cobblemon_send": "Send out / interact",
+    "controlify.hunterboard.cobblemon_send.desc": "Cobblemon's \"throw party Pokémon\" key: sends out or recalls the selected Pokémon, starts a battle, and opens the interaction wheel when aiming at a player.",
+    "controlify.hunterboard.party_next": "Next party Pokémon",
+    "controlify.hunterboard.party_next.desc": "Selects the next Pokémon of the party (Cobblemon's \"down shift\" key).",
+    "controlify.hunterboard.party_prev": "Previous party Pokémon",
+    "controlify.hunterboard.party_prev.desc": "Selects the previous Pokémon of the party (Cobblemon's \"up shift\" key).",
+    "controlify.hunterboard.summary": "Pokémon summary",
+    "controlify.hunterboard.summary.desc": "Opens Cobblemon's summary of the party.",
+    "controlify.hunterboard.pokenav": "Pokédex",
+    "controlify.hunterboard.pokenav.desc": "Opens Cobblemon's Pokédex (PokéNav key)."
 }

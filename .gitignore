@@ -14,3 +14,5 @@ bin/
 Tropicosmetics.jar
 TropimodClient-1.0.0+1.21.1.jar
 TropimonBuild-1.0.0+1.21.1.jar
+releases/
+*.zip

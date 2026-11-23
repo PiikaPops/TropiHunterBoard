@@ -1,0 +1,15 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.hunterboard.mixin.controlify",
+    "plugin": "com.hunterboard.controller.ControlifyMixinPlugin",
+    "compatibilityLevel": "JAVA_21",
+    "client": [
+        "ScreenSnapMixin",
+        "ControlifyLookMixin",
+        "ShulkerPreviewMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

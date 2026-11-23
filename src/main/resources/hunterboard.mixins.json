@@ -4,7 +4,10 @@
     "package": "com.hunterboard.mixin",
     "compatibilityLevel": "JAVA_21",
     "client": [
-        "ChatHudMixin"
+        "ChatHudMixin",
+        "CustomPayloadMixin",
+        "InGameHudMixin",
+        "BossBarHudAccessor"
     ],
     "injectors": {
         "defaultRequire": 1

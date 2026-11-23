@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -15,6 +16,52 @@ object HunterBoard : ClientModInitializer {
 
     override fun onInitializeClient() {
         LOGGER.info("HunterBoard initializing...")
+
+        // Spawn pools, habitats, baits and biome tags all come from the server.
+        // Drop them on disconnect so they cannot leak into the next world.
+        ClientPlayConnectionEvents.DISCONNECT.register { _, _ ->
+            SpawnData.invalidate()
+            HabitatData.invalidate()
+            HabitatStructures.invalidate()
+            TmData.invalidate()
+            BiomeTagResolver.clearCache()
+
+            // Session state, as opposed to data caches: these describe the world just
+            // left, and carrying them into the next one is wrong rather than merely
+            // stale. BoardState is deliberately not among them — the hunting board is
+            // saved to disk on purpose, so it survives restarts and world changes.
+            CatchDetector.resetSession()
+            ClearWarningOverlay.resetSession()
+            // The rank read off the server describes the account on *that* network.
+            // ModConfig.rank keeps the last detected value, which is what the HUD needs;
+            // only the belief that it is current is dropped here.
+            PlayerData.resetSession()
+            // A battle interrupted by a disconnect has no end packet, so the half-built
+            // replay is dropped rather than written out as if the match had finished.
+            com.hunterboard.replay.ReplayRecorder.reset()
+            BattleHuntOverlay.invalidateCache()
+        }
+
+        // Miracles are network-wide on Tropimon, which runs several servers behind one
+        // proxy, so they must survive a hop between them and only be dropped on joining
+        // somewhere else. That is a question about the server being joined, so it is
+        // answered on JOIN rather than on DISCONNECT.
+        ClientPlayConnectionEvents.JOIN.register { _, _, _ ->
+            MiracleOverlay.onJoin()
+            // Hunts belong to an account. The session may not have been readable when the
+            // board was first loaded at init, and account-switcher mods can change it while
+            // the game runs; both are settled here, before the first frame of the world.
+            BoardState.ensureAccount()
+        }
+
+        // Client-side commands for replay publishing (/hbreplay)
+        com.hunterboard.replay.ReplayCommands.register()
+
+        // Wide locator bar across the top, fed by Tropimon's radar
+        LocatorBar.register()
+
+        // Christmas easter egg: Santa hats on every Pokémon, 20–25 December
+        ChristmasHats.register()
 
         // Register mod sounds
         ModSounds.register()
@@ -53,11 +100,24 @@ object HunterBoard : ClientModInitializer {
         // Register radar enhancer (replaces TropiMod's PokeRadar screen)
         RadarEnhancer.register()
 
+        // HunterBoard's PC: a "HunterBoard view" button in Cobblemon's PC
+        com.hunterboard.pc.HunterPc.register()
+
+        // Tropimon's habitat pools, from the relay (no longer shipped in the jar)
+        HabitatFeed.register()
+
         // Filter raid chat messages
         ChatFilter.register()
 
         // Register auto-catch detection
         CatchDetector.register()
+
+        // Capture filters: release the captures that fail theirs (/hbfilter)
+        CaptureFilters.ensureLoaded()
+        AutoRelease.register()
+
+        // Raid card: the boss, its weaknesses and the countdown to the start
+        RaidCard.register()
 
         // Register clear warning overlay
         ClearWarningOverlay.register()

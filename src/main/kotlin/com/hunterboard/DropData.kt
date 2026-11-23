@@ -2,6 +2,8 @@ package com.hunterboard
 
 import com.cobblemon.mod.common.api.drop.ItemDropEntry
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
+import net.minecraft.item.Items
+import net.minecraft.registry.Registries
 import net.minecraft.util.Identifier
 
 data class ItemDropper(
@@ -18,6 +20,14 @@ object DropData {
     @Volatile var reverseIndexReady = false
         private set
 
+    /**
+     * Whether a drop names an item that exists. Cobblemon's own species data has a few that
+     * do not (Deoxys's `minecraft:eye_of_ender` for `ender_eye`, Entei and Ho-Oh's
+     * `cobblemon:sacred_ash`): the game turns them into air, and the server, reading the
+     * same data, drops nothing either. The wiki showed them as an "Air" drop.
+     */
+    fun isRealItem(id: Identifier): Boolean = Registries.ITEM.containsId(id) && Registries.ITEM.get(id) != Items.AIR
+
     fun buildReverseIndex() {
         if (reverseDropIndex != null) return
         try {
@@ -28,12 +38,14 @@ object DropData {
 
             val index = mutableMapOf<String, MutableList<ItemDropper>>()
             val itemIds = mutableSetOf<Identifier>()
+            val skipped = sortedSetOf<String>()
 
             for (species in PokemonSpecies.implemented) {
                 val speciesId = species.resourceIdentifier.path
                 try {
                     for (entry in species.drops.entries) {
-                        if (entry is ItemDropEntry) {
+                        if (entry is ItemDropEntry && !isRealItem(entry.item)) skipped += "${entry.item} ($speciesId)"
+                        if (entry is ItemDropEntry && isRealItem(entry.item)) {
                             val itemId = entry.item.toString()
                             val qty = entry.quantityRange
                             val qMin = qty?.first ?: entry.quantity
@@ -53,6 +65,7 @@ object DropData {
             allDroppableItems = itemIds.toList().sortedBy { it.toString() }
             reverseIndexReady = true
             HunterBoard.LOGGER.info("Built drop reverse index: ${index.size} items")
+            if (skipped.isNotEmpty()) HunterBoard.LOGGER.info("Drops naming no existing item, left out: ${skipped.joinToString()}")
         } catch (e: Exception) {
             HunterBoard.LOGGER.error("Failed to build drop reverse index: ${e.message}")
             reverseDropIndex = emptyMap()

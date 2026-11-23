@@ -8,7 +8,7 @@ import net.minecraft.text.Text
 import net.minecraft.util.Identifier
 import org.lwjgl.glfw.GLFW
 
-class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
+class AbilitySearchScreen : ScaledScreen(Text.literal("Ability Search")) {
 
     companion object {
         var savedScrollOffset = 0
@@ -38,6 +38,8 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
     private var abilitiesTabW = 0
     private var itemsTabX = 0
     private var itemsTabW = 0
+    private var habitatsTabX = 0
+    private var habitatsTabW = 0
     private val tabH = 12
 
     // Language toggle button bounds
@@ -68,6 +70,7 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
 
         val placeholder: String = Translations.tr("Search")
         searchField = TextFieldWidget(textRenderer, panelX + 10, panelTop + 37, panelWidth - 20, 16, Text.literal(placeholder))
+        UiKit.styleField(searchField, hint = placeholder.trimEnd('.', '…') + "…")
         searchField.setMaxLength(50)
         searchField.text = savedQuery
         lastQuery = savedQuery
@@ -90,8 +93,8 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
             } catch (_: Exception) { NameUtil.matchesQuery(ability.name, query) }
         }
 
-        filteredAbilities = searched.sortedBy {
-            try { Text.translatable(it.displayName).string.lowercase() } catch (_: Exception) { it.name }
+        filteredAbilities = NameUtil.sortedByName(searched) {
+            try { Text.translatable(it.displayName).string } catch (_: Exception) { it.name }
         }
         if (query != lastQuery) {
             scrollOffset = 0
@@ -102,7 +105,7 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
     // Track if we need to refresh when index finishes loading
     private var lastIndexReady = false
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         // Re-apply filter once the index finishes building
         if (AbilityData.reverseIndexReady && !lastIndexReady) {
             lastIndexReady = true
@@ -142,14 +145,17 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
         val movesLabel: String = Translations.tr("Moves")
         val abilitiesLabel: String = Translations.tr("Abilities")
         val itemsLabel: String = Translations.tr("Items")
+        val habitatsLabel: String = Translations.tr("Habitats")
         pokemonTabW = textRenderer.getWidth(pokemonLabel) + 8
         movesTabW = textRenderer.getWidth(movesLabel) + 8
         abilitiesTabW = textRenderer.getWidth(abilitiesLabel) + 8
         itemsTabW = textRenderer.getWidth(itemsLabel) + 8
+        habitatsTabW = textRenderer.getWidth(habitatsLabel) + 8
         pokemonTabX = panelX + 8
         movesTabX = pokemonTabX + pokemonTabW + 2
         abilitiesTabX = movesTabX + movesTabW + 2
         itemsTabX = abilitiesTabX + abilitiesTabW + 2
+        habitatsTabX = itemsTabX + itemsTabW + 2
         val tY = panelTop + 20
 
         // Pokemon tab (inactive)
@@ -166,6 +172,11 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
         // Items tab (inactive)
         val itemTabHovered = mouseX in itemsTabX..(itemsTabX + itemsTabW) && mouseY in tY..(tY + tabH)
         UiKit.tab(context, textRenderer, itemsTabX, tY, itemsTabW, tabH, itemsLabel, false, itemTabHovered)
+
+
+        // Habitats tab (inactive)
+        val habitatTabHovered = mouseX in habitatsTabX..(habitatsTabX + habitatsTabW) && mouseY in tY..(tY + tabH)
+        UiKit.tab(context, textRenderer, habitatsTabX, tY, habitatsTabW, tabH, habitatsLabel, false, habitatTabHovered)
 
         // Language toggle button
         val langLabel = Translations.nameLanguageLabel()
@@ -188,7 +199,7 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
 
         context.fill(panelX + 6, resultsTop - 2, panelX + panelWidth - 6, resultsTop - 1, UiKit.BORDER_DIM)
 
-        context.enableScissor(panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
+        scissor(context, panelX + 1, resultsTop, panelX + panelWidth - 1, resultsBottom)
 
         if (!AbilityData.reverseIndexReady) {
             val loadingText: String = Translations.tr("Loading...")
@@ -204,6 +215,8 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
                     val hovered = mouseX >= panelX + 6 && mouseX <= panelX + panelWidth - 6 &&
                                   mouseY in y..(y + rowHeight) &&
                                   mouseY >= resultsTop && mouseY <= resultsBottom
+
+                    UiKit.rowStripe(context, panelX + 6, y, panelWidth - 12, rowHeight, (y - resultsTop + scrollOffset) / rowHeight)
 
                     if (hovered) {
                         UiKit.rowHighlight(context, panelX + 6, y, panelWidth - 12, rowHeight)
@@ -245,10 +258,12 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
                 val hint: String = Translations.tr("ESC to close  \u2022  Click for details")
         UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth, hint)
 
-        super.render(context, mouseX, mouseY, delta)
+        UiKit.fieldBackground(context, searchField)
+
+        renderWidgets(context, mouseX, mouseY, delta)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             val panelWidth = (width * 0.55).toInt().coerceIn(260, 450)
             val panelX = (width - panelWidth) / 2
@@ -298,6 +313,14 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
                 return true
             }
 
+
+            // Habitats tab click
+            if (mouseX >= habitatsTabX && mouseX <= habitatsTabX + habitatsTabW &&
+                mouseY >= tY.toDouble() && mouseY <= (tY + tabH).toDouble()) {
+                client?.setScreen(HabitatSearchScreen())
+                return true
+            }
+
             // Scrollbar click
             val contentHeight = filteredAbilities.size * rowHeight + 4
             val resultsTop = panelTop + 59
@@ -338,10 +361,10 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val panelTop = 25
             val resultsTop = panelTop + 59
@@ -358,15 +381,15 @@ class AbilitySearchScreen : Screen(Text.literal("Ability Search")) {
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 25
         val resultsTop = panelTop + 59
         val resultsBottom = height - 25 - 16

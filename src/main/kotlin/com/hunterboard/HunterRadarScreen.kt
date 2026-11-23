@@ -4,6 +4,8 @@ import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import com.cobblemon.mod.common.pokemon.Species
 import net.minecraft.client.MinecraftClient
+import com.cobblemon.mod.common.api.spawning.BestSpawner
+import com.cobblemon.mod.common.api.spawning.detail.SpawnDetail
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
 import net.minecraft.text.Text
@@ -17,7 +19,7 @@ import org.lwjgl.glfw.GLFW
 class HunterRadarScreen(
     initialSlots: List<RadarSlot>,
     internal var tropiScreen: Any?
-) : Screen(Text.literal("Pokéradar")) {
+) : ScaledScreen(Text.literal("Pokéradar")) {
 
     data class RadarSlot(val species: Species, val pct: Float)
 
@@ -42,17 +44,61 @@ class HunterRadarScreen(
         const val BTN_W     = 46
         const val BTN_H     = 14
         const val BTN_GAP   = 2
+        /** Width inside the Tropimon frame: banner margin + grid + gap + scroll track and frame. */
+        val SKIN_W          = RadarSkin.GRID_X + GRID_W + 4 + RadarSkin.TRACK_FROM_RIGHT   // 467
     }
+
+    /** The official Tropimon radar frame when its textures are installed, the HunterBoard theme otherwise. */
+    private val skin = RadarSkin.available()
+
+    /** Where the scan was made, shown in the title strip like the Tropimon radar does. */
+    private val scanPos = MinecraftClient.getInstance().player?.blockPos
 
     // ── Dynamic layout — 30%–80% screen height, vertically centred ───────────
     private val HEADER_H      = 22
-    private val panelH        get() = (HEADER_H + 6 + contentH)
-        .coerceIn((height * 0.30f).toInt(), (height * 0.80f).toInt())
-    private val panelX        get() = (width  - PANEL_W) / 2
+    private val panelW        get() = if (skin) SKIN_W else PANEL_W
+    private val headH         get() = if (skin) RadarSkin.CONTENT_TOP else HEADER_H
+    private val footH         get() = if (skin) RadarSkin.CONTENT_BOTTOM else 6
+    // the frame's chrome is 41 px taller than the theme's header, so it may use a bit more of the screen
+    private val panelH: Int   get() {
+        val minH = if (skin) maxOf(RadarSkin.MIN_H, (height * 0.30f).toInt()) else (height * 0.30f).toInt()
+        val maxH = (height * (if (skin) 0.90f else 0.80f)).toInt()
+        return (headH + footH + contentH).coerceIn(minH, maxOf(minH, maxH))
+    }
+
+    /** Tropimon's fine print (uniform font, half-size coordinates) needs 2 real pixels per GUI pixel. */
+    private val finePrint get() = (client?.window?.scaleFactor ?: 1.0) * uiFactor >= 2.0
+    private val panelX        get() = (width  - panelW) / 2
     private val panelY        get() = (height - panelH)  / 2
-    private val contentTop    get() = panelY + HEADER_H
-    private val contentAreaH  get() = panelH - HEADER_H - 6
+    private val contentTop    get() = panelY + headH
+    private val contentAreaH  get() = panelH - headH - footH
     private val contentBottom get() = contentTop + contentAreaH
+
+    private fun gridLeftOf(pX: Int) = pX + if (skin) RadarSkin.GRID_X else PADDING
+
+    // Scroll track: beside the grid in the theme, in the frame's own track with the skin
+    private fun sbXOf(pX: Int) = if (skin) pX + panelW - RadarSkin.TRACK_FROM_RIGHT else pX + PADDING + GRID_W + 5
+    private val sbW    get() = if (skin) RadarSkin.TRACK_W else SB_W
+    private val trackY get() = if (skin) panelY + RadarSkin.TRACK_TOP else contentTop + 2
+    private val trackH get() = if (skin) panelH - RadarSkin.TRACK_TOP - RadarSkin.TRACK_FROM_BOTTOM else contentAreaH - 4
+
+    /** Refresh button hit box (x, y, size), inclusive on both ends like the original button. */
+    private fun refreshBox(pX: Int, pY: Int): IntArray =
+        if (skin) intArrayOf(pX + panelW - RadarSkin.RELOAD_FROM_RIGHT - 1, pY + RadarSkin.BANNER_Y + 1, RadarSkin.RELOAD_SIZE + 1)
+        else intArrayOf(pX + PANEL_W - 18, pY + 4, 13)
+
+    private fun filterLabel(): String {
+        val key = RadarEnhancer.EV_ORDER.getOrNull(evFilter)
+        return if (evFilter < 0) "Tous" else (RadarEnhancer.EV_LABELS[key] ?: "?")
+    }
+
+    /** With the skin the EV filter sits in the banner, left of the refresh button: (x, y, w, h). */
+    private fun skinFilterRect(pX: Int, pY: Int): IntArray {
+        val w = textRenderer.getWidth(RadarSkin.label("EV : ", finePrint)) +
+            textRenderer.getWidth(RadarSkin.label(filterLabel(), finePrint)) + (if (evFilter >= 0) 9 else 0) + 6
+        val right = pX + panelW - RadarSkin.RELOAD_FROM_RIGHT - 4
+        return intArrayOf(right - w, pY + RadarSkin.BANNER_Y, w, RadarSkin.BANNER_H)
+    }
 
     // ── Scroll ────────────────────────────────────────────────────────────────
     private val rowCount  get() = (displayIndices.size + COLS - 1) / COLS
@@ -165,32 +211,37 @@ class HunterRadarScreen(
     // Rendering
     // ─────────────────────────────────────────────────────────────────────────
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         val pX = panelX; val pY = panelY   // snapshot computed values once per frame
         UiKit.screenDim(context, width, height)
 
-        val gridLeft = pX + PADDING
-
-        // Panel background + border (shared HunterBoard identity)
-        UiKit.panel(context, pX, pY, PANEL_W, panelH)
-
-        // ── Header ──────────────────────────────────────────────────────────
-        context.fillGradient(pX + 1, pY + 1, pX + PANEL_W - 1, pY + HEADER_H - 2,
-            UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
+        val gridLeft = gridLeftOf(pX)
         val title = "${slots.size} apparition${if (slots.size > 1) "s" else ""} possible${if (slots.size > 1) "s" else ""}"
-        context.drawText(textRenderer, title, pX + PADDING, pY + 7, UiKit.TEXT, true)
+        val (rbX, rbY, rbS) = refreshBox(pX, pY)
+        val rbHov = mouseX in rbX..(rbX + rbS) && mouseY in rbY..(rbY + rbS)
 
-        // Refresh button ↺ (top-right of panel)
-        val rbX = pX + PANEL_W - 18; val rbY = pY + 4
-        val rbHov = mouseX in rbX..(rbX + 13) && mouseY in rbY..(rbY + 13)
-        drawVanillaButton(context, rbX, rbY, 13, 13, rbHov)
-        context.drawText(textRenderer, "↺", rbX + 3, rbY + 2, 0xFFFFFFFF.toInt(), false)
+        if (skin) {
+            renderSkinChrome(context, pX, pY, title, rbHov, mouseX, mouseY)
+        } else {
+            // Panel background + border (shared HunterBoard identity)
+            UiKit.panel(context, pX, pY, PANEL_W, panelH)
 
-        // Separator
-        context.fill(pX + 2, pY + HEADER_H - 1, pX + PANEL_W - 2, pY + HEADER_H, UiKit.withAlpha(UiKit.accent(), 0xCC))
+            // ── Header ──────────────────────────────────────────────────────────
+            if (!UiKit.isModern) context.fillGradient(pX + 1, pY + 1, pX + PANEL_W - 1, pY + HEADER_H - 2,
+                UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
+            context.drawText(textRenderer, title, pX + PADDING, pY + 7, UiKit.TEXT, true)
+
+            // Refresh button ↺ (top-right of panel)
+            drawVanillaButton(context, rbX, rbY, 13, 13, rbHov)
+            context.drawText(textRenderer, "↺", rbX + 3, rbY + 2, 0xFFFFFFFF.toInt(), false)
+
+            // Separator
+            context.fill(pX + 2, pY + HEADER_H - 1, pX + PANEL_W - 2, pY + HEADER_H, UiKit.withAlpha(UiKit.accent(), 0xCC))
+        }
 
         // ── Grid (scissored) ─────────────────────────────────────────────────
-        context.enableScissor(pX + 1, contentTop, pX + PADDING + GRID_W + 2, contentBottom)
+        if (skin) scissor(context, pX + 20, contentTop, sbXOf(pX) - 1, contentBottom)
+        else scissor(context, pX + 1, contentTop, pX + PADDING + GRID_W + 2, contentBottom)
         hoveredSlot = -1
 
         for (dispIdx in displayIndices.indices) {
@@ -207,18 +258,23 @@ class HunterRadarScreen(
             if (hovered) hoveredSlot = idx
 
             // Cell background
-            context.fill(cx, cy, cx + CELL_W, cy + CELL_H,
+            if (skin) {
+                RadarSkin.drawSlot(context, cx, cy, CELL_W, CELL_H, ModConfig.radarDark)
+                if (hovered) context.fill(cx + 1, cy + 1, cx + CELL_W - 1, cy + CELL_H - 1, 0x48FFFFFF)
+            } else context.fill(cx, cy, cx + CELL_W, cy + CELL_H,
                 if (hovered) 0x55FFFFFF.toInt() else 0x1AFFFFFF.toInt())
 
-            // EV border — dual or solid
+            // EV border — dual or solid (with the skin, a cell without EV data keeps the slot's own border)
             val evb = evBorders.getOrElse(idx) { EvBorder(0) }
             val borderColor = if (evb.primary != 0) evb.primary else 0xFF2A2A44.toInt()
             if (evb.secondary != 0)
                 fillBorderDual(context, cx, cy, CELL_W, CELL_H, evb.primary, evb.secondary, 2)
-            else
+            else if (!skin || evb.primary != 0)
                 fillBorderSolid(context, cx, cy, CELL_W, CELL_H, borderColor, 2)
 
-            // Spawn % — centred, coloured by Cobblemon rarity tier (1px margin from top)
+            // Spawn % — centred, coloured by Cobblemon rarity tier (1px margin from top).
+            // On the light cyan slot the rarity colours (cyan for rare) need a dark strip behind them.
+            if (skin) context.fill(cx + 2, cy + 2, cx + CELL_W - 2, cy + 12, 0xE022658B.toInt())
             val pct = slots[idx].pct
             val pctStr = "%.2f%%".format(pct)
             val tw = textRenderer.getWidth(pctStr)
@@ -239,24 +295,27 @@ class HunterRadarScreen(
 
         // ── Scrollbar ────────────────────────────────────────────────────────
         if (maxScroll > 0) {
-            val sbX = pX + PADDING + GRID_W + 5
-            val trackY = contentTop + 2; val trackH = contentAreaH - 4
-            context.fill(sbX, trackY, sbX + SB_W, trackY + trackH, 0xFF1A1A2A.toInt())
-            val thumbH = maxOf(16, (contentAreaH.toFloat() / contentH * trackH).toInt())
-            val thumbY = trackY + (scrollOffset.toFloat() / maxScroll * (trackH - thumbH)).toInt()
-            val sbHov = mouseX in sbX..(sbX + SB_W)
-            context.fill(sbX, thumbY, sbX + SB_W, thumbY + thumbH,
-                if (sbHov || sbDragging) UiKit.accent() else 0xFF445566.toInt())
+            val sbX = sbXOf(pX)
+            val tY = trackY; val tH = trackH
+            // the skin's frame already draws the track
+            if (!skin) context.fill(sbX, tY, sbX + SB_W, tY + tH, 0xFF1A1A2A.toInt())
+            val thumbH = maxOf(16, (contentAreaH.toFloat() / contentH * tH).toInt())
+            val thumbY = tY + (scrollOffset.toFloat() / maxScroll * (tH - thumbH)).toInt()
+            val sbHov = mouseX in sbX..(sbX + sbW)
+            context.fill(sbX, thumbY, sbX + sbW, thumbY + thumbH,
+                if (skin) (if (sbHov || sbDragging) 0xFFFFFFFF.toInt() else 0xFFCDF7FA.toInt())
+                else if (sbHov || sbDragging) UiKit.accent() else 0xFF445566.toInt())
         }
 
-        // ── Sort + Filter buttons (right of panel) ────────────────────────────
-        drawSortFilterButtons(context, mouseX, mouseY, pX)
+        // ── Sort + Filter buttons (right of panel; in the banner with the skin) ─
+        if (!skin) drawSortFilterButtons(context, mouseX, mouseY, pX)
 
         // ── Switch button — static top-left corner, vanilla MC style ─────────
         drawSwitchButton(context, mouseX, mouseY)
 
-        // ── EV legend below panel ─────────────────────────────────────────────
-        drawLegend(context, pY + panelH)
+        // ── EV legend below panel (in the bottom bar with the skin) ───────────
+        if (skin) drawSkinLegend(context, pX, pY + panelH - RadarSkin.BAR_FROM_BOTTOM)
+        else drawLegend(context, pY + panelH)
 
         // ── Tooltip ───────────────────────────────────────────────────────────
         if (hoveredSlot >= 0) {
@@ -265,6 +324,74 @@ class HunterRadarScreen(
             drawTooltip(context, slots[hoveredSlot].species, mouseX, mouseY)
             context.matrices.pop()
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tropimon frame (skin)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Frame, title strip, banner and its controls, laid out like Tropimon's own radar. */
+    private fun renderSkinChrome(ctx: DrawContext, pX: Int, pY: Int, count: String, rbHov: Boolean, mx: Int, my: Int) {
+        val w = panelW
+        val fine = finePrint
+        RadarSkin.drawFrame(ctx, pX, pY, w, panelH, ModConfig.radarDark)
+
+        // Title strip: favicon, "Pokéradar", scan position (right-aligned)
+        RadarSkin.drawFavicon(ctx, pX + 24, pY + 13)
+        val title = Text.translatableWithFallback("gui.tropimod.pokeradar.title", "Pokéradar").string
+        ctx.drawText(textRenderer, RadarSkin.heading(title, fine), pX + 36, pY + 12, 0xFFFFFFFF.toInt(), true)
+        scanPos?.let { p ->
+            val pos = "X: ${p.x} Y: ${p.y} Z: ${p.z}"
+            if (fine) {
+                ctx.matrices.push()
+                ctx.matrices.translate((pX + w - 22 - textRenderer.getWidth(pos) / 2).toFloat(), (pY + 15).toFloat(), 0f)
+                ctx.matrices.scale(0.5f, 0.5f, 1f)
+                ctx.drawText(textRenderer, pos, 0, 0, 0xFFFFFFFF.toInt(), true)
+                ctx.matrices.pop()
+            } else ctx.drawText(textRenderer, pos, pX + w - 22 - textRenderer.getWidth(pos), pY + 12, 0xFFDDF8FB.toInt(), true)
+        }
+
+        // Banner: count on the left, EV filter and refresh on the right
+        ctx.drawText(textRenderer, RadarSkin.heading(count, fine), pX + 31, pY + RadarSkin.BANNER_Y + 1, 0xFFFFFFFF.toInt(), true)
+        val (rbX, rbY) = refreshBox(pX, pY)
+        RadarSkin.drawReload(ctx, rbX + 1, rbY + 1, rbHov)
+
+        val (fx, fy, fw, fh) = skinFilterRect(pX, pY)
+        val fHov = mx in fx until fx + fw && my in fy until fy + fh
+        if (fHov) ctx.fill(fx, fy + 1, fx + fw, fy + fh - 1, 0x30FFFFFF)
+        val ty = fy + 2
+        var tx = fx + 3
+        tx = ctx.drawText(textRenderer, RadarSkin.label("EV : ", fine), tx, ty, 0xFFCFF3F7.toInt(), true)
+        val key = RadarEnhancer.EV_ORDER.getOrNull(evFilter)
+        if (key != null) {
+            evSwatch(ctx, tx, ty, RadarEnhancer.EV_COLORS[key] ?: 0xFFFFFFFF.toInt())
+            tx += 9
+        }
+        ctx.drawText(textRenderer, RadarSkin.label(filterLabel(), fine), tx, ty, 0xFFFFFFFF.toInt(), true)
+    }
+
+    /** EV legend inside the frame's bottom bar. */
+    private fun drawSkinLegend(ctx: DrawContext, pX: Int, barY: Int) {
+        val gap = 6
+        val fine = finePrint
+        val entries = RadarEnhancer.EV_ORDER.map {
+            (RadarEnhancer.EV_COLORS[it] ?: 0) to RadarSkin.label(RadarEnhancer.EV_LABELS[it] ?: it, fine)
+        }
+        val widths = entries.map { (_, label) -> 9 + textRenderer.getWidth(label) }
+        val totalW = widths.sum() + gap * (entries.size - 1)
+        var x = pX + (panelW - totalW) / 2
+        val ty = barY + 2
+        for ((i, e) in entries.withIndex()) {
+            evSwatch(ctx, x, ty, e.first)
+            ctx.drawText(textRenderer, e.second, x + 9, ty, 0xFFFFFFFF.toInt(), true)
+            x += widths[i] + gap
+        }
+    }
+
+    /** A 7×7 EV colour square with a dark outline, readable on the frame's teal. */
+    private fun evSwatch(ctx: DrawContext, x: Int, textY: Int, color: Int) {
+        ctx.fill(x, textY, x + 7, textY + 7, 0xFF1B4F6B.toInt())
+        ctx.fill(x + 1, textY + 1, x + 6, textY + 6, color)
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -360,26 +487,50 @@ class HunterRadarScreen(
         }.getOrDefault(false)
     }
 
+    /**
+     * Cobblemon 1.8 removed the SpawnBucket class: SpawnDetail.bucket is now a plain
+     * String and the per-bucket weights live in the BestSpawner config, with a separate
+     * table for fishing / Poke Snack / habitat spawns. The old reflection
+     * (`bucket.getWeight()`) silently returned 0 for every entry.
+     */
+    private val DEFAULT_WORLD_BUCKETS = mapOf(
+        "common" to 94.05, "uncommon" to 5.0, "rare" to 0.5, "ultra-rare" to 0.2, "boss" to 0.25
+    )
+    private val DEFAULT_ALT_BUCKETS = mapOf(
+        "common" to 83.25, "uncommon" to 11.25, "rare" to 4.125, "ultra-rare" to 1.375
+    )
+
+    private fun entryBucketName(entry: Any): String? = runCatching {
+        (entry as? SpawnDetail)?.bucket?.lowercase()?.trim()
+    }.getOrNull()
+
+    private fun entryPositionType(entry: Any): String = runCatching {
+        (entry as? SpawnDetail)?.spawnablePositionType?.name?.lowercase() ?: ""
+    }.getOrDefault("")
+
     private fun entryBucketWeight(entry: Any): Double {
-        return runCatching {
-            val bucket = entry.javaClass.getMethod("getBucket").invoke(entry) ?: return 0.0
-            (bucket.javaClass.getMethod("getWeight").invoke(bucket) as? Number)?.toDouble() ?: 0.0
-        }.getOrDefault(0.0)
+        val bucket = entryBucketName(entry) ?: return 0.0
+        val isAlternate = entryPositionType(entry) == "fishing"
+        val configured = runCatching {
+            val config = BestSpawner.config
+            val table = if (isAlternate) config.fishingBuckets else config.worldBuckets
+            table[bucket]?.toDouble()
+        }.getOrNull()
+        if (configured != null && configured > 0.0) return configured
+        val fallback = if (isAlternate) DEFAULT_ALT_BUCKETS else DEFAULT_WORLD_BUCKETS
+        return fallback[bucket] ?: 0.0
     }
 
     private fun entryBucketColor(entry: Any): Int {
-        return runCatching {
-            val bucket = entry.javaClass.getMethod("getBucket").invoke(entry) ?: return UiKit.TEXT
-            val name = (bucket.javaClass.getMethod("getName").invoke(bucket) as? String)
-                ?.lowercase()?.replace("-", "_") ?: return UiKit.TEXT
-            when (name) {
-                "common"     -> 0xFF55FF55.toInt()
-                "uncommon"   -> 0xFFFFFF55.toInt()
-                "rare"       -> 0xFF55FFFF.toInt()
-                "ultra_rare" -> 0xFFFF55FF.toInt()
-                else         -> UiKit.TEXT
-            }
-        }.getOrDefault(UiKit.TEXT)
+        val name = entryBucketName(entry)?.replace("-", "_") ?: return UiKit.TEXT
+        return when (name) {
+            "common"     -> 0xFF55FF55.toInt()
+            "uncommon"   -> 0xFFFFFF55.toInt()
+            "rare"       -> 0xFF55FFFF.toInt()
+            "ultra_rare" -> 0xFFFF55FF.toInt()
+            "boss"       -> 0xFFFF5544.toInt()
+            else         -> UiKit.TEXT
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -448,7 +599,9 @@ class HunterRadarScreen(
         lines += Line("──────────────────", UiKit.BORDER)
         lines += Line("Clic → fiche wiki", 0xFF88AAFF.toInt())
 
-        val sw = client.window.scaledWidth; val sh = client.window.scaledHeight
+        // the screen's own dimensions, not the window's: under an interface scale cap the
+        // two differ, and clamping to the window would bunch the tooltip into one corner
+        val sw = width; val sh = height
         val contentW = lines.maxOfOrNull { tr.getWidth(it.text) } ?: 80
         val tooltipW = contentW + pad * 2; val tooltipH = lines.size * (fh + 1) + pad * 2
         var tx = mx + 12; var ty = my - tooltipH / 2
@@ -468,7 +621,7 @@ class HunterRadarScreen(
     // Input
     // ─────────────────────────────────────────────────────────────────────────
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         val pX = panelX; val pY = panelY
 
         // Switch to TropiMod — static top-left
@@ -483,15 +636,24 @@ class HunterRadarScreen(
         }
 
         // Refresh ↺
-        val rbX = pX + PANEL_W - 18; val rbY = pY + 4
-        if (mouseX in rbX.toDouble()..(rbX + 13).toDouble()
-            && mouseY in rbY.toDouble()..(rbY + 13).toDouble()) { tryRefresh(); return true }
+        val (rbX, rbY, rbS) = refreshBox(pX, pY)
+        if (mouseX in rbX.toDouble()..(rbX + rbS).toDouble()
+            && mouseY in rbY.toDouble()..(rbY + rbS).toDouble()) { tryRefresh(); return true }
 
-        // Slot click → detail screen
+        // EV filter in the banner (skin)
+        if (skin && button == 0) {
+            val (fx, fy, fw, fh) = skinFilterRect(pX, pY)
+            if (mouseX >= fx && mouseX < fx + fw && mouseY >= fy && mouseY < fy + fh) {
+                evFilter = if (evFilter >= RadarEnhancer.EV_ORDER.lastIndex) -1 else evFilter + 1
+                recomputeDisplay(); return true
+            }
+        }
+
+        // Slot click → detail screen; Escape or "Back" there comes back to this radar
         if (button == 0 && hoveredSlot >= 0) {
             val species = slots[hoveredSlot].species
             MinecraftClient.getInstance().execute {
-                MinecraftClient.getInstance().setScreen(PokemonDetailScreen(species, null))
+                MinecraftClient.getInstance().setScreen(PokemonDetailScreen(species, this@HunterRadarScreen))
             }
             return true
         }
@@ -499,42 +661,44 @@ class HunterRadarScreen(
         // Filter button
         val btnX = pX + PANEL_W + 4
         val btnY = contentTop
-        if (mouseX in btnX.toDouble()..(btnX + BTN_W).toDouble()
+        if (!skin && mouseX in btnX.toDouble()..(btnX + BTN_W).toDouble()
             && mouseY in btnY.toDouble()..(btnY + BTN_H).toDouble()) {
             evFilter = if (evFilter >= RadarEnhancer.EV_ORDER.lastIndex) -1 else evFilter + 1
             recomputeDisplay(); return true
         }
 
-        // Scrollbar
+        // Scrollbar (the skin's 3 px track gets a wider grab zone)
         if (maxScroll > 0) {
-            val sbX = pX + PADDING + GRID_W + 5
-            if (mouseX in sbX.toDouble()..(sbX + SB_W).toDouble()
-                && mouseY in contentTop.toDouble()..contentBottom.toDouble()) {
+            val sbX = sbXOf(pX)
+            val grab = if (skin) 2 else 0
+            val (top, bottom) = if (skin) trackY to trackY + trackH else contentTop to contentBottom
+            if (mouseX in (sbX - grab).toDouble()..(sbX + sbW + grab).toDouble()
+                && mouseY in top.toDouble()..bottom.toDouble()) {
                 sbDragging = true; sbDragStartY = mouseY.toInt(); sbDragStartOffset = scrollOffset
                 return true
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        sbDragging = false; return super.mouseReleased(mouseX, mouseY, button)
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        sbDragging = false; return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dx: Double, dy: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, dx: Double, dy: Double): Boolean {
         if (sbDragging && button == 0 && maxScroll > 0) {
-            val trackH = contentAreaH - 4
-            val thumbH = maxOf(16, (contentAreaH.toFloat() / contentH * trackH).toInt())
-            val range = trackH - thumbH
+            val tH = trackH
+            val thumbH = maxOf(16, (contentAreaH.toFloat() / contentH * tH).toInt())
+            val range = tH - thumbH
             if (range > 0)
                 scrollOffset = (sbDragStartOffset + ((mouseY.toInt() - sbDragStartY).toFloat() / range * maxScroll).toInt())
                     .coerceIn(0, maxScroll)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dx, dy)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, dx, dy)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, h: Double, v: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, h: Double, v: Double): Boolean {
         scrollOffset = (scrollOffset - (v * 20).toInt()).coerceIn(0, maxScroll); return true
     }
 

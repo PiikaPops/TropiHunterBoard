@@ -7,7 +7,7 @@ import org.lwjgl.glfw.GLFW
 
 class DonorsScreen(
     private val parent: Screen
-) : Screen(Text.literal("Donors")) {
+) : ScaledScreen(Text.literal("Donors")) {
 
     private var scrollOffset = 0
     private val rowHeight = 14
@@ -36,7 +36,7 @@ class DonorsScreen(
         DonorsFetcher.fetchIfNeeded()
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         UiKit.screenDim(context, width, height)
 
         val panelWidth = (width * 0.45).toInt().coerceIn(200, 360)
@@ -82,7 +82,7 @@ class DonorsScreen(
             val lx = panelX + (panelWidth - textRenderer.getWidth(msg)) / 2
             context.drawText(textRenderer, msg, lx, listTop + 10, UiKit.TEXT_FAINT, true)
         } else {
-            context.enableScissor(panelX + 1, listTop, panelX + panelWidth - 1, listBottom)
+            scissor(context, panelX + 1, listTop, panelX + panelWidth - 1, listBottom)
 
             var y = listTop + 2 - scrollOffset
             for ((index, name) in donors.withIndex()) {
@@ -138,11 +138,11 @@ class DonorsScreen(
         val hintX = panelX + (panelWidth - textRenderer.getWidth(hint)) / 2
         context.drawText(textRenderer, hint, hintX, panelBottom - 12, 0xFF555544.toInt(), true)
 
-        super.render(context, mouseX, mouseY, delta)
+        renderWidgets(context, mouseX, mouseY, delta)
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (button != 0) return super.mouseClicked(mouseX, mouseY, button)
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (button != 0) return super.mouseClickedScaled(mouseX, mouseY, button)
 
         val panelWidth = (width * 0.45).toInt().coerceIn(200, 360)
         val panelX = (width - panelWidth) / 2
@@ -156,7 +156,7 @@ class DonorsScreen(
         }
 
         val donors = DonorsFetcher.donors
-        if (donors.isEmpty()) return super.mouseClicked(mouseX, mouseY, button)
+        if (donors.isEmpty()) return super.mouseClickedScaled(mouseX, mouseY, button)
         val panelBottom = height - 30
         val listTop = panelTop + 38
         val listBottom = panelBottom - 18
@@ -171,10 +171,10 @@ class DonorsScreen(
             return true
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val donors = DonorsFetcher.donors
             val panelTop = 30
@@ -191,15 +191,15 @@ class DonorsScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val donors = DonorsFetcher.donors
         if (donors.isEmpty()) return true
         val panelTop = 30

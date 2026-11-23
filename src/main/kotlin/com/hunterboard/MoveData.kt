@@ -30,8 +30,7 @@ object MoveData {
     fun getAllMoves(): List<MoveTemplate> {
         allMovesCache?.let { return it }
         val moves = try {
-            Moves.all().filter { it.name.isNotBlank() }
-                .sortedBy { it.displayName.string.lowercase() }
+            NameUtil.sortedByName(Moves.all().filter { it.name.isNotBlank() }) { it.displayName.string }
         } catch (e: Exception) {
             HunterBoard.LOGGER.error("Failed to load moves: ${e.message}")
             emptyList()

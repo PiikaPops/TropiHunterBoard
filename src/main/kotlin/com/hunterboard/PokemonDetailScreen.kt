@@ -3,6 +3,10 @@ package com.hunterboard
 import com.cobblemon.mod.common.api.abilities.PotentialAbility
 import com.cobblemon.mod.common.api.drop.ItemDropEntry
 import com.cobblemon.mod.common.api.moves.MoveTemplate
+import com.cobblemon.mod.common.api.riding.RidingStyle
+import com.cobblemon.mod.common.api.riding.stats.RidingStat
+import com.cobblemon.mod.common.client.settings.ServerSettings
+import com.cobblemon.mod.common.pokemon.PokemonSizeCategory
 import com.cobblemon.mod.common.api.pokemon.PokemonSpecies
 import com.cobblemon.mod.common.api.pokemon.stats.Stats
 import com.cobblemon.mod.common.client.gui.summary.widgets.ModelWidget
@@ -28,7 +32,7 @@ class PokemonDetailScreen(
     private val parent: Screen?,
     private val allSpecies: List<Species>? = null,
     private val initialFormName: String? = null
-) : Screen(Text.literal("Pokemon Detail")) {
+) : ScaledScreen(Text.literal("Pokemon Detail")) {
 
     private var modelWidget: ModelWidget? = null
     private var scrollOffset = 0
@@ -73,6 +77,13 @@ class PokemonDetailScreen(
 
     // Biome hover tooltip
     private var hoveredBiomeDetail: BiomeDetail? = null
+    /** Habitat row under the cursor; its biomes are shown as a tooltip. */
+    private var hoveredHabitatId: String? = null
+
+    /** Selected riding style tab, for species that can be ridden more than one way. */
+    private var ridingStyleTab = 0
+    private class RidingTabBound(val x: Int, val y: Int, val w: Int, val h: Int, val index: Int)
+    private val ridingTabBounds = mutableListOf<RidingTabBound>()
 
     // Shiny toggle
     private var isShiny = false
@@ -89,6 +100,7 @@ class PokemonDetailScreen(
     private var cosmeticBtnY = 0
     private val cosmeticBtnW = 14
     private val cosmeticBtnH = 14
+
 
     // Scrollbar drag state
     private var isScrollbarDragging = false
@@ -121,6 +133,7 @@ class PokemonDetailScreen(
 
     companion object {
         private const val MODEL_SIZE = 80
+
         private const val STAT_BAR_MAX = 255
         private const val HOVER_DELAY_MS = 500L
 
@@ -160,6 +173,7 @@ class PokemonDetailScreen(
     override fun init() {
         super.init()
         SpawnData.ensureLoaded()
+        HabitatData.ensureLoaded()
 
         // F1: Record history
         SearchHistory.addEntry(species)
@@ -225,25 +239,40 @@ class PokemonDetailScreen(
     }
 
     // F4: Get effective spawns for current form
+    /**
+     * The spawns of the form on screen, or the species' own when it has none.
+     *
+     * Every aspect is tried, not just the first: Paldean Tauros declares `paldean` **and**
+     * `aqua-breed`, and only the second tells the three breeds apart — taking `first()`
+     * showed all of them. The smallest non-empty answer is the most specific one, so that
+     * is the one kept.
+     */
     private fun getEffectiveSpawns(): List<SpawnEntry> {
         val form = currentForm()
         if (form != null) {
             val aspects = try { form.aspects } catch (_: Exception) { emptyList() }
-            if (aspects.isNotEmpty()) {
-                val formSpawns = SpawnData.getSpawns(species.name, aspects.first())
-                if (formSpawns.isNotEmpty()) return formSpawns
+            var best: List<SpawnEntry>? = null
+            for (aspect in aspects) {
+                val found = SpawnData.getSpawns(species.name, aspect)
+                if (found.isNotEmpty() && (best == null || found.size < best!!.size)) best = found
             }
+            best?.let { return it }
         }
         return SpawnData.getSpawns(species.name)
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         hoveredBiomeDetail = null
+        hoveredHabitatId = null
+        ridingTabBounds.clear()
         evoClickBounds.clear()
         megaClickBounds.clear()
         UiKit.screenDim(context, width, height)
 
-        val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
+        // The table needs more room than the text layout
+        val panelWidth = if (ModConfig.spawnDisplayMode == "table")
+            (width * 0.96).toInt().coerceIn(520, 1120)
+        else (width * 0.8).toInt().coerceIn(380, 620)
         val panelX = (width - panelWidth) / 2
         val panelTop = 10
         val panelBottom = height - 10
@@ -260,8 +289,7 @@ class PokemonDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY >= panelTop + 5 && mouseY <= panelTop + 17
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         val displayName: String = try { Translations.dualSpeciesName(species.name) } catch (_: Exception) { species.name.replaceFirstChar { it.uppercase() } }
         context.drawText(textRenderer, displayName,
@@ -291,10 +319,12 @@ class PokemonDetailScreen(
         context.drawText(textRenderer, nextText, nextBtnX, navY,
             if (nextHovered) UiKit.accent() else if (hasNext) UiKit.TEXT else UiKit.BORDER_DIM, true)
 
-        context.fillGradient(panelX + 1, panelTop + 1, panelX + panelWidth - 1, panelTop + 17,
-            UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
-        context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, UiKit.withAlpha(UiKit.accent(), 0xCC))
-        context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, UiKit.withAlpha(UiKit.accent(), 0x33))
+        if (!UiKit.isModern) {   // the new interface's panel brings its own title bar
+            context.fillGradient(panelX + 1, panelTop + 1, panelX + panelWidth - 1, panelTop + 17,
+                UiKit.withAlpha(UiKit.accent(), 0x28), UiKit.withAlpha(UiKit.accent(), 0x00))
+            context.fill(panelX + 6, panelTop + 18, panelX + panelWidth - 6, panelTop + 19, UiKit.withAlpha(UiKit.accent(), 0xCC))
+            context.fill(panelX + 6, panelTop + 19, panelX + panelWidth - 6, panelTop + 20, UiKit.withAlpha(UiKit.accent(), 0x33))
+        }
 
         // ========== F4: FORM TABS (if multiple forms, with horizontal scroll) ==========
         var formTabsEndY = panelTop + 22
@@ -313,7 +343,7 @@ class PokemonDetailScreen(
                 when {
                     formName.isBlank() || formName.equals("Standard", ignoreCase = true) -> Translations.tr("Standard")
                     formName.lowercase().startsWith("mega") -> PokemonEntry.megaLabel(formName)
-                    else -> Translations.tr(formName)
+                    else -> Translations.formLabel(formName)
                 }
             }
             val tabWidths = tabLabels.map { textRenderer.getWidth(it) + 10 }
@@ -344,7 +374,7 @@ class PokemonDetailScreen(
             }
 
             // Draw tabs with scissor to clip overflow
-            context.enableScissor(visibleLeft, formTabY, visibleRight, formTabY + 13)
+            scissor(context, visibleLeft, formTabY, visibleRight, formTabY + 13)
             var ftx = visibleLeft - formTabScrollOffset
             for ((i, form) in availableForms.withIndex()) {
                 val label = tabLabels[i]
@@ -398,7 +428,7 @@ class PokemonDetailScreen(
         val contentBottom = panelBottom - 16
         val contentAreaHeight = contentBottom - contentTop
 
-        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+        scissor(context, panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
 
         var y = contentTop + 2 - scrollOffset
         val leftX = panelX + 8
@@ -413,6 +443,7 @@ class PokemonDetailScreen(
         // ========== ROW 1: Model + Info (left) | Base Stats (right) ==========
 
         // --- LEFT: Model + Types + Abilities + EV Yield ---
+        UiKit.portrait(context, leftX - 2, y - 6, MODEL_SIZE + 4, MODEL_SIZE + 4)
         if (modelWidget != null) {
             try {
                 modelRenderX = leftX
@@ -597,11 +628,20 @@ class PokemonDetailScreen(
             leftY += 10
         } catch (_: Exception) {}
 
+        // Alpha (Cobblemon 1.8): the "boss" spawn bucket is entirely Alpha herds
+        if (try { SpawnData.hasAlphaSpawn(species.name) } catch (_: Exception) { false }) {
+            context.drawText(textRenderer, "\u2726 ${Translations.tr("Alpha boss herd")}",
+                infoX + 4, leftY, 0xFFFF5544.toInt(), true)
+            leftY += 12
+        }
+
+        leftY = renderSizeCategories(context, infoX, leftY)
+
         val leftEndY = maxOf(leftY, y + MODEL_SIZE + 6)
 
         // --- RIGHT: Base Stats (F4: use form overrides if available) ---
         val baseStatsLabel: String = Translations.tr("Base Stats")
-        context.drawText(textRenderer, baseStatsLabel, midX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, baseStatsLabel, midX, y)
         var statsY = y + 13
 
         val statEntries = listOf(
@@ -638,6 +678,9 @@ class PokemonDetailScreen(
         context.drawText(textRenderer, "$total", barX + barMaxW + 4, statsY, UiKit.TEXT, true)
         statsY += 12
 
+        // Riding stats, directly under the base stats
+        statsY = renderRidingRadar(context, midX, statsY + 4, halfW, mouseX, mouseY)
+
         y = maxOf(leftEndY, statsY) + 4
 
         // ========== SEPARATOR ==========
@@ -646,7 +689,7 @@ class PokemonDetailScreen(
 
         // ========== TYPE CHART (full width) ==========
         val chartLabel: String = Translations.tr("Type Chart")
-        context.drawText(textRenderer, chartLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, chartLabel, leftX, y)
         y += 13
         try {
             val chartForm = currentForm()
@@ -678,7 +721,7 @@ class PokemonDetailScreen(
             // Evolution chain
             if (hasEvo) {
                 val evoLabel: String = Translations.tr("Evolution")
-                context.drawText(textRenderer, evoLabel, leftX, evoEndY, UiKit.accent(), true)
+                UiKit.sectionTitle(context, textRenderer, evoLabel, leftX, evoEndY)
                 evoEndY += 13
                 try {
                     evoEndY = renderEvolutionChain(context, evoTree!!, leftX + 4, evoEndY, halfW - 12, mouseX, mouseY, contentTop, contentBottom)
@@ -711,7 +754,7 @@ class PokemonDetailScreen(
 
             // Dropped Items on the right
             val dropsLabel: String = Translations.tr("Dropped Items")
-            context.drawText(textRenderer, dropsLabel, midX, row2StartY, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, dropsLabel, midX, row2StartY)
             val dropY = renderDroppedItems(context, midX, row2StartY + 13, halfW, mouseX, mouseY)
 
             // Vertical separator
@@ -722,7 +765,7 @@ class PokemonDetailScreen(
         } else {
             // No evolution, no mega — Dropped Items takes full width
             val dropsLabel: String = Translations.tr("Dropped Items")
-            context.drawText(textRenderer, dropsLabel, leftX, y, UiKit.accent(), true)
+            UiKit.sectionTitle(context, textRenderer, dropsLabel, leftX, y)
             y = renderDroppedItems(context, leftX, y + 13, panelWidth - 20, mouseX, mouseY) + 4
         }
 
@@ -732,7 +775,7 @@ class PokemonDetailScreen(
 
         // ========== SPAWN CONDITIONS (full width) ==========
         val spawnLabel: String = Translations.tr("Spawn Conditions")
-        context.drawText(textRenderer, spawnLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, spawnLabel, leftX, y)
         var spawnY = y + 13
         val fullContentW = panelWidth - 20
 
@@ -744,9 +787,14 @@ class PokemonDetailScreen(
             context.drawText(textRenderer, "$lvPrefix $lvMin-$lvMax", leftX + 4, spawnY, UiKit.TEXT_MUTED, true)
             spawnY += 13
 
+            if (ModConfig.spawnDisplayMode == "table") {
+                spawnY = renderSpawnTable(context, spawns, spawnY, panelX, panelWidth, leftX,
+                    mouseX, mouseY, contentTop, contentBottom)
+            } else {
+
             val seen = mutableSetOf<String>()
             for (spawn in spawns) {
-                val key = "${spawn.biomes}|${spawn.time}|${spawn.weather}|${spawn.structures}|${spawn.canSeeSky}|${spawn.bucket}|${spawn.spawnContext}|${spawn.minY}|${spawn.maxY}|${spawn.minSkyLight}|${spawn.maxSkyLight}|${spawn.presets}|${spawn.formLabel}"
+                val key = SpawnData.dedupKey(spawn)
                 if (key in seen) continue
                 seen.add(key)
 
@@ -757,7 +805,12 @@ class PokemonDetailScreen(
                 val variantStr = if (spawn.formLabel.isNotEmpty()) " • ${spawn.formLabel}" else ""
                 val rarityTagText = "[$rarityText$variantStr]$weightStr "
                 context.drawText(textRenderer, rarityTagText, leftX + 8, spawnY, rarityColor, true)
-                val rarityTagW = textRenderer.getWidth(rarityTagText)
+                var rarityTagW = textRenderer.getWidth(rarityTagText)
+                if (spawn.isFiller) {
+                    val fillerBadge = Translations.tr("Filler") + " "
+                    context.drawText(textRenderer, fillerBadge, leftX + 8 + rarityTagW, spawnY, COLOR_FILLER, true)
+                    rarityTagW += textRenderer.getWidth(fillerBadge)
+                }
 
                 // Presets + Context tag (on same line as rarity if non-default)
                 val tags = mutableListOf<String>()
@@ -832,9 +885,9 @@ class PokemonDetailScreen(
                     val lightLabel: String = Translations.tr("Light:")
                     extras.add("$lightLabel $lMin-$lMax")
                 }
-                if (spawn.moonPhase != null) {
+                SpawnData.moonPhaseLabel(spawn)?.let { phases ->
                     val moonLabel: String = Translations.tr("Moon:")
-                    extras.add("$moonLabel ${Translations.formatMoonPhase(spawn.moonPhase)}")
+                    extras.add("$moonLabel $phases")
                 }
                 if (extras.isNotEmpty()) {
                     context.drawText(textRenderer, "  ${extras.joinToString(" | ")}", leftX + 8, spawnY, 0xFF887755.toInt(), true)
@@ -869,6 +922,12 @@ class PokemonDetailScreen(
                     }
                 }
 
+                // Cobblemon 1.8 extras (Poke Snack, fishing, depth, herd, held items…)
+                for (line in SpawnData.extraLines(spawn)) {
+                    context.drawText(textRenderer, line.text, leftX + 8, spawnY, line.color, true)
+                    spawnY += 10
+                }
+
                 if (spawn.requiresSlimeChunk) {
                     val scLabel: String = Translations.tr("Slime Chunk")
                     context.drawText(textRenderer, "  ★ $scLabel", leftX + 8, spawnY, 0xFF55FF55.toInt(), true)
@@ -885,6 +944,7 @@ class PokemonDetailScreen(
 
                 spawnY += 2
             }
+            }
         } else {
             val noSpawnText: String = Translations.tr("No spawn data")
             context.drawText(textRenderer, noSpawnText, leftX + 4, spawnY, UiKit.TEXT_FAINT, true)
@@ -892,6 +952,23 @@ class PokemonDetailScreen(
         }
 
         y = spawnY + 4
+
+        // ========== HABITATS (own section: a habitat pool is not a world spawn) ==========
+        val habitatEntries = try { HabitatData.getHabitats(species.name) } catch (_: Exception) { emptyList() }
+        if (habitatEntries.isNotEmpty()) {
+            context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
+            y += 8
+
+            UiKit.sectionTitle(context, textRenderer, Translations.tr("Habitats"), leftX, y)
+            y += 13
+            y = if (ModConfig.spawnDisplayMode == "table") {
+                renderHabitatTable(context, habitatEntries, y, panelX, panelWidth, leftX,
+                    mouseX, mouseY, contentTop, contentBottom)
+            } else {
+                renderHabitatText(context, y, leftX, mouseX, mouseY)
+            }
+            y += 4
+        }
 
         // ========== SEPARATOR ==========
         context.fill(panelX + 6, y, panelX + panelWidth - 6, y + 1, UiKit.BORDER_DIM)
@@ -950,6 +1027,18 @@ class PokemonDetailScreen(
             computed
         }
         val showLevel = selectedTab == 0
+        val isTmTab = selectedTab == 1
+
+        // Cobblemon 1.8 made TMs native: say how many of these moves have a real TM item
+        if (isTmTab && moves.isNotEmpty()) {
+            TmData.ensureLoaded()
+            val craftable = moves.count { TmData.forMove(it.move.name) != null }
+            if (craftable > 0) {
+                val note = "\u25C6 $craftable/${moves.size} ${Translations.tr("with a craftable TM")}"
+                context.drawText(textRenderer, note, leftX, y, 0xFF66CCEE.toInt(), true)
+                y += 11
+            }
+        }
 
         if (moves.isEmpty()) {
             val emptyText: String = Translations.noMovesText(tabKeys[selectedTab])
@@ -957,7 +1046,7 @@ class PokemonDetailScreen(
                 panelX + (panelWidth - textRenderer.getWidth(emptyText)) / 2, y + 6, UiKit.TEXT_FAINT, true)
             y += 22
         } else {
-            y = renderMoveTable(context, moves, y, panelX, panelWidth, leftX, showLevel, mouseX, mouseY, contentTop, contentBottom)
+            y = renderMoveTable(context, moves, y, panelX, panelWidth, leftX, showLevel, mouseX, mouseY, contentTop, contentBottom, isTmTab)
         }
 
         contentHeight = y + scrollOffset - contentTop + 8
@@ -1072,15 +1161,47 @@ class PokemonDetailScreen(
         }
 
         // Footer
+        if (UiKit.isModern) {
+            val fr = Translations.isFrench()
+            val browse = if (allSpecies != null) (if (fr) "\u2190 \u2192 Pokémon précédent / suivant  \u2022  " else "\u2190 \u2192 previous / next Pokémon  \u2022  ") else ""
+            UiKit.footer(context, textRenderer, panelX, panelBottom, panelWidth,
+                browse + (if (fr) "Échap pour revenir" else "Esc to go back"))
+        } else {
         context.fill(panelX + 1, panelBottom - 14, panelX + panelWidth - 1, panelBottom - 1, UiKit.SURFACE_SUNKEN)
         context.fill(panelX + 6, panelBottom - 14, panelX + panelWidth - 6, panelBottom - 13, UiKit.BORDER_DIM)
         val hint: String = Translations.tr("ESC / Click Back to return")
         context.drawText(textRenderer, hint,
             panelX + (panelWidth - textRenderer.getWidth(hint)) / 2, panelBottom - 10, UiKit.TEXT_FAINT, true)
+        }
+
+        hoveredHabitatId?.let { habitatId ->
+            // Lifted above the panel like the biome tooltip below: without the Z offset
+            // it interleaves with the interface it is supposed to cover.
+            context.matrices.push()
+            context.matrices.translate(0f, 0f, 400f)
+            // Same panel as a spawn-condition biome tag: grouped by mod, multi-column.
+            val grouped = HabitatData.biomeDetailsFor(habitatId)
+                .mapNotNull { it.tagId }
+                .flatMap { BiomeTagResolver.resolveGrouped(it) }
+            val title = BiomeDetail(HabitatData.displayNameOf(habitatId), null)
+            if (grouped.isNotEmpty()) {
+                renderBiomeTooltip(context, grouped, title, mouseX, mouseY)
+            } else {
+                context.drawTooltip(
+                    textRenderer,
+                    listOf(
+                        Text.literal(HabitatData.displayNameOf(habitatId)),
+                        Text.literal("  " + Translations.tr("Placed as a worldgen feature"))
+                    ),
+                    mouseX, mouseY
+                )
+            }
+            context.matrices.pop()
+        }
 
         // Biome tooltip (rendered last, on top of everything)
         if (hoveredBiomeDetail != null && hoveredBiomeDetail!!.tagId != null) {
-            val resolved = BiomeTagResolver.resolve(hoveredBiomeDetail!!.tagId!!)
+            val resolved = BiomeTagResolver.resolveGrouped(hoveredBiomeDetail!!.tagId!!)
             if (resolved.isNotEmpty()) {
                 context.matrices.push()
                 context.matrices.translate(0f, 0f, 400f)
@@ -1097,7 +1218,8 @@ class PokemonDetailScreen(
     private fun renderDroppedItems(context: DrawContext, startX: Int, startY: Int, maxWidth: Int, mouseX: Int, mouseY: Int): Int {
         var dropY = startY
         try {
-            val entries = species.drops.entries
+            // items that do not exist (see DropData.isRealItem) would show as "Air"
+            val entries = species.drops.entries.filterIsInstance<ItemDropEntry>().filter { DropData.isRealItem(it.item) }
             if (entries.isEmpty()) {
                 val noneText: String = Translations.tr("None")
                 context.drawText(textRenderer, noneText, startX + 4, dropY, UiKit.TEXT_FAINT, true)
@@ -1111,7 +1233,7 @@ class PokemonDetailScreen(
                             context.drawItem(stack, startX + 4, dropY - 4)
                         }
                         val textStartX = startX + 24
-                        val itemNameStr = item.name.string
+                        val itemNameStr = Translations.itemName(entry.item.toString())
                         val nameW = textRenderer.getWidth(itemNameStr)
                         val hovered = mouseX >= textStartX && mouseX <= textStartX + nameW &&
                                       mouseY >= dropY && mouseY < dropY + 10
@@ -1192,7 +1314,7 @@ class PokemonDetailScreen(
     ): Int {
         val baseName: String = node.species?.translatedName?.string ?: node.speciesName.replaceFirstChar { it.uppercase() }
         val name: String = if (node.formAspect != null) {
-            val aspectLabel = node.formAspect.replaceFirstChar { it.uppercase() }
+            val aspectLabel = Translations.formLabel(node.formAspect.replaceFirstChar { it.uppercase() })   // "Alolan" → "Alola"
             "$baseName ($aspectLabel)"
         } else baseName
         val nameW = textRenderer.getWidth(name)
@@ -1238,6 +1360,527 @@ class PokemonDetailScreen(
                 }
             }
         }
+    }
+
+    // ==================== Habitats ====================
+
+    /** The original line-per-habitat layout, kept for the "text" display mode. */
+    private fun renderHabitatText(context: DrawContext, startY: Int, leftX: Int,
+                                  mouseX: Int, mouseY: Int): Int {
+        var y = startY
+        for (line in HabitatData.habitatLines(species.name)) {
+            context.drawText(textRenderer, line.text, leftX + 8, y, line.color, true)
+            if (line.habitatId != null &&
+                mouseX >= leftX + 8 && mouseX <= leftX + 8 + textRenderer.getWidth(line.text) &&
+                mouseY >= y && mouseY < y + 10) {
+                hoveredHabitatId = line.habitatId
+            }
+            y += 10
+        }
+        return y
+    }
+
+    /**
+     * Habitats as a table, matching the spawn table.
+     *
+     * The biome column goes through [renderBiomesInline] like the spawn conditions do,
+     * so hovering a tag expands it into the biomes it covers instead of showing a flat
+     * pre-resolved list.
+     */
+    private fun renderHabitatTable(
+        context: DrawContext,
+        entries: List<HabitatEntry>,
+        startY: Int,
+        panelX: Int,
+        panelWidth: Int,
+        leftX: Int,
+        mouseX: Int,
+        mouseY: Int,
+        visibleTop: Int,
+        visibleBottom: Int
+    ): Int {
+        val gap = 6
+        val lineH = 10
+        val contentW = panelWidth - 24
+
+        val wName = 150
+        val wPhases = 74
+        val wLv = 56
+        val wRarity = 74
+        val wTime = 70
+        val fixed = wName + wPhases + wLv + wRarity + wTime
+        val wBiomes = (contentW - fixed - gap * 5).coerceAtLeast(110)
+
+        var x = leftX
+        val colName = x; x += wName + gap
+        val colBiomes = x; x += wBiomes + gap
+        val colPhases = x; x += wPhases + gap
+        val colLv = x; x += wLv + gap
+        val colRarity = x; x += wRarity + gap
+        val colTime = x
+        val tableRight = colTime + wTime
+
+        var y = startY
+        val header = UiKit.TEXT_FAINT
+        context.drawText(textRenderer, Translations.tr("Habitat"), colName, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Biomes"), colBiomes, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Phases"), colPhases, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Lv."), colLv, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Rarity"), colRarity, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Time"), colTime, y, header, true)
+        y += 11
+        context.fill(leftX, y, tableRight, y + 1, UiKit.BORDER_DIM)
+        y += 4
+
+        for (entry in entries.sortedBy { HabitatData.habitatDisplayName(it) }) {
+            var rowBottom = y + lineH
+
+            fun cell(text: String, cx: Int, width: Int, color: Int): Int {
+                var cy = y
+                for (line in wrapText(text, width)) {
+                    context.drawText(textRenderer, line, cx, cy, color, true)
+                    cy += lineH
+                }
+                return cy
+            }
+
+            // clickable habitat name
+            val name = HabitatData.habitatDisplayName(entry)
+            val nameHovered = mouseX >= colName && mouseX <= colName + wName &&
+                mouseY >= y && mouseY < y + lineH &&
+                mouseY >= visibleTop && mouseY <= visibleBottom
+            if (nameHovered) hoveredHabitatId = entry.habitatId
+            rowBottom = maxOf(rowBottom, cell(name, colName, wName,
+                if (nameHovered) UiKit.accent() else 0xFF88BBAA.toInt()))
+
+            // biomes, hoverable exactly like a spawn condition
+            val biomeDetails = HabitatData.biomeDetailsFor(entry.habitatId)
+            rowBottom = maxOf(rowBottom, if (biomeDetails.isEmpty()) {
+                cell(Translations.tr("Placed as a worldgen feature"), colBiomes, wBiomes, UiKit.TEXT_FAINT)
+            } else {
+                renderBiomesInline(context, biomeDetails, colBiomes, y, wBiomes,
+                    mouseX, mouseY, visibleTop, visibleBottom)
+            })
+
+            val phases = if (entry.phases.isEmpty()) "—"
+                         else if (entry.phases.size == 1) "${entry.phases.first()}"
+                         else "${entry.phases.first()}-${entry.phases.last()}"
+            rowBottom = maxOf(rowBottom, cell(phases, colPhases, wPhases, UiKit.TEXT_MUTED))
+            rowBottom = maxOf(rowBottom, cell("${entry.lvMin}-${entry.lvMax}", colLv, wLv, UiKit.TEXT_MUTED))
+            rowBottom = maxOf(rowBottom, cell(Translations.formatRarity(entry.bucket), colRarity, wRarity,
+                getRarityColor(entry.bucket)))
+            rowBottom = maxOf(rowBottom, cell(
+                if (entry.time == "any") "—" else Translations.formatTime(entry.time),
+                colTime, wTime, UiKit.TEXT_MUTED))
+
+            context.fill(leftX, rowBottom + 1, tableRight, rowBottom + 2, UiKit.BORDER)
+            y = rowBottom + 5
+        }
+
+        return y
+    }
+
+    // ==================== Spawn table ====================
+
+    /**
+     * One spawn condition per row, every column spelled out.
+     *
+     * Nothing is truncated: each cell wraps inside its column and the row grows to the
+     * tallest one, so the table carries the same information as the text layout rather
+     * than a summary of it. Biome names stay individually hoverable, which is how you
+     * expand a tag like "Jungle" into the biomes it actually covers.
+     */
+    /** Tropimon filler spawns: distinct from every rarity colour so the badge reads as a badge. */
+    private val COLOR_FILLER = 0xFFC08AE8.toInt()
+
+    private fun renderSpawnTable(
+        context: DrawContext,
+        spawns: List<SpawnEntry>,
+        startY: Int,
+        panelX: Int,
+        panelWidth: Int,
+        leftX: Int,
+        mouseX: Int,
+        mouseY: Int,
+        visibleTop: Int,
+        visibleBottom: Int
+    ): Int {
+        val gap = 6
+        val lineH = 10
+        val contentW = panelWidth - 24
+
+        // Fixed columns, with the two biome columns sharing whatever is left.
+        //
+        // These are the widths the table wants; on a narrow screen they do not fit, and
+        // the old `coerceAtLeast` floors made the table wider than the panel instead of
+        // narrower — which is how ten columns ended up running off the right edge at a
+        // high GUI scale. So when the total does not fit, every column is squeezed by the
+        // same ratio and the text simply wraps onto more lines.
+        val naturalFixed = 74 + 44 + 84 + 104 + 74 + 78 + 54 + 62
+        val minFlexible = 160
+        val available = (contentW - gap * 9).coerceAtLeast(120)
+        val squeeze = if (naturalFixed + minFlexible > available)
+            available.toDouble() / (naturalFixed + minFlexible) else 1.0
+
+        fun col(natural: Int, floor: Int) = (natural * squeeze).toInt().coerceAtLeast(floor)
+        val wRarity = col(74, 30)
+        val wWeight = col(44, 22)
+        val wTimeWeather = col(84, 32)
+        val wMultipliers = col(104, 34)
+        val wContext = col(74, 30)
+        val wPresets = col(78, 30)
+        val wSkylight = col(54, 26)
+        val wSky = col(62, 26)
+        val fixed = wRarity + wWeight + wTimeWeather + wMultipliers + wContext + wPresets + wSkylight + wSky
+        val flexible = (available - fixed).coerceAtLeast(60)
+        val wBiomes = (flexible * 6 / 10).coerceAtLeast(34)
+        val wExcluded = (flexible - wBiomes).coerceAtLeast(26)
+
+        var x = leftX
+        val colRarity = x; x += wRarity + gap
+        val colWeight = x; x += wWeight + gap
+        val colBiomes = x; x += wBiomes + gap
+        val colExcluded = x; x += wExcluded + gap
+        val colTimeWeather = x; x += wTimeWeather + gap
+        val colMultipliers = x; x += wMultipliers + gap
+        val colContext = x; x += wContext + gap
+        val colPresets = x; x += wPresets + gap
+        val colSkylight = x; x += wSkylight + gap
+        val colSky = x
+        val tableRight = colSky + wSky
+
+        var y = startY
+        val header = UiKit.TEXT_FAINT
+        context.drawText(textRenderer, Translations.tr("Rarity"), colRarity, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Weight"), colWeight, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Biomes"), colBiomes, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Not in biomes"), colExcluded, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Time/Weather"), colTimeWeather, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Multipliers"), colMultipliers, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Context"), colContext, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Presets"), colPresets, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Skylight"), colSkylight, y, header, true)
+        context.drawText(textRenderer, Translations.tr("Can see sky"), colSky, y, header, true)
+        y += 11
+        context.fill(leftX, y, tableRight, y + 1, UiKit.BORDER_DIM)
+        y += 4
+
+        val seen = mutableSetOf<String>()
+        var index = 0
+        for (spawn in spawns) {
+            val key = SpawnData.dedupKey(spawn)
+            if (key in seen) continue
+            seen.add(key)
+
+            val rowTop = y
+            var rowBottom = y + lineH
+
+            fun cell(text: String, cx: Int, width: Int, color: Int): Int {
+                var cy = y
+                for (line in wrapText(text, width)) {
+                    context.drawText(textRenderer, line, cx, cy, color, true)
+                    cy += lineH
+                }
+                return cy
+            }
+
+            // Rarity, plus the filler badge when the server added this spawn as a catch-all
+            var rarityEnd = cell(
+                Translations.formatRarity(spawn.bucket), colRarity, wRarity, getRarityColor(spawn.bucket))
+            if (spawn.isFiller) {
+                for (line in wrapText(Translations.tr("Filler"), wRarity)) {
+                    context.drawText(textRenderer, line, colRarity, rarityEnd, COLOR_FILLER, true)
+                    rarityEnd += lineH
+                }
+            }
+            rowBottom = maxOf(rowBottom, rarityEnd)
+
+            // Weight
+            val weightText = spawn.weight?.let { String.format("%.1f", it) } ?: "—"
+            rowBottom = maxOf(rowBottom, cell(weightText, colWeight, wWeight, UiKit.TEXT_MUTED))
+
+            // Biomes, plus the blocks the spawn needs
+            var biomeEnd = if (spawn.biomeDetails.isEmpty()) {
+                cell(Translations.tr("Any"), colBiomes, wBiomes, UiKit.TEXT_FAINT)
+            } else {
+                renderBiomesInline(context, spawn.biomeDetails, colBiomes, y, wBiomes,
+                    mouseX, mouseY, visibleTop, visibleBottom)
+            }
+            val requirements = mutableListOf<String>()
+            if (spawn.neededBaseBlocks.isNotEmpty()) {
+                requirements.add("${Translations.tr("Base:")} " +
+                    spawn.neededBaseBlocks.joinToString(", ") { Translations.blockName(it) })
+            }
+            if (spawn.neededNearbyBlocks.isNotEmpty()) {
+                requirements.add("${Translations.tr("Nearby:")} " +
+                    spawn.neededNearbyBlocks.joinToString(", ") { Translations.blockName(it) })
+            }
+            for (requirement in requirements) {
+                for (line in wrapText(requirement, wBiomes)) {
+                    context.drawText(textRenderer, line, colBiomes, biomeEnd, 0xFF887755.toInt(), true)
+                    biomeEnd += lineH
+                }
+            }
+            rowBottom = maxOf(rowBottom, biomeEnd)
+
+            // Excluded biomes
+            rowBottom = maxOf(rowBottom, if (spawn.excludedBiomes.isEmpty()) {
+                cell("—", colExcluded, wExcluded, UiKit.TEXT_FAINT)
+            } else {
+                renderBiomesInline(context, spawn.excludedBiomes, colExcluded, y, wExcluded,
+                    mouseX, mouseY, visibleTop, visibleBottom)
+            })
+
+            // Time / Weather
+            var twY = y
+            twY = run {
+                context.drawText(textRenderer, Translations.formatTime(spawn.time), colTimeWeather, twY,
+                    UiKit.TEXT_MUTED, true)
+                twY + lineH
+            }
+            context.drawText(textRenderer, Translations.formatWeather(spawn.weather), colTimeWeather, twY,
+                UiKit.TEXT_MUTED, true)
+            rowBottom = maxOf(rowBottom, twY + lineH)
+
+            // Weight multipliers, one per line
+            var multY = y
+            if (spawn.weightMultipliers.isEmpty()) {
+                context.drawText(textRenderer, "—", colMultipliers, multY, UiKit.TEXT_FAINT, true)
+                multY += lineH
+            } else {
+                for (multiplier in spawn.weightMultipliers) {
+                    val factor = if (multiplier.multiplier == multiplier.multiplier.toInt().toFloat())
+                        "×${multiplier.multiplier.toInt()}"
+                    else "×${String.format("%.1f", multiplier.multiplier)}"
+                    val label = "$factor ${Translations.formatMultiplierCondition(multiplier.conditionLabel)}"
+                    for (line in wrapText(label, wMultipliers)) {
+                        context.drawText(textRenderer, line, colMultipliers, multY, 0xFF55BBFF.toInt(), true)
+                        multY += lineH
+                    }
+                }
+            }
+            rowBottom = maxOf(rowBottom, multY)
+
+            // Context (spawnable position type)
+            val contextText = Translations.formatSpawnContext(spawn.spawnContext)
+                .ifEmpty { Translations.tr("Grounded") }
+            rowBottom = maxOf(rowBottom, cell(contextText, colContext, wContext, UiKit.TEXT_MUTED))
+
+            // Presets
+            val presets = spawn.presets
+            rowBottom = maxOf(rowBottom, cell(
+                if (presets.isEmpty()) "—" else presets.joinToString(", ") { Translations.formatPreset(it) },
+                colPresets, wPresets, 0xFFAA8855.toInt()))
+
+            // Skylight (falls back to block light when there is no sky requirement)
+            val skylight = when {
+                spawn.minSkyLight != null || spawn.maxSkyLight != null ->
+                    "${spawn.minSkyLight ?: 0}-${spawn.maxSkyLight ?: 15}"
+                spawn.minLight != null || spawn.maxLight != null ->
+                    "☼${spawn.minLight ?: 0}-${spawn.maxLight ?: 15}"
+                else -> "—"
+            }
+            rowBottom = maxOf(rowBottom, cell(skylight, colSkylight, wSkylight, UiKit.TEXT_MUTED))
+
+            // Can see sky
+            val skyText = when (spawn.canSeeSky) {
+                true -> Translations.tr("Outdoor")
+                false -> Translations.tr("Underground")
+                else -> "—"
+            }
+            rowBottom = maxOf(rowBottom, cell(skyText, colSky, wSky, UiKit.TEXT_MUTED))
+
+            // A visible rule under every row: rows can be several lines tall, so a faint
+            // stripe on alternating rows was not enough to tell them apart.
+            context.fill(leftX, rowBottom + 1, tableRight, rowBottom + 2, UiKit.BORDER)
+
+            y = rowBottom + 5
+            index++
+        }
+
+        return y
+    }
+
+    // ==================== Size & Riding (Cobblemon 1.8) ====================
+
+    /**
+     * Cobblemon 1.8 buckets every Pokemon into XS..XL. The thresholds are not per
+     * species: `PokemonSizeCategory.fromScale` splits the server's intrinsic size
+     * range into five equal bands, so they are read from ServerSettings and follow
+     * whatever the server is running.
+     */
+    private fun renderSizeCategories(context: DrawContext, infoX: Int, startY: Int): Int {
+        var y = startY
+        try {
+            val min = ServerSettings.pokemonIntrinsicSizeMin
+            val max = ServerSettings.pokemonIntrinsicSizeMax
+            val span = max - min
+            if (span <= 0f) return y
+
+            val categories = PokemonSizeCategory.entries
+            val step = span / categories.size
+            val label: String = Translations.tr("Sizes")
+            context.drawText(textRenderer, label, infoX, y, UiKit.accent(), true)
+            y += 11
+
+            val parts = categories.mapIndexed { index, category ->
+                val upper = min + step * (index + 1)
+                if (index == categories.size - 1) "${category.name} \u2265${"%.2f".format(min + step * index)}"
+                else "${category.name} <${"%.2f".format(upper)}"
+            }
+            context.drawText(textRenderer, parts.joinToString(" \u00b7 "), infoX + 4, y, UiKit.TEXT_MUTED, true)
+            y += 10
+
+            // Same scale expressed as this species' actual height
+            val h = species.height / 10f
+            if (h > 0f) {
+                val heightText = "${Translations.tr("Height:")} ${"%.2f".format(h * min)}\u2013${"%.2f".format(h * max)} m"
+                context.drawText(textRenderer, heightText, infoX + 4, y, UiKit.TEXT_FAINT, true)
+                y += 10
+            }
+        } catch (_: Exception) {}
+        return y
+    }
+
+    /**
+     * Riding stats as a pentagon radar chart, one tab per style.
+     *
+     * The two outlines are not a random roll. A stat's range is `first..last` where
+     * `first` is the base every individual of the species has and `last` is the ceiling:
+     * Cobblemon computes the effective value as `min(first + rideBoost, last)`, and
+     * `rideBoost` is a per-Pokémon value the player raises. So the filled shape is what
+     * the species starts with, the outline is what it can be trained up to, and the gap
+     * between them is the headroom.
+     */
+    private fun renderRidingRadar(context: DrawContext, midX: Int, startY: Int, halfW: Int,
+                                  mouseX: Int, mouseY: Int): Int {
+        var y = startY
+        try {
+            val riding = currentForm()?.riding ?: species.riding
+            val behaviours = riding?.behaviours ?: return y
+            if (behaviours.isEmpty()) return y
+
+            val styles = listOf(RidingStyle.LAND, RidingStyle.LIQUID, RidingStyle.AIR)
+                .filter { behaviours[it] != null }
+            if (styles.isEmpty()) return y
+
+            UiKit.sectionTitle(context, textRenderer, Translations.tr("Riding"), midX, y)
+            y += 12
+
+            // tabs, only when the species really can do several things
+            if (styles.size > 1) {
+                if (ridingStyleTab >= styles.size) ridingStyleTab = 0
+                var tabX = midX
+                for ((index, style) in styles.withIndex()) {
+                    val label = rideStyleName(style)
+                    val tabW = textRenderer.getWidth(label) + 10
+                    val active = index == ridingStyleTab
+                    val hovered = mouseX >= tabX && mouseX <= tabX + tabW &&
+                        mouseY >= y && mouseY <= y + 12
+                    UiKit.tab(context, textRenderer, tabX, y, tabW, 12, label, active, hovered)
+                    ridingTabBounds.add(RidingTabBound(tabX, y, tabW, 12, index))
+                    tabX += tabW + 2
+                }
+                y += 15
+            } else {
+                ridingStyleTab = 0
+                context.drawText(textRenderer, "  ${rideStyleName(styles[0])}", midX, y, UiKit.TEXT, true)
+                y += 11
+            }
+
+            val settings = behaviours[styles[ridingStyleTab]] ?: return y
+            val stats = try { settings.stats } catch (_: Exception) { null } ?: return y
+            if (stats.isEmpty()) return y
+
+            val statOrder = listOf(
+                RidingStat.SPEED to Translations.tr("Spd"),
+                RidingStat.ACCELERATION to Translations.tr("Accel"),
+                RidingStat.JUMP to Translations.tr("Jump"),
+                RidingStat.STAMINA to Translations.tr("Stam"),
+                RidingStat.SKILL to Translations.tr("Skill")
+            )
+            y = drawRadar(context, midX, y, halfW, statOrder, stats)
+
+            val legend = Translations.tr("filled = base · outline = trained cap")
+            context.drawText(textRenderer, legend, midX, y, UiKit.TEXT_FAINT, true)
+            y += 11
+        } catch (_: Exception) {}
+        return y
+    }
+
+    private fun drawRadar(
+        context: DrawContext,
+        midX: Int,
+        startY: Int,
+        halfW: Int,
+        statOrder: List<Pair<RidingStat, String>>,
+        stats: Map<RidingStat, IntRange>
+    ): Int {
+        val radius = 30
+        val labelPad = 26
+        val cx = midX + halfW / 2
+        val cy = startY + radius + 6
+        val n = statOrder.size
+
+        // angle of axis i, starting at the top and going clockwise
+        fun angle(i: Int) = (-Math.PI / 2.0) + (2.0 * Math.PI * i / n)
+        fun px(i: Int, r: Double) = (cx + Math.cos(angle(i)) * r).toInt()
+        fun py(i: Int, r: Double) = (cy + Math.sin(angle(i)) * r).toInt()
+
+        // grid rings + axes
+        for (ring in 1..3) {
+            val r = radius * ring / 3.0
+            val gx = IntArray(n) { px(it, r) }
+            val gy = IntArray(n) { py(it, r) }
+            UiKit.polygon(context, gx, gy, UiKit.BORDER_DIM)
+        }
+        for (i in 0 until n) {
+            UiKit.line(context, cx, cy, px(i, radius.toDouble()), py(i, radius.toDouble()), UiKit.BORDER_DIM)
+        }
+
+        // base value (filled) and trained ceiling (outline)
+        val minX = IntArray(n); val minY = IntArray(n)
+        val maxX = IntArray(n); val maxY = IntArray(n)
+        for (i in 0 until n) {
+            val range = stats[statOrder[i].first]
+            val lo = (range?.first ?: 0).coerceIn(0, 100)
+            val hi = (range?.last ?: 0).coerceIn(0, 100)
+            minX[i] = px(i, radius * lo / 100.0); minY[i] = py(i, radius * lo / 100.0)
+            maxX[i] = px(i, radius * hi / 100.0); maxY[i] = py(i, radius * hi / 100.0)
+        }
+        UiKit.fillPolygon(context, minX, minY, UiKit.withAlpha(UiKit.accent(), 0x55))
+        UiKit.polygon(context, maxX, maxY, UiKit.accentBright())
+        UiKit.polygon(context, minX, minY, UiKit.accent())
+
+        // vertex labels: name above the value range
+        for (i in 0 until n) {
+            val (stat, label) = statOrder[i]
+            val range = stats[stat]
+            val value = if (range == null) "-" else "${range.first}-${range.last}"
+            val lx = px(i, radius + 9.0)
+            val ly = py(i, radius + 9.0)
+            val cosA = Math.cos(angle(i))
+            for ((offset, text, color) in listOf(
+                Triple(0, label, UiKit.TEXT_MUTED),
+                Triple(9, value, UiKit.TEXT_FAINT)
+            )) {
+                val w = textRenderer.getWidth(text)
+                val tx = when {
+                    cosA > 0.3 -> lx
+                    cosA < -0.3 -> lx - w
+                    else -> lx - w / 2
+                }
+                context.drawText(textRenderer, text, tx, ly - 4 + offset, color, true)
+            }
+        }
+
+        return cy + radius + labelPad
+    }
+
+    private fun rideStyleName(style: RidingStyle): String = when (style) {
+        RidingStyle.LAND -> Translations.tr("Land")
+        RidingStyle.LIQUID -> Translations.tr("Water")
+        RidingStyle.AIR -> Translations.tr("Air")
     }
 
     // ==================== Move Rendering ====================
@@ -1313,7 +1956,8 @@ class PokemonDetailScreen(
         context: DrawContext, moves: List<MoveEntry>,
         startY: Int, panelX: Int, panelWidth: Int, leftX: Int,
         showLevel: Boolean, mouseX: Int, mouseY: Int,
-        contentTop: Int, contentBottom: Int
+        contentTop: Int, contentBottom: Int,
+        markTms: Boolean = false
     ): Int {
         var y = startY
         val rowH = 14
@@ -1352,7 +1996,9 @@ class PokemonDetailScreen(
                 if (showLevel) {
                     context.drawText(textRenderer, "${entry.level}", colLvl, y + 2, UiKit.TEXT_FAINT, true)
                 }
-                val moveDisplayName = move.displayName.string
+                // A move can be TM-learnable in the learnset without a TM item existing
+                val hasTmItem = markTms && TmData.forMove(move.name) != null
+                val moveDisplayName = if (hasTmItem) "\u25C6 ${move.displayName.string}" else move.displayName.string
                 val moveNameW = textRenderer.getWidth(moveDisplayName)
                 val nameHovered = mouseX >= colName && mouseX <= colName + moveNameW &&
                                   mouseY >= rowTop && mouseY < rowTop + rowH &&
@@ -1563,9 +2209,33 @@ class PokemonDetailScreen(
         }
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    /** Previous / next Pokémon: a new page, opened at its top. */
+    private fun openSibling(target: Species) {
+        client?.setScreen(PokemonDetailScreen(target, parent, allSpecies))
+    }
+
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
-            val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
+            // Riding style tabs
+            for (tab in ridingTabBounds) {
+                if (mouseX >= tab.x && mouseX <= tab.x + tab.w &&
+                    mouseY >= tab.y.toDouble() && mouseY <= (tab.y + tab.h).toDouble()) {
+                    ridingStyleTab = tab.index
+                    return true
+                }
+            }
+
+            // Habitat row click -> its wiki page
+            hoveredHabitatId?.let { habitatId ->
+                client?.setScreen(HabitatDetailScreen(habitatId, this))
+                return true
+            }
+
+
+            // The table needs more room than the text layout
+        val panelWidth = if (ModConfig.spawnDisplayMode == "table")
+            (width * 0.96).toInt().coerceIn(520, 1120)
+        else (width * 0.8).toInt().coerceIn(380, 620)
             val panelX = (width - panelWidth) / 2
             val panelTop = 10
 
@@ -1618,13 +2288,13 @@ class PokemonDetailScreen(
             if (hasPrev && mouseX >= prevBtnX && mouseX <= prevBtnX + navW &&
                 mouseY >= navY.toDouble() && mouseY <= navY + 10.0) {
                 val prevSpecies = allSpecies!![currentIndex - 1]
-                client?.setScreen(PokemonDetailScreen(prevSpecies, parent, allSpecies))
+                openSibling(prevSpecies)
                 return true
             }
             if (hasNext && mouseX >= nextBtnX && mouseX <= nextBtnX + navW &&
                 mouseY >= navY.toDouble() && mouseY <= navY + 10.0) {
                 val nextSpecies = allSpecies!![currentIndex + 1]
-                client?.setScreen(PokemonDetailScreen(nextSpecies, parent, allSpecies))
+                openSibling(nextSpecies)
                 return true
             }
 
@@ -1783,10 +2453,10 @@ class PokemonDetailScreen(
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val contentAreaHeight = sbContentBottom - sbContentTop
             val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
@@ -1798,18 +2468,18 @@ class PokemonDetailScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) {
             isScrollbarDragging = false
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val panelTop = 10
         val panelBottom = height - 10
         val formOffset = if (availableForms.size > 1) 16 else 0
@@ -1826,11 +2496,11 @@ class PokemonDetailScreen(
         }
         // F2: Arrow key navigation
         if (keyCode == GLFW.GLFW_KEY_LEFT && allSpecies != null && currentIndex > 0) {
-            client?.setScreen(PokemonDetailScreen(allSpecies[currentIndex - 1], parent, allSpecies))
+            openSibling(allSpecies[currentIndex - 1])
             return true
         }
         if (keyCode == GLFW.GLFW_KEY_RIGHT && allSpecies != null && currentIndex >= 0 && currentIndex < allSpecies.size - 1) {
-            client?.setScreen(PokemonDetailScreen(allSpecies[currentIndex + 1], parent, allSpecies))
+            openSibling(allSpecies[currentIndex + 1])
             return true
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
@@ -1857,6 +2527,7 @@ class PokemonDetailScreen(
         return when (bucket.lowercase().trim()) {
             "common" -> 0xFF55CC55.toInt(); "uncommon" -> 0xFFFFDD55.toInt()
             "rare" -> 0xFF55AAFF.toInt(); "ultra-rare" -> 0xFFBB66FF.toInt()
+            "boss" -> 0xFFFF5544.toInt()
             else -> UiKit.TEXT_MUTED
         }
     }
@@ -1920,7 +2591,7 @@ class PokemonDetailScreen(
 
     private fun renderBiomeTooltip(
         context: DrawContext,
-        biomes: List<String>,
+        biomes: List<BiomeLine>,
         detail: BiomeDetail,
         mouseX: Int,
         mouseY: Int
@@ -1930,6 +2601,7 @@ class PokemonDetailScreen(
         val titleText = Translations.biomeName(detail)
         val titleColor = UiKit.accent()
         val biomeColor = UiKit.TEXT_MUTED
+        val headerColor = 0xFF88AACC.toInt()
         val bgColor = 0xF0100010.toInt()
         val borderColor = 0xFF5000A0.toInt()
         val screenMargin = 4
@@ -1945,18 +2617,26 @@ class PokemonDetailScreen(
         }
 
         val rowsPerCol = (biomes.size + numCols - 1) / numCols
-        val columns = (0 until numCols).map { col ->
-            val start = col * rowsPerCol
-            biomes.subList(start, minOf(start + rowsPerCol, biomes.size))
+        val columns = mutableListOf<List<BiomeLine>>()
+        var cursor = 0
+        for (col in 0 until numCols) {
+            if (cursor >= biomes.size) { columns.add(emptyList()); continue }
+            var end = minOf(cursor + rowsPerCol, biomes.size)
+            // never leave a mod heading stranded as the last line of a column
+            if (end < biomes.size && end - 1 > cursor && biomes[end - 1].isHeader) end--
+            columns.add(biomes.subList(cursor, end))
+            cursor = end
         }
 
         val colWidths = columns.mapIndexed { i, col ->
-            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth("  $it") } ?: 0
+            val biomeMaxW = col.maxOfOrNull { textRenderer.getWidth(if (it.isHeader) it.text else "  ${it.text}") } ?: 0
             if (i == 0) maxOf(textRenderer.getWidth(titleText), biomeMaxW) else biomeMaxW
         }
 
         val tooltipW = colWidths.sum() + colGap * (numCols - 1) + padding * 2
-        val tooltipH = padding + (rowsPerCol + 1) * lineHeight + padding
+        // measured, not estimated: the heading nudge can make one column a line taller
+        val maxRows = columns.maxOfOrNull { it.size } ?: 0
+        val tooltipH = padding + (maxRows + 1) * lineHeight + padding
 
         var tx = mouseX + 12
         var ty = mouseY - 12
@@ -1972,8 +2652,12 @@ class PokemonDetailScreen(
         var colX = tx + padding
         for ((i, col) in columns.withIndex()) {
             var textY = ty + padding + lineHeight
-            for (name in col) {
-                context.drawText(textRenderer, "  $name", colX, textY, biomeColor, true)
+            for (line in col) {
+                if (line.isHeader) {
+                    context.drawText(textRenderer, line.text, colX, textY, headerColor, true)
+                } else {
+                    context.drawText(textRenderer, "  ${line.text}", colX, textY, biomeColor, true)
+                }
                 textY += lineHeight
             }
             colX += colWidths[i] + colGap

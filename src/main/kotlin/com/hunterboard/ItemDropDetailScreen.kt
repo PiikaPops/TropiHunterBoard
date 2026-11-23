@@ -16,7 +16,7 @@ import org.lwjgl.glfw.GLFW
 class ItemDropDetailScreen(
     private val itemId: Identifier,
     private val parent: Screen
-) : Screen(Text.literal("Item Drop Detail")) {
+) : ScaledScreen(Text.literal("Item Drop Detail")) {
 
     override fun renderBackground(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {}
 
@@ -61,13 +61,11 @@ class ItemDropDetailScreen(
 
     private fun getItemDisplayName(): String {
         return try {
-            val item = Registries.ITEM.get(itemId)
-            val stack = ItemStack(item)
-            stack.name.string
+            Translations.itemName(itemId.toString())
         } catch (_: Exception) { itemId.path }
     }
 
-    override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+    override fun renderScaled(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
         pokemonBounds.clear()
         UiKit.screenDim(context, width, height)
 
@@ -88,8 +86,7 @@ class ItemDropDetailScreen(
         val backText: String = Translations.tr("\u2190 Back")
         val backHovered = mouseX >= panelX + 6 && mouseX <= panelX + 6 + textRenderer.getWidth(backText) + 4 &&
                           mouseY in (panelTop + 5)..(panelTop + 17)
-        context.drawText(textRenderer, backText, panelX + 8, panelTop + 6,
-            if (backHovered) UiKit.accent() else UiKit.TEXT_MUTED, true)
+        UiKit.backLink(context, textRenderer, panelX + 8, panelTop + 6, backText, backHovered)
 
         // Item name (centered) with icon
         val itemName = getItemDisplayName()
@@ -129,7 +126,7 @@ class ItemDropDetailScreen(
         sbContentTop = contentTop
         sbContentBottom = contentBottom
 
-        context.enableScissor(panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
+        scissor(context, panelX + 1, contentTop, panelX + panelWidth - 1, contentBottom)
 
         val leftX = panelX + 10
         val contentW = panelWidth - 20
@@ -137,7 +134,7 @@ class ItemDropDetailScreen(
 
         // === Pokémon dropping this item ===
         val sectionLabel: String = Translations.tr("Pokémon dropping this item")
-        context.drawText(textRenderer, sectionLabel, leftX, y, UiKit.accent(), true)
+        UiKit.sectionTitle(context, textRenderer, sectionLabel, leftX, y)
 
         // Toggle buttons
         val iconToggleText = "\u229E"
@@ -358,7 +355,7 @@ class ItemDropDetailScreen(
         return result + ellipsis
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClickedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
             val panelWidth = (width * 0.8).toInt().coerceIn(380, 620)
             val panelX = (width - panelWidth) / 2
@@ -418,10 +415,10 @@ class ItemDropDetailScreen(
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClickedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+    override fun mouseDraggedScaled(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
         if (isScrollbarDragging && button == 0) {
             val contentAreaHeight = sbContentBottom - sbContentTop
             val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
@@ -432,15 +429,15 @@ class ItemDropDetailScreen(
             }
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
+        return super.mouseDraggedScaled(mouseX, mouseY, button, deltaX, deltaY)
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseReleasedScaled(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && isScrollbarDragging) { isScrollbarDragging = false; return true }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return super.mouseReleasedScaled(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolledScaled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         val contentAreaHeight = sbContentBottom - sbContentTop
         if (contentAreaHeight <= 0) return true
         val maxScroll = maxOf(0, contentHeight - contentAreaHeight)
