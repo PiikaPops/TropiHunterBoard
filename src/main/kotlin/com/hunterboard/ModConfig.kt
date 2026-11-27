@@ -170,6 +170,10 @@ object ModConfig {
     var hunterPc: Boolean = true
         private set
 
+    // Open HunterBoard's PC straight away instead of Cobblemon's (its "Back to the PC" button still leads there)
+    var hunterPcFirst: Boolean = false
+        private set
+
     // Download Tropimon's habitat pools from the relay (HabitatFeed)
     var habitatFeed: Boolean = true
         private set
@@ -655,6 +659,11 @@ object ModConfig {
         save()
     }
 
+    fun toggleHunterPcFirst() {
+        hunterPcFirst = !hunterPcFirst
+        save()
+    }
+
     fun toggleClassicPcFirst() {
         classicPcFirst = !classicPcFirst
         save()
@@ -773,6 +782,7 @@ object ModConfig {
         hideBossDamageChat = false
         useHunterRadar = true
         hunterPc = true
+        hunterPcFirst = false
         habitatFeed = true
         controllerCompat = true
         radarDark = true
@@ -917,6 +927,7 @@ object ModConfig {
             hideBossDamageChat = data.hideBossDamageChat
             useHunterRadar = data.useHunterRadar
             hunterPc = data.hunterPc
+            hunterPcFirst = data.hunterPcFirst
             habitatFeed = data.habitatFeed
             controllerCompat = data.controllerCompat
             radarDark = data.radarDark
@@ -1004,6 +1015,7 @@ object ModConfig {
         hideBossDamageChat = hideBossDamageChat,
         useHunterRadar = useHunterRadar,
         hunterPc = hunterPc,
+        hunterPcFirst = hunterPcFirst,
         habitatFeed = habitatFeed,
         controllerCompat = controllerCompat,
         radarDark = radarDark,
@@ -1152,6 +1164,7 @@ object ModConfig {
         val hideBossDamageChat: Boolean = false,
         val useHunterRadar: Boolean = true,
         val hunterPc: Boolean = true,
+        val hunterPcFirst: Boolean = false,
         val habitatFeed: Boolean = true,
         val controllerCompat: Boolean = true,
         val radarDark: Boolean = true,

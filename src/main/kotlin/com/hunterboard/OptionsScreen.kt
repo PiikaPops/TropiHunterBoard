@@ -219,6 +219,11 @@ class OptionsScreen(
                         "Adds a \"HunterBoard view\" button to Cobblemon's PC. It opens the whole PC on one screen: every box at a glance or a sortable list, filters (shiny, IVs, ability, type, nature, arrival date, tags…), the full detail of each Pokémon, multiple selection to release, move or arrange several at once, release candidates, favourites and tags. Everything goes through Cobblemon's usual requests, one at a time, each confirmed by the server.",
                         "Ajoute un bouton « Vue HunterBoard » au PC de Cobblemon. Il ouvre tout le PC sur un seul écran : toutes les boîtes d'un coup d'œil ou une liste triable, des filtres (shiny, IV, talent, type, nature, date d'arrivée, tags…), la fiche complète de chaque Pokémon, la sélection multiple pour relâcher, déplacer ou ranger plusieurs Pokémon à la fois, les candidats au relâchement, les favoris et les tags. Tout passe par les requêtes habituelles de Cobblemon, une à la fois, chacune confirmée par le serveur."),
                         get = { ModConfig.hunterPc }, flip = { ModConfig.toggleHunterPc() }),
+                    Toggle("hunterPcFirst", { t("Open the HunterBoard PC first", "Ouvrir le PC HunterBoard d'office") }, Desc(
+                        "On: opening a PC shows HunterBoard's PC straight away; its \"Back to the PC\" button still leads to Cobblemon's. Off: Cobblemon's PC opens as usual, with the \"HunterBoard view\" button. A PC opened to pick a Pokémon for something else (trade, daycare…) always stays Cobblemon's.",
+                        "Activé : ouvrir un PC affiche directement le PC HunterBoard ; son bouton « PC de base » mène toujours à celui de Cobblemon. Désactivé : le PC de Cobblemon s'ouvre normalement, avec le bouton « Vue HunterBoard ». Un PC ouvert pour choisir un Pokémon pour autre chose (échange, pension…) reste toujours celui de Cobblemon."),
+                        get = { ModConfig.hunterPcFirst }, flip = { ModConfig.toggleHunterPcFirst() })
+                        .enabledWhen { ModConfig.hunterPc },
                     Toggle("classicPcFirst", { t("Open Cobblemon's PC first", "Ouvrir le PC de base") }, Desc(
                         "Tropimon Better PC replaces Cobblemon's PC as soon as it opens. On: Cobblemon's PC opens as usual, and a \"Better PC\" button in it opens Better PC. Off: Better PC opens straight away, as it does without HunterBoard.",
                         "Tropimon Better PC remplace le PC de Cobblemon dès son ouverture. Activé : le PC de Cobblemon s'ouvre normalement, et un bouton « Better PC » y ouvre Better PC. Désactivé : Better PC s'ouvre directement, comme sans HunterBoard."),
@@ -265,8 +270,8 @@ class OptionsScreen(
                         "Affiche le compte à rebours jusqu'au prochain raid (heure de Paris), avec une alerte 5 minutes avant le début."),
                         get = { ModConfig.showRaidHud }, flip = { ModConfig.toggleRaidHud() }),
                     Toggle("raidCard", { t("Raid card", "Carte de raid") }, Desc(
-                        "When a raid boss appears, a card shows it with its weaknesses and the time left before the raid starts (5 minutes). It goes away when the countdown ends or when you press the accept key (Y by default).",
-                        "Quand un boss de raid apparaît, une carte l'affiche avec ses faiblesses et le temps restant avant le début du raid (5 minutes). Elle disparaît à la fin du décompte ou quand vous appuyez sur la touche « accepter » (Y par défaut)."),
+                        "When a raid is announced, on the timetable or started by a player, a card shows the boss with its weaknesses and the time left before the raid starts (5 minutes). It goes away when the countdown ends; its key (Delete by default, in Controls) hides it and brings it back.",
+                        "Quand un raid est annoncé, à l'horaire ou lancé par un joueur, une carte affiche le boss avec ses faiblesses et le temps restant avant le début du raid (5 minutes). Elle disparaît à la fin du décompte ; sa touche (Suppr par défaut, dans Commandes) la masque et la réaffiche."),
                         get = { ModConfig.raidCard }, flip = { ModConfig.toggleRaidCard() }),
                     Cycle("raidCardPos", { t("Raid card position", "Position de la carte de raid") }, Desc(
                         "Where the raid card appears. Pick a preset here, or drag the card anywhere in the position editor above (\"Position and size\").",
@@ -278,8 +283,8 @@ class OptionsScreen(
                         next = { ModConfig.cycleRaidCardAnchor() }, prev = { ModConfig.cycleRaidCardAnchor(back = true) })
                         .enabledWhen { ModConfig.raidCard },
                     Toggle("raidShare", { t("Share the raid boss", "Partager le boss de raid") }, Desc(
-                        "Tropimon does not say which Pokémon the boss is. When you are near it, your mod tells the other HunterBoard players through a small relay server; when you are not, it asks the relay. Only the boss is sent: no name, no position. Off: nothing is sent or asked.",
-                        "Tropimon ne dit pas quel Pokémon est le boss. Quand vous êtes près de lui, votre mod l'indique aux autres joueurs HunterBoard via un petit serveur relais ; sinon, il le demande au relais. Seul le boss est envoyé : ni pseudo, ni position. Désactivé : rien n'est envoyé ni demandé."),
+                        "Tropimon does not say which Pokémon the boss is. When you are near it, your mod tells the other HunterBoard players through a small relay server; when you are not, it asks the relay. The raid's announcement is shared the same way, so that a player who joins just after it still gets the card. Only the raid is sent: no name, no position. Off: nothing is sent or asked.",
+                        "Tropimon ne dit pas quel Pokémon est le boss. Quand vous êtes près de lui, votre mod l'indique aux autres joueurs HunterBoard via un petit serveur relais ; sinon, il le demande au relais. L'annonce du raid est partagée de la même façon, pour qu'un joueur qui se connecte juste après ait quand même la carte. Seul le raid est envoyé : ni pseudo, ni position. Désactivé : rien n'est envoyé ni demandé."),
                         get = { ModConfig.raidShare }, flip = { ModConfig.toggleRaidShare() }),
                     Toggle("showMiracle", { t("Miracles", "Miracles") }, Desc(
                         "Shows the miracles (boosts) active on the server and how long each has left.",

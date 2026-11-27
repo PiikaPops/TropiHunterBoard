@@ -85,6 +85,8 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
     private var cx = 0; private var cw = 0; private var cTop = 0; private var cBottom = 0
     private var bodyTop = 0; private var footerY = 0
     private var filtersTop = 0
+    /** The filters below the search field, folded away each time the PC opens: room for the teams. */
+    private var filtersOpen = false
     private var showDetail = true
     private var cell = 18; private var tileW = 0; private var tileH = 0; private var perRow = 1
     private var contentH = 0
@@ -95,6 +97,10 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
     }
 
     companion object {
+        /** The filters' fold button, below the search field. */
+        private const val TOGGLE_Y = 29
+        /** The search field and the fold button, the filters folded. */
+        private const val FOLDED_H = TOGGLE_Y + 17
         private const val HEADER_H = 11
         private const val TILE_GAP = 4
         private const val PARTY_CELL = 22
@@ -239,7 +245,8 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
         // left column: party, filters (what they need, scrolled when short), the teams below
         filtersTop = partyY + PARTY_CELL + 6
         val avail = footerY - 3 - filtersTop
-        val filtersH = minOf(filterNeed, avail - TeamPanel.MIN_H - 10).coerceAtLeast(minOf(avail / 2, 90))
+        val filtersH = if (!filtersOpen) FOLDED_H
+            else minOf(filterNeed, avail - TeamPanel.MIN_H - 10).coerceAtLeast(minOf(avail / 2, 90))
         teamsTop = filtersTop + filtersH + 10
         teams.place(lx, teamsTop, lw, footerY - 3)
         // box tiles: the biggest cell that still shows at least two boxes side by side
@@ -418,11 +425,22 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
     private fun drawFilters(ctx: DrawContext, mx: Int, my: Int) {
         val top = filtersTop
         val bottom = teamsTop - 10
-        UiKit.sectionTitle(ctx, textRenderer, L("Search & filters", "Recherche & filtres"), lx, top)
+        UiKit.sectionTitle(ctx, textRenderer, L("Search", "Recherche"), lx, top)
         UiKit.placeField(search, lx, top + 11, lw)
+        // the filters fold under the field behind a full-width button, lit and counted when some are on
+        run {
+            // the search text shows in its own field: only the filters folded below count here, and a sort
+            val n = filter.activeFilters + (if (filter.sort != PcFilterState.SORT_PLACE) 1 else 0)
+            val label = if (filtersOpen) "▾ " + L("Hide the filters", "Masquer les filtres")
+                else "▸ " + L("Filters & sort", "Filtres et tri") + (if (n > 0) " · $n " + L("on", if (n > 1) "actifs" else "actif") else "")
+            val by = top + TOGGLE_Y
+            UiKit.button(ctx, textRenderer, lx, by, lw, 14, fit(textRenderer, label, lw - 6), inside(mx, my, lx, by, lw, 14), !filtersOpen && n > 0)
+            hit(lx, by, lw, 14) { filtersOpen = !filtersOpen; filterScroll = 0 }
+        }
+        if (!filtersOpen) { filterMaxScroll = 0; filterScroll = 0; return }
 
         // everything below the field may scroll when the window is short
-        val areaTop = top + 30
+        val areaTop = top + FOLDED_H + 1
         val firstHit = hits.size
         scissor(ctx, lx - 2, areaTop, lx + lw + 2, bottom)
         var y = areaTop - filterScroll
@@ -535,7 +553,7 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
 
         ctx.disableScissor()
         val full = y + filterScroll - areaTop
-        filterNeed = full + 30
+        filterNeed = full + FOLDED_H + 1
         val maxScroll = maxOf(0, full - (bottom - areaTop))
         filterMaxScroll = maxScroll
         filterScroll = filterScroll.coerceIn(0, maxScroll)
@@ -1257,8 +1275,8 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
         } else if (controllerHint != null) {
             ctx.drawText(textRenderer, controllerHint, x0 + 8, y, UiKit.TEXT_FAINT, false)
         } else {
-            val hint = L("Right click: menu · Double click: wiki page · Ctrl+A: select all · Del: release",
-                "Clic droit : menu · Double-clic : fiche wiki · Ctrl+A : tout sélectionner · Suppr : relâcher")
+            val hint = L("Right click: menu · Double click: into / out of the party · Ctrl+A: select all · Del: release",
+                "Clic droit : menu · Double-clic : dans / hors de l'équipe · Ctrl+A : tout sélectionner · Suppr : relâcher")
             ctx.drawText(textRenderer, fit(textRenderer, hint, pw - 20), x0 + 8, y, UiKit.TEXT_FAINT, false)
         }
     }
@@ -1508,6 +1526,27 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
         return true
     }
 
+    /**
+     * A double click: a PC Pokémon joins the party (first free place), a party member goes
+     * back to the PC — into a free slot of its labelled box when it has one (tags first, as
+     * arranging does), else the first free slot.
+     */
+    private fun toggleParty(e: PcEntry) {
+        if (!e.place.inParty) {
+            val free = (0 until 6).firstOrNull { session.party?.slots?.getOrNull(it) == null }
+                ?: run { notify(L("The party is full: drag onto a party member to swap.", "Équipe pleine : glissez sur un membre de l'équipe pour échanger."), UiKit.GOLD); return }
+            ops.start(PcOps.Kind.MOVE, listOf(PcStep.Move(e.uuid, e.place, PcPlace.party(free))))
+            return
+        }
+        if (session.partyCount() <= 1 && emptyPartyRefused()) return
+        val labelled = BoxRules.boxesFor(e, prefs, session.boxCount)
+        val dest = labelled.asSequence().flatMap { b -> (0 until session.boxSize(b)).asSequence().map { PcPlace(b, it) } }
+            .firstOrNull { session.at(it) == null } ?: PcOps.freeSlots(session, 0).firstOrNull()
+            ?: run { notify(L("No free slot in the PC.", "Aucune place libre dans le PC."), UiKit.DANGER); return }
+        ops.start(PcOps.Kind.MOVE, listOf(PcStep.Move(e.uuid, e.place, dest)))
+        if (labelled.isNotEmpty() && dest.box in labelled) notify(L("Back to ", "Rangé dans ") + boxName(dest.box))
+    }
+
     private fun moveOne(e: PcEntry, to: PcPlace) {
         if (e.place == to) return
         val other = session.at(to)
@@ -1565,8 +1604,11 @@ class HunterPcScreen(val session: PcSession, private val prefsOverride: PcPrefs?
 
         if (e != null) {
             val now = System.currentTimeMillis()
+            // double click: into the party, or out of it into its box (the wiki page stays in the menu)
             if (lastClickId == e.uuid && now - lastClick < 300) {
-                client?.setScreen(PokemonDetailScreen(e.pokemon.species, this)); return true
+                lastClickId = null
+                if (!ops.running) toggleParty(e)
+                return true
             }
             lastClick = now; lastClickId = e.uuid
             focus = e.uuid

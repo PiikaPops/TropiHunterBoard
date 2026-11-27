@@ -208,13 +208,19 @@ class PcOps {
          * first slot of [startBox], using only free slots and the slots of the Pokémon being
          * arranged: every other Pokémon stays exactly where it is. Null when there is not
          * enough room from that box on.
+         *
+         * [rank] is what the order compares (PcQuery.rank): Pokémon of equal rank may take each
+         * other's places, so one already in a slot meant for its group stays there — sorting by
+         * species no longer shuffles ten Zubat between themselves.
          */
-        fun planArrangement(order: List<PcEntry>, s: PcSession, startBox: Int, prefs: PcPrefs? = null): List<PcStep>? {
+        fun planArrangement(order: List<PcEntry>, s: PcSession, startBox: Int, prefs: PcPrefs? = null,
+                            rank: ((PcEntry) -> Any)? = null): List<PcStep>? {
             val ids = order.map { it.uuid }.toHashSet()
             fun usable(b: Int, slot: Int): Boolean { val p = s.at(PcPlace(b, slot)); return p == null || p.uuid in ids }
             val rules = prefs?.boxRules().orEmpty().filterKeys { it < s.boxCount }
             val finalOrder = ArrayList<UUID>(order.size)
             val targets = ArrayList<PcPlace>(order.size)
+            val groups = ArrayList<Any?>(order.size)   // the label each one goes under: places are only traded within one
             // labelled boxes first: each takes the Pokémon matching its rule, in the chosen order
             val placed = HashSet<UUID>()
             if (prefs != null && rules.isNotEmpty()) {
@@ -224,7 +230,7 @@ class PcOps {
                     val slots = rules.filterValues { it == rule }.keys.sorted()
                         .flatMap { b -> (0 until s.boxSize(b)).filter { usable(b, it) }.map { PcPlace(b, it) } }
                     // more than the labelled boxes hold: the rest goes with the others
-                    for ((e, slot) in group.zip(slots)) { finalOrder += e.uuid; targets += slot; placed += e.uuid }
+                    for ((e, slot) in group.zip(slots)) { finalOrder += e.uuid; targets += slot; groups += rule; placed += e.uuid }
                 }
             }
             val rest = order.filter { it.uuid !in placed }
@@ -233,11 +239,40 @@ class PcOps {
                 if (b in rules) continue
                 for (slot in 0 until s.boxSize(b)) {
                     if (found == rest.size) break@outer
-                    if (usable(b, slot)) { finalOrder += rest[found].uuid; targets += PcPlace(b, slot); found++ }
+                    if (usable(b, slot)) { finalOrder += rest[found].uuid; targets += PcPlace(b, slot); groups += null; found++ }
                 }
             }
             if (found < rest.size) return null
+            if (rank != null) keepEqualInPlace(finalOrder, targets, groups, order.associateBy { it.uuid }, rank)
             return planAssign(finalOrder, targets, s)
+        }
+
+        /**
+         * Within each run of equal rank (consecutive in [ids], their [targets] side by side),
+         * a Pokémon already in one of the run's slots keeps it; the others take the slots left,
+         * in order. Same result on screen, fewer moves.
+         */
+        private fun keepEqualInPlace(ids: MutableList<UUID>, targets: MutableList<PcPlace>, groups: List<Any?>,
+                                     byId: Map<UUID, PcEntry>, rank: (PcEntry) -> Any) {
+            var i = 0
+            while (i < ids.size) {
+                val key = byId[ids[i]]?.let(rank)
+                var j = i + 1
+                while (j < ids.size && key != null && groups[j] == groups[i] && byId[ids[j]]?.let(rank) == key) j++
+                if (j - i > 1) {
+                    val slots = targets.subList(i, j).toList()
+                    val run = ids.subList(i, j).toList()
+                    val stays = run.filter { byId[it]?.place in slots }
+                    val freeSlots = slots.filter { slot -> stays.none { byId[it]?.place == slot } }.iterator()
+                    val movers = run.filter { it !in stays }
+                    val assigned = stays.map { it to byId[it]!!.place } + movers.map { it to freeSlots.next() }
+                    // back in slot order, so the run still fills its slots one after another
+                    for ((k, pair) in assigned.sortedBy { slots.indexOf(it.second) }.withIndex()) {
+                        ids[i + k] = pair.first; targets[i + k] = pair.second
+                    }
+                }
+                i = j
+            }
         }
 
         /**

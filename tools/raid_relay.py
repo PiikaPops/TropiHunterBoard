@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
 HunterBoard raid relay — tells every HunterBoard client which Pokémon the raid boss is,
-and when the raid really starts.
+when the raid really starts, and that a raid is on its way to a client that missed its
+announcement.
 
 Tropimon announces a raid without naming its boss. A player standing near the arena sees
 it; their mod reports it here, and the mods of everyone else ask here and show it on the
 raid card. The start works the same way: the server opens the raid a little more than five
 minutes after the announcement, by an amount only the arena's countdown shows, so the first
-player in the arena reports how long after the announcement it starts. Nothing but the raid
-is exchanged: no player name, no position.
+player in the arena reports how long after the announcement it starts. And the raid itself:
+Tropimon's announcement only reaches the players online at that moment, so the clients that
+heard it say so, and a client that joins in the next minutes asks for the raid announced
+last. Nothing but the raid is exchanged: no player name, no position.
 
     python3 raid_relay.py            # listens on 127.0.0.1:8787
     PORT=9000 python3 raid_relay.py
@@ -21,9 +24,18 @@ Standard library only. Put it behind the reverse proxy that already serves the d
 API
     POST /raid   {"slot": 5876543, "v": 2, "species": "gallade", "aspects": ["mega"]}
     POST /raid   {"slot": 5876543, "delay_ms": 318000}
+    POST /raid   {"slot": 5876543, "announced": true, "mega": false}
     GET  /raid?slot=5876543  ->  {"species": "gallade", "aspects": ["mega"], "reports": 3,
                                   "delay_ms": 318000}
                                  each part only once someone has reported it; {} before
+    GET  /raid/latest        ->  {"slot": 5876543, "age_ms": 74000, "mega": false, ...}
+                                 the raid announced last, while its countdown may still be
+                                 running (ANNOUNCED_FOR), with what GET /raid gives for it;
+                                 {} when there is none
+
+`age_ms` is how long ago the first client reported the announcement, on the relay's clock:
+the client that asks subtracts it from its own, so no clock has to agree with another. An
+announcement only counts when it comes within ANNOUNCE_SKEW of its slot, i.e. as it happens.
 
 `delay_ms` is the time from the announcement reaching the reporter to the raid's start, on
 the reporter's own clock: a clock that is off cancels out, every client adds the delay to
@@ -65,6 +77,8 @@ NAME = re.compile(r"^[a-z0-9_\-]{1,40}$")
 DELAY_MIN_MS, DELAY_MAX_MS = 4 * 60_000, 7 * 60_000   # five minutes and a bit, never far off
 RATE_WINDOW, RATE_MAX = 60, 30          # requests per address per minute
 MIN_DETECTION = 2                       # boss reports from older rules are not counted
+ANNOUNCED_FOR = 6 * 60                  # a raid starts about five minutes after its announcement
+ANNOUNCE_SKEW = 200                     # seconds between an announcement and its slot, at most
 
 HABITATS_FILE = os.environ.get("HABITATS") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "habitats.json")
 
@@ -94,7 +108,8 @@ def habitat_data():
     if habitats["body"] is None:
         return None
     return habitats["version"], habitats["body"], habitats["gzip"]
-raids = {}      # slot -> {"at": time, "votes": {address: (species, aspects)}, "delays": {address: ms}}
+raids = {}      # slot -> {"at": time, "votes": {address: (species, aspects)}, "delays": {address: ms},
+                #          "announced": {address: (time, mega)}}
 hits = {}       # address -> [timestamps]
 
 
@@ -158,11 +173,51 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    @staticmethod
+    def known(raid):
+        """What is known of a raid's boss and start, as GET /raid answers it."""
+        answer = {}
+        if raid and raid["votes"]:
+            tally = {}
+            for vote in raid["votes"].values():
+                tally[vote] = tally.get(vote, 0) + 1
+            (species, aspects), count = max(tally.items(), key=lambda kv: kv[1])
+            answer.update(species=species, aspects=list(aspects), reports=count)
+        if raid and raid["delays"]:
+            delays = sorted(raid["delays"].values())
+            answer["delay_ms"] = delays[len(delays) // 2]
+        return answer
+
+    def latest(self, now):
+        """The raid announced last, while it may still be ahead of a client that just joined."""
+        best = None
+        for slot, raid in raids.items():
+            if not raid["announced"]:
+                continue
+            first = min(t for t, _ in raid["announced"].values())
+            if now - first <= ANNOUNCED_FOR and (best is None or first > best[1]):
+                best = (slot, first, raid)
+        if best is None:
+            return {}
+        slot, first, raid = best
+        megas = [m for _, m in raid["announced"].values()]
+        answer = {"slot": slot, "age_ms": int((now - first) * 1000),
+                  "mega": megas.count(True) > megas.count(False)}
+        answer.update(self.known(raid))
+        return answer
+
     def do_GET(self):
         url = urlparse(self.path)
         now = time.time()
         if url.path == "/habitats":
             return self.habitats(now)
+        if url.path == "/raid/latest":
+            with lock:
+                if not allowed(self.address(), now):
+                    return self.reply(429, {"error": "slow down"})
+                sweep(now)
+                answer = self.latest(now)
+            return self.reply(200, answer)
         if url.path != "/raid":
             return self.reply(404, {"error": "not found"})
         try:
@@ -173,17 +228,7 @@ class Handler(BaseHTTPRequestHandler):
             if not allowed(self.address(), now):
                 return self.reply(429, {"error": "slow down"})
             sweep(now)
-            raid = raids.get(slot)
-            answer = {}
-            if raid and raid["votes"]:
-                tally = {}
-                for vote in raid["votes"].values():
-                    tally[vote] = tally.get(vote, 0) + 1
-                (species, aspects), count = max(tally.items(), key=lambda kv: kv[1])
-                answer.update(species=species, aspects=list(aspects), reports=count)
-            if raid and raid["delays"]:
-                delays = sorted(raid["delays"].values())
-                answer["delay_ms"] = delays[len(delays) // 2]
+            answer = self.known(raids.get(slot))
         self.reply(200, answer)
 
     def do_POST(self):
@@ -198,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
             slot = int(data["slot"])
             if not plausible(slot, now):
                 raise ValueError
-            species = aspects = delay = None
+            species = aspects = delay = mega = None
             counted = True
             if "species" in data:
                 species = str(data["species"]).lower()
@@ -211,7 +256,12 @@ class Handler(BaseHTTPRequestHandler):
                 delay = int(data["delay_ms"])
                 if not DELAY_MIN_MS <= delay <= DELAY_MAX_MS:
                     raise ValueError
-            if species is None and delay is None:
+            if data.get("announced") is True:
+                # heard as it happens, or not at all: a slot far from now is no announcement
+                if abs(slot * 300 - now) > ANNOUNCE_SKEW:
+                    raise ValueError
+                mega = data.get("mega") is True
+            if species is None and delay is None and mega is None:
                 raise ValueError
         except (ValueError, KeyError, TypeError, json.JSONDecodeError):
             return self.reply(400, {"error": "bad report"})
@@ -220,11 +270,13 @@ class Handler(BaseHTTPRequestHandler):
             if not allowed(addr, now):
                 return self.reply(429, {"error": "slow down"})
             sweep(now)
-            raid = raids.setdefault(slot, {"at": now, "votes": {}, "delays": {}})
+            raid = raids.setdefault(slot, {"at": now, "votes": {}, "delays": {}, "announced": {}})
             if species is not None and counted:
                 raid["votes"][addr] = (species, aspects)
             if delay is not None:
                 raid["delays"][addr] = delay
+            if mega is not None and addr not in raid["announced"]:
+                raid["announced"][addr] = (now, mega)
         self.reply(200, {"ok": True})
 
     def log_message(self, fmt, *args):   # one line per request is plenty for a Pi's SD card

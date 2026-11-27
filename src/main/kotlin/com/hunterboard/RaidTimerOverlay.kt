@@ -1,6 +1,5 @@
 package com.hunterboard
 
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
@@ -15,9 +14,6 @@ import java.time.temporal.ChronoUnit
 object RaidTimerOverlay {
 
     private val ZONE = ZoneId.of("Europe/Paris")
-
-    // Chat-triggered raid detection (e.g. "<pseudo> a déclenché un Raid !" or "un Mega Raid !")
-    private val RAID_TRIGGER_REGEX = Regex(""".+ a déclenché un (Mega )?Raid\s*!""")
 
     // Raid times in Paris local time
     private val RAID_TIMES = listOf(
@@ -68,25 +64,21 @@ object RaidTimerOverlay {
     private var raidDataReady = false
 
     fun register() {
-        ClientReceiveMessageEvents.GAME.register { message, _ ->
-            handleChat(message.string)
-        }
-        ClientReceiveMessageEvents.CHAT.register { message, _, _, _, _ ->
-            handleChat(message.string)
-        }
         HudRenderCallback.EVENT.register { context, _ ->
             if (HudLayoutManager.hiddenByPlayer()) return@register
             try { render(context) } catch (_: Exception) {}
         }
     }
 
-    private fun handleChat(text: String) {
-        val match = RAID_TRIGGER_REGEX.find(text)
-        if (match != null) {
-            isMegaRaid = match.groupValues[1].isNotEmpty()
-            notifDisplayUntil = System.currentTimeMillis() + 6_000L
-            playRaidStartSound()
-        }
+    /**
+     * A player started a raid: the "raid started" banner and sound. Called on the game
+     * thread by [RaidCard], which hears it — from Tropimon's notification since the chat
+     * line was replaced by it, or from that chat line on a server that still sends it.
+     */
+    fun raidTriggered(mega: Boolean) {
+        isMegaRaid = mega
+        notifDisplayUntil = System.currentTimeMillis() + 6_000L
+        playRaidStartSound()
     }
 
     fun loadPosition() {

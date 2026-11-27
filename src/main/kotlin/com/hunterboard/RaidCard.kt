@@ -6,22 +6,27 @@ import com.cobblemon.mod.common.entity.pokemon.PokemonEntity
 import com.cobblemon.mod.common.pokemon.RenderablePokemon
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
-import net.minecraft.client.util.InputUtil
-import org.lwjgl.glfw.GLFW
 
 /**
  * A card for the raid that is about to start: the boss, what it is weak to, and the time
  * left before the fight opens.
  *
- * Tropimon announces a raid with a notification ("Activité - Raid") when the boss appears;
+ * Tropimon announces a raid with a notification ("Activité - Raid") when the boss appears
+ * on the timetable, or when a player starts one ("X a déclenché un Raid !", same title);
  * the raid itself starts five minutes later. Its own card is gone after a few seconds,
  * which leaves most of those five minutes without anything on screen. This one stays until
- * the countdown ends or until it is waved away with the accept key (Y by default). It
- * deliberately survives the trip to the raid: the boss only becomes known on arrival, which
- * is exactly when its weaknesses are worth reading.
+ * the countdown ends or until it is put away with its own key (Delete by default, the same
+ * key brings it back). It deliberately survives the trip to the raid: the boss only becomes
+ * known on arrival, which is exactly when its weaknesses are worth reading.
+ *
+ * **Missed announcements.** The notification only reaches the players online at that
+ * moment. A player who joins a minute later, or is between two of Tropimon's servers, gets
+ * nothing: every client that heard it tells [RaidRelay], and a client that joins asks it
+ * for a raid in progress. The arena's own countdown opens the card too, once there.
  *
  * **The boss.** The announcement does not say which Pokémon it is — neither the
  * notification nor the chat names it before the results. It can only be read off the
@@ -78,12 +83,15 @@ object RaidCard {
     @Volatile private var hidden = false
     /** What the relay answered, handed over from its network thread to the tick. */
     @Volatile private var relayed: RaidRelay.Answer? = null
+    /** A raid in progress the relay knew of, asked on joining; handed over to the tick. */
+    @Volatile private var latest: RaidRelay.Latest? = null
+    /** When to ask the relay for a raid in progress (0 = not asked for). */
+    private var askLatestAt = 0L
     private var boss: Boss? = null
     /** Seen with this client's own eyes, and so already reported. */
     private var seenHere = false
     private var scanTicks = 0
     private var askTicks = ASK_EVERY_TICKS
-    private var keyWasDown = true
     private val logged = mutableSetOf<String>()
 
     // Where the card was last drawn, and where the HUD editor is dragging it to.
@@ -108,15 +116,32 @@ object RaidCard {
             if (notif.titleKey == RAID_TITLE) {
                 // A scheduled raid is announced a second or two around the hour, never exactly
                 // on it; counting from the timetable instead keeps the countdown in step with
-                // the server's. A raid triggered by a player has only its announcement to go by.
+                // the server's. A raid triggered by a player ("...raid.triggered", the player's
+                // name as argument) has only its announcement to go by, even near the hour.
                 // Either way, the arena's own countdown has the last word (serverCountdown).
                 val heard = System.currentTimeMillis()
-                val now = RaidTimerOverlay.scheduledRaidNear(heard, 90_000L) ?: heard
-                beginRaid(now, notif.descKey.endsWith("_mega"), heard)
+                val byPlayer = "triggered" in notif.descKey
+                val at = if (byPlayer) heard else RaidTimerOverlay.scheduledRaidNear(heard, 90_000L) ?: heard
+                announced(at, notif.descKey.endsWith("_mega"), heard, byPlayer)
             }
         }
-        // The countdown is not in the chat as far as seen, but costs nothing to look for there.
-        ClientReceiveMessageEvents.GAME.register { message, overlay -> if (!overlay) onServerText(message) }
+        // Before the notifications, a player's raid was a system message in the chat; the
+        // key is still in Tropimon's files. Only a line that starts with the player's name
+        // counts: someone repeating the sentence in the chat has their own prefix first.
+        // (The arena's countdown is not in the chat as far as seen, but costs nothing to look for.)
+        ClientReceiveMessageEvents.GAME.register { message, overlay ->
+            if (!overlay) {
+                onServerText(message)
+                try {
+                    triggeredBy(net.minecraft.util.Formatting.strip(message.string) ?: "")?.let { isMega ->
+                        val now = System.currentTimeMillis()
+                        announced(now, isMega, now, true)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        // A raid announced before this client arrived: the relay may know of it.
+        ClientPlayConnectionEvents.JOIN.register { _, _, _ -> askLatestAt = System.currentTimeMillis() + 2_000L }
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             try { tick(client) } catch (_: Exception) {}
         }
@@ -125,15 +150,37 @@ object RaidCard {
         }
     }
 
+    private val TRIGGERED = Regex("""^\s*[A-Za-z0-9_]{2,16} (?:a déclenché un|triggered an?|has started an?) (m[ée]ga )?raid\s*!""",
+        RegexOption.IGNORE_CASE)
+
+    /** The chat line of a raid a player started: whether it is a mega raid; null for any other line. */
+    fun triggeredBy(line: String): Boolean? = TRIGGERED.find(line)?.let { it.groupValues[1].isNotEmpty() }
+
+    /**
+     * A raid announcement heard here: by notification, or by the chat line of a raid a
+     * player started. The same raid may come both ways, a second apart: once is enough.
+     */
+    private fun announced(announcedAt: Long, isMega: Boolean, heard: Long, byPlayer: Boolean) {
+        if (startsAt != 0L && heardAt != 0L && kotlin.math.abs(announcedAt + COUNTDOWN_MS - startsAt) < 60_000L) {
+            if (isMega) mega = true
+            return
+        }
+        beginRaid(announcedAt, isMega, heard)
+        if (slot != 0L) RaidRelay.announce(slot, isMega)
+        // HunterBoard's "raid started" banner and sound, which used to wait for the chat line
+        if (byPlayer) MinecraftClient.getInstance().execute { RaidTimerOverlay.raidTriggered(isMega) }
+    }
+
     /**
      * A raid announced at [announcedAt] (or deduced from the arena's countdown), whose
-     * notification reached this client at [heard] — 0 when it never did.
+     * notification reached this client at [heard] — 0 when it never did. [knownSlot] is the
+     * relay's name for the raid when it was learnt from there.
      */
-    private fun beginRaid(announcedAt: Long, isMega: Boolean, heard: Long) {
+    private fun beginRaid(announcedAt: Long, isMega: Boolean, heard: Long, knownSlot: Long = 0L) {
         mega = isMega
         heardAt = heard
         calibrated = false
-        slot = RaidRelay.slotOf(announcedAt)
+        slot = if (knownSlot != 0L) knownSlot else RaidRelay.slotOf(announcedAt)
         relayed = null
         hidden = false
         lastServerSecs = -1
@@ -241,7 +288,19 @@ object RaidCard {
             val bars = (client.inGameHud.bossBarHud as Any as com.hunterboard.mixin.BossBarHudAccessor).hunterboardBossBars
             for (bar in bars.values) onServerText(bar.name)
         }
-        if (startsAt == 0L) { keyWasDown = true; return }
+        // The card's key: puts the card away, and brings it back while the raid is still ahead.
+        // Every press is used up here, so none is left over for the next raid.
+        while (KeyBindings.raidCardKey.wasPressed()) {
+            if (startsAt != 0L && System.currentTimeMillis() < startsAt && ModConfig.raidCard) {
+                hidden = !hidden
+                val key = KeyBindings.raidCardKey.boundKeyLocalizedText.string
+                client.inGameHud.setOverlayMessage(net.minecraft.text.Text.literal(
+                    if (hidden) t("Raid card hidden ($key to show it again)", "Carte de raid masquée ($key pour la réafficher)")
+                    else t("Raid card shown", "Carte de raid affichée")), false)
+            }
+        }
+        askRelayOnJoin(client)
+        if (startsAt == 0L) return
         if (!watching) { reset(); return }
         if (raidId != lastRaid) {   // a new raid: forget the previous boss
             lastRaid = raidId
@@ -249,14 +308,6 @@ object RaidCard {
             seenHere = false
             logged.clear()
             askTicks = ASK_EVERY_TICKS
-        }
-
-        // The accept key waves the card away — unless one of Tropimon's cards is up, in
-        // which case the key belongs to that card (on its raid card it means "teleport").
-        if (active && ModConfig.raidCard) {
-            val down = client.currentScreen == null && acceptKeyDown(client)
-            if (down && !keyWasDown && TropiCards.current() == null) hidden = true
-            keyWasDown = down
         }
 
         // With their own eyes first; a sighting made here is also shared.
@@ -280,9 +331,31 @@ object RaidCard {
         }
     }
 
-    private fun acceptKeyDown(client: MinecraftClient): Boolean {
-        TropiCards.acceptBinding()?.let { return it.isPressed }
-        return InputUtil.isKeyPressed(client.window.handle, GLFW.GLFW_KEY_Y)
+    /**
+     * Shortly after joining a server with no raid ahead, asks the relay whether one was
+     * announced in the last minutes, and opens the card for it: the same card as when the
+     * announcement is heard here, counted from when the relay first heard of it.
+     */
+    private fun askRelayOnJoin(client: MinecraftClient) {
+        latest?.let { l ->
+            latest = null
+            val now = System.currentTimeMillis()
+            val heard = now - l.ageMs
+            val start = heard + (l.delayMs ?: COUNTDOWN_MS)
+            val known = startsAt != 0L && now < startsAt
+            if (!known && start > now + 5_000L) {
+                beginRaid(heard, l.mega, heard, l.slot)
+                HunterBoard.LOGGER.info("RaidCard: raid announced ${l.ageMs / 1000} s before joining, from the relay")
+                if (l.species != null || l.delayMs != null) relayed = RaidRelay.Answer(l.species, l.aspects, l.reports, l.delayMs)
+            }
+        }
+        if (askLatestAt == 0L || System.currentTimeMillis() < askLatestAt) return
+        askLatestAt = 0L
+        if (!ModConfig.raidCard || (startsAt != 0L && System.currentTimeMillis() < startsAt)) return
+        // only on Tropimon: a raid there says nothing about any other server
+        val address = client.currentServerEntry?.address?.lowercase() ?: return
+        if ("tropimon" !in address) return
+        RaidRelay.latest { latest = it }
     }
 
     private fun bossOf(speciesName: String, aspects: Set<String>, reports: Int): Boss? {
@@ -474,8 +547,13 @@ object RaidCard {
         context.drawText(tr, t("Starts in ", "Début dans "), x + 6, cy + 2, UiKit.TEXT_MUTED, true)
         context.drawText(tr, time, x + 6 + tr.getWidth(t("Starts in ", "Début dans ")), cy + 2,
             if (urgent) UiKit.DANGER else UiKit.accentBright(), true)
-        val hint = "[${TropiCards.acceptKey()}] " + t("hide", "masquer")
-        context.drawText(tr, hint, x + W - 6 - tr.getWidth(hint), cy + 2, UiKit.TEXT_FAINT, true)
+        if (!KeyBindings.raidCardKey.isUnbound) {
+            // the key's name varies in length ("Y", "Suppr", "Delete"): the word goes when it would touch the time
+            val key = "[${KeyBindings.raidCardKey.boundKeyLocalizedText.string}]"
+            val timeEnd = x + 6 + tr.getWidth(t("Starts in ", "Début dans ")) + tr.getWidth(time)
+            val hint = listOf("$key " + t("hide", "masquer"), key).firstOrNull { timeEnd + 8 + tr.getWidth(it) <= x + W - 6 }
+            if (hint != null) context.drawText(tr, hint, x + W - 6 - tr.getWidth(hint), cy + 2, UiKit.TEXT_FAINT, true)
+        }
         val barW = W - 12
         context.fill(x + 6, cy + 13, x + 6 + barW, cy + 16, UiKit.SURFACE_SUNKEN)
         val fill = (barW * left / COUNTDOWN_MS).toInt().coerceIn(0, barW)

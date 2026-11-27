@@ -63,6 +63,11 @@ object ChristmasHats {
 
     // ── activation ──────────────────────────────────────────────────────────────────────
 
+    enum class Mode { AUTO, ON, OFF }
+
+    /** Session-only override, set by `/hbdebug christmas` (developer mode). AUTO follows the calendar. */
+    var mode: Mode = Mode.AUTO
+
     private var activeCache = false
     private var activeCheckedAt = 0L
 
@@ -70,14 +75,18 @@ object ChristmasHats {
     fun inSeason(date: LocalDate = LocalDate.now()): Boolean =
         date.month == Month.DECEMBER && date.dayOfMonth in 20..25
 
-    fun isActive(): Boolean {
-        // Called for every Pokémon every frame; the date only needs a look once a second.
-        val now = System.currentTimeMillis()
-        if (now - activeCheckedAt > 1_000L) {
-            activeCheckedAt = now
-            activeCache = inSeason()
+    fun isActive(): Boolean = when (mode) {
+        Mode.ON -> true
+        Mode.OFF -> false
+        Mode.AUTO -> {
+            // Called for every Pokémon every frame; the date only needs a look once a second.
+            val now = System.currentTimeMillis()
+            if (now - activeCheckedAt > 1_000L) {
+                activeCheckedAt = now
+                activeCache = inSeason()
+            }
+            activeCache
         }
-        return activeCache
     }
 
     // ── tuning, matched to the offline previews ─────────────────────────────────────────
@@ -383,8 +392,26 @@ object ChristmasHats {
 
     // ── rendering ───────────────────────────────────────────────────────────────────────
 
-    /** A failure is logged once, with its stack; the hats then simply stay off that model. */
-    private var loggedError = false
+    // ── diagnostics, shown by `/hbdebug christmas` ──────────────────────────────────────
+    //
+    // A hat that fails to appear has three very different causes — the mixin never applied,
+    // the hook runs but every model is filtered out, or drawing throws — and from the
+    // outside all three look identical. These counters tell them apart in game, without a
+    // log: no calls means the hook is not in place; calls but no hats means the filter or
+    // the placement; an error is logged once with its stack.
+
+    /** Times the render hook was reached, active or not. */
+    var hookCalls = 0L
+        private set
+
+    /** Hats drawn this session. */
+    var hatsDrawn = 0L
+        private set
+
+    /** Last failure, for the status line; the full stack goes to the log once. */
+    var lastError: String? = null
+        private set
+
     private var loggedFirstHat = false
 
     /** Entry point for the mixin. Never throws: this runs inside Cobblemon's render. */
@@ -393,11 +420,12 @@ object ChristmasHats {
         model: PosableModel, context: RenderContext, matrices: MatrixStack,
         light: Int, overlay: Int, color: Int, buffers: VertexConsumerProvider?
     ) {
+        hookCalls++
         try {
             draw(model, context, matrices, light, overlay, color, buffers)
         } catch (t: Throwable) {
-            if (!loggedError) HunterBoard.LOGGER.error("[Christmas] hat rendering failed", t)
-            loggedError = true
+            if (lastError == null) HunterBoard.LOGGER.error("[Christmas] hat rendering failed", t)
+            lastError = "${t.javaClass.simpleName}: ${t.message}"
         }
     }
 
@@ -452,6 +480,7 @@ object ChristmasHats {
                             .normal(entry, q.normal.x, q.normal.y, q.normal.z)
                     }
                 }
+                hatsDrawn++
                 if (!loggedFirstHat) {
                     loggedFirstHat = true
                     HunterBoard.LOGGER.info("[Christmas] hats are drawing (first: $species, ${list.size} hat(s))")

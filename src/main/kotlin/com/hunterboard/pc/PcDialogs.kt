@@ -174,13 +174,6 @@ internal class CandidatesDialog(screen: HunterPcScreen) : PcDialog(screen, 384, 
 
     // ── widgets ──
 
-    private fun zone(ctx: DrawContext, x1: Int, y1: Int, x2: Int, y2: Int, title: String) {
-        ctx.fill(x1, y1, x2, y2, 0x30000000)
-        UiKit.border(ctx, x1, y1, x2 - x1, y2 - y1, UiKit.BORDER_DIM)
-        ctx.fill(x1 + 1, y1 + 1, x2 - 1, y1 + 13, 0x38000000)
-        UiKit.sectionTitle(ctx, tr, title, x1 + 4, y1 + 3)
-    }
-
     private fun dropdown(ctx: DrawContext, bx: Int, by: Int, bw: Int, value: String, active: Boolean, mx: Int, my: Int, open: (Int, Int) -> Unit) {
         val hov = inside(mx, my, bx, by, bw, 12)
         UiKit.slot(ctx, bx, by, bw, 12)
@@ -487,8 +480,9 @@ internal class ArrangeDialog(screen: HunterPcScreen) : PcDialog(screen, 344, 196
 
     private fun plan(): Pair<List<PcEntry>, List<PcStep>?> {
         if (labelOnly) return scoped() to PcOps.planRouting(scoped(), screen.session, screen.prefs)
-        val order = PcQuery.sort(scoped(), screen.filter.copy(sort = sort, reverse = reverse), screen.prefs)
-        return order to PcOps.planArrangement(order, screen.session, startBox, screen.prefs)
+        val f = screen.filter.copy(sort = sort, reverse = reverse)
+        val order = PcQuery.sort(scoped(), f, screen.prefs)
+        return order to PcOps.planArrangement(order, screen.session, startBox, screen.prefs, PcQuery.rank(f, screen.prefs))
     }
 
     // layout: label column then controls
@@ -895,13 +889,16 @@ internal class MovesDialog(screen: HunterPcScreen, private val entry: PcEntry) :
         return benched.sortedBy { it.displayName.string }.map { it to true } + other.map { it to false }
     }
 
-    // left: the four active moves as battle buttons; right: the reserve as summary rows, enlarged
-    private val tileX get() = x + 8 + MoveTiles.BADGE
-    private fun tileY(i: Int) = y + 40 + i * 30
-    private val listX get() = x + 122 + (MoveTiles.BADGE * K).toInt()
+    // left: the four active moves as battle buttons; right: the reserve as summary rows, enlarged,
+    // in a darker well; each side a zone of its own (the team window's style)
+    /** The right edge of the left zone; the active moves sit in its middle. */
+    private val activeRight get() = x + 131
+    private val tileX get() = (x + 4 + activeRight - MoveTiles.TILE_W - MoveTiles.BADGE) / 2 + MoveTiles.BADGE
+    private fun tileY(i: Int) = y + 42 + i * 30
+    private val listX get() = x + 140 + (MoveTiles.BADGE * K).toInt()
     private val rowW get() = (MoveTiles.ROW_W * K).toInt()
     private val pitch get() = (MoveTiles.ROW_H * K).toInt() + 3
-    private val listTop get() = y + 38
+    private val listTop get() = y + 40
     private val listBottom get() = y + h - 40
 
     private companion object { const val K = 1.4f }
@@ -915,15 +912,16 @@ internal class MovesDialog(screen: HunterPcScreen, private val entry: PcEntry) :
             if (activeNames() != before) { waitingSince = 0; status = L("Swap confirmed by the server.", "Échange confirmé par le serveur.") to 0xFF8BE36A.toInt() }
             else if (System.currentTimeMillis() - waitingSince > 5000) { waitingSince = 0; status = L("No answer from the server.", "Pas de réponse du serveur.") to UiKit.DANGER }
         }
-        UiKit.sectionTitle(ctx, tr, L("Active", "Actives"), x + 8, y + 26)
+        val left = listX - (MoveTiles.BADGE * K).toInt() - 1
+        zone(ctx, x + 4, y + 22, activeRight, listBottom + 3, L("Active", "Actives"))
+        zone(ctx, left - 5, y + 22, x + w - 5, listBottom + 3, L("Reserve", "Réserve"))
+        ctx.fill(left - 2, listTop - 2, listX + rowW + 8, listBottom + 1, WELL)
         active().forEachIndexed { i, m ->
             val hov = inside(mx, my, tileX - MoveTiles.BADGE, tileY(i), MoveTiles.TILE_W + MoveTiles.BADGE, MoveTiles.TILE_H)
             MoveTiles.battle(ctx, tr, tileX, tileY(i), m?.template, m?.currentPp ?: 0, m?.maxPp ?: 0, hov, picked == i, screen.fine)
             if (hov && m != null) tip.set(mx, my, *MoveTiles.tooltip(m.template, "${m.currentPp}/${m.maxPp}"))
         }
-        UiKit.sectionTitle(ctx, tr, L("Reserve", "Réserve"), listX - (MoveTiles.BADGE * K).toInt(), y + 26)
         val res = reserve()
-        val left = listX - (MoveTiles.BADGE * K).toInt() - 1
         ctx.enableScissorSafe(left, listTop, listX + rowW + 2, listBottom)
         res.forEachIndexed { i, (t, benched) ->
             val ry = listTop + i * pitch - scroll

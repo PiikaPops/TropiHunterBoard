@@ -90,6 +90,18 @@ object UiTour {
             if (System.getProperty("hunterboard.uitour.controlify") != null) {
                 if (!ControlifyCheck.tick(client, out!!)) return
             }
+            // the raid card's triggers, against a local relay, before the pictures
+            System.getProperty("hunterboard.uitour.raid")?.let { url ->
+                if (!RaidCheck.tick(client, url, out!!)) return
+            }
+            // Tropimon's paintings held in hand (Tropifurnitures and GeckoLib in run/mods)
+            if (System.getProperty("hunterboard.uitour.painting") != null) {
+                if (!PaintingCheck.tick(client, out!!, System.getProperty("hunterboard.uitour.painting") ?: "")) return
+            }
+            // developer mode: /hbdebug there or not, and what it switches (on: -Pdev, the default)
+            System.getProperty("hunterboard.uitour.devmode")?.let { want ->
+                if (!DevModeCheck.tick(client, out!!, want == "on")) return
+            }
             // the PC's end-to-end test against the integrated server instead of the pictures
             if (System.getProperty("hunterboard.uitour.pce2e") != null) {
                 if (!auditing) { auditing = true; PcE2E.start(out!!) { finish(client) } }
@@ -249,9 +261,9 @@ object UiTour {
             r
         }
         // HunterBoard's PC on a made-up PC: 12 boxes, duplicates, a few shinies, a party
-        fun fakePc(): com.hunterboard.pc.HunterPcScreen {
+        fun fakePc(only: List<String>? = null): com.hunterboard.pc.HunterPcScreen {
             val rnd = java.util.Random(7)
-            val pool = cave + listOf("pikachu", "eevee", "bulbasaur", "charmander", "squirtle", "gastly", "magikarp", "ralts", "riolu", "dratini")
+            val pool = only ?: (cave + listOf("pikachu", "eevee", "bulbasaur", "charmander", "squirtle", "gastly", "magikarp", "ralts", "riolu", "dratini"))
             fun mon(i: Int): com.cobblemon.mod.common.pokemon.Pokemon? = runCatching {
                 val name = pool[(i * 7 + rnd.nextInt(5)) % pool.size]
                 val shiny = if (rnd.nextInt(14) == 0) " shiny=true" else ""
@@ -284,6 +296,13 @@ object UiTour {
         val mouseK = MinecraftClient.getInstance().window.width / 960.0
         val pcAway: (MinecraftClient) -> Unit = { c -> DevAccess.set(c.mouse, "x", 940.0); DevAccess.set(c.mouse, "y", 520.0) }
         step("70_pc_boxes", then = pcAway) { fakePc() }
+        // tall, long and wide Pokémon: each portrait must fit its cell whole
+        step("70_pc_big", then = pcAway) {
+            fakePc(listOf("wailord", "steelix", "onix", "rayquaza", "gyarados", "lugia", "eternatus", "dialga", "groudon",
+                "kyogre", "snorlax", "mewtwo", "giratina", "arceus", "aggron", "tyranitar", "metagross", "milotic",
+                "exeggutor alolan", "dragonite", "charizard", "wailmer", "seviper", "dhelmise", "centiskorch", "palkia",
+                "zygarde", "regigigas", "hoopa unbound", "yveltal"))
+        }
         step("70_pc_hover", then = { c -> DevAccess.set(c.mouse, "x", 196.0); DevAccess.set(c.mouse, "y", 80.0) }) { fakePc() }
         step("70_pc_list", then = pcAway) { fakePc().also { s -> it.setScreen(s); setField(s, "view", "details") } }
         step("70_pc_details_hover", then = { c -> DevAccess.set(c.mouse, "x", 200.0); DevAccess.set(c.mouse, "y", 80.0) }) {

@@ -215,6 +215,11 @@ internal class TeamPanel(private val s: HunterPcScreen) {
             ctx.matrices.push(); ctx.matrices.translate(0f, 0f, 150f)
             if (e.shiny) ctx.fill(sx + 1, sy + 1, sx + 4, sy + 4, SHINY_COLOR)
             if (movesDiffer(m)) ctx.fill(sx + SLOT - 4, sy + 1, sx + SLOT - 1, sy + 4, UiKit.GOLD)
+            // its Showdown set asked for other EVs: a warning in the bottom corner
+            if (PcShowdown.evsDiffer(m.evs, e)) {
+                ctx.fill(sx + SLOT - 6, sy + SLOT - 10, sx + SLOT - 1, sy + SLOT - 1, 0xC0000000.toInt())
+                ctx.drawText(tr, "!", sx + SLOT - 4, sy + SLOT - 9, EV_WARN, false)
+            }
             ctx.matrices.pop()
             if (hov && !drag) { s.hoverEntry(e); s.tip.set(mx, my, *memberTip(m, e)) }
         }
@@ -245,6 +250,7 @@ internal class TeamPanel(private val s: HunterPcScreen) {
             if (movesDiffer(m)) out += L("Not the ones it knows now: they change when the team is equipped.",
                 "Ce ne sont pas celles qu'il connaît : elles changent quand l'équipe est équipée.") to UiKit.GOLD
         }
+        if (PcShowdown.evsDiffer(m.evs, e)) out += ("⚠ " + PcShowdown.evWarning(m.evs, e)) to EV_WARN
         out += L("Click: its moves · Drag: to another place, or out to remove · Right click: menu",
             "Clic : ses capacités · Glisser : vers une autre place, ou dehors pour retirer · Clic droit : menu") to UiKit.TEXT_FAINT
         return out.toTypedArray()
@@ -495,7 +501,29 @@ internal class TeamPanel(private val s: HunterPcScreen) {
             MenuItem(L("The selected Pokémon", "Les Pokémon choisis") + " ($n)", enabled = n > 0) {
                 create(PcTeam(freshName()).withSlots(s.selected().take(6).map { member(it) }), rename = true)
             },
+            MenuItem(L("A Showdown paste (clipboard)", "Un paste Showdown (presse-papiers)"), separatorBefore = true) { importShowdown() },
         ), title = L("New team", "Nouvelle équipe"))
+    }
+
+    /**
+     * A team from the Showdown paste in the clipboard: the player's Pokémon trained for each set,
+     * with its moves, shown in the team window to check before saving — a new team, or saved
+     * team [into] (its name kept) once confirmed. Empty places say why in the window.
+     */
+    private fun importShowdown(into: Int = -1) {
+        val text = runCatching { net.minecraft.client.MinecraftClient.getInstance().keyboard.clipboard }.getOrDefault("")
+        val target = teams.getOrNull(into)
+        val result = PcShowdown.build(text, s.entries, target?.name ?: freshName())
+        if (result.sets == 0) {
+            s.notify(L("No Showdown team in the clipboard: copy it from Showdown's \"Export\" first.",
+                "Pas d'équipe Showdown dans le presse-papiers : copiez-la d'abord depuis « Exporter » sur Showdown."), UiKit.GOLD)
+            return
+        }
+        val team = if (target != null) result.team.copy(name = target.name) else result.team
+        s.dialog = TeamEditDialog(s, if (target != null) into else -1, team, holes = result.holes, notes = result.notes)
+        val head = L("Showdown: ${result.found}/${result.sets} found", "Showdown : ${result.found}/${result.sets} trouvé(s)")
+        s.notify(head + (result.problems.firstOrNull()?.let { "  ·  $it" + (if (result.problems.size > 1) " (+${result.problems.size - 1})" else "") } ?: ""),
+            if (result.problems.isEmpty()) UiKit.TEXT else UiKit.GOLD)
     }
 
     private fun openTeamMenu(i: Int, x: Int, y: Int) {
@@ -512,6 +540,7 @@ internal class TeamPanel(private val s: HunterPcScreen) {
             MenuItem(L("Take the current party", "Prendre l'équipe actuelle"), enabled = s.session.partyCount() > 0, separatorBefore = true) {
                 save(i, t.withSlots(partyMembers()))
             },
+            MenuItem(L("Import a Showdown paste (clipboard)…", "Importer un paste Showdown (presse-papiers)…")) { importShowdown(i) },
             MenuItem(L("Add the selected Pokémon", "Ajouter les Pokémon choisis") + " ($n)", enabled = n > 0 && free > 0) { add(s.selected(), i, -1) },
             MenuItem(L("Empty it", "La vider"), enabled = filled) { save(i, t.withSlots(emptyList())) },
             MenuItem(L("Duplicate", "Dupliquer"), enabled = teams.size < 30) { create(t.copy(name = t.name.take(28) + " (2)")) },
@@ -535,7 +564,7 @@ internal class TeamPanel(private val s: HunterPcScreen) {
         s.menu = PcMenu(x, y, listOf(
             MenuItem(L("Its moves in this team…", "Ses capacités dans cette équipe…"), enabled = e != null) { editMoves(i, k) },
             MenuItem(L("Use the moves it knows now", "Reprendre ses capacités actuelles"), enabled = e != null && movesDiffer(m)) {
-                e?.let { val sl = t.slots().toMutableList(); sl[k] = member(it); save(i, t.withSlots(sl)) }
+                e?.let { val sl = t.slots().toMutableList(); sl[k] = member(it).copy(evs = m.evs); save(i, t.withSlots(sl)) }
             },
             MenuItem(L("Show in the PC", "Voir dans le PC"), enabled = e != null) { e?.let { s.showEntry(it) } },
             MenuItem(L("Remove from the team", "Retirer de l'équipe"), color = UiKit.DANGER, separatorBefore = true) { remove(i, k) },
@@ -571,10 +600,16 @@ internal class ConfirmDialog(screen: HunterPcScreen, private val head: String, p
  * Pokémon the four moves it should have in that team — picked among what it can relearn,
  * as in the moves window.
  */
-internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, initial: PcTeam, pick: Int = -1) :
-    InputDialog(screen, 372, minOf(272, screen.height - 16), 32) {
+internal class TeamEditDialog(
+    screen: HunterPcScreen, private val index: Int, initial: PcTeam, pick: Int = -1,
+    /** From a Showdown import: why each empty place is empty, shown there until it is filled. */
+    holes: List<PcShowdown.Hole?> = emptyList(),
+    /** From a Showdown import: what else went wrong (unknown moves), under the window. */
+    private val notes: List<String> = emptyList(),
+) : InputDialog(screen, 372, minOf(272, screen.height - 16), 32) {
 
     private val members: MutableList<PcTeamMember?> = initial.slots().toMutableList()
+    private val holes: MutableList<PcShowdown.Hole?> = MutableList(6) { holes.getOrNull(it) }
     private var picked = pick.takeIf { it in 0..5 && members[it] != null } ?: members.indexOfFirst { it != null }
     private var slot = -1
     private var scroll = 0
@@ -585,10 +620,7 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
     init { field.text = initial.name; field.setCursorToEnd(false) }
 
     companion object {
-        /** Zones darker than the window, wells darker still, cards lighter: whatever the theme. */
-        private const val ZONE = 0x30000000
-        private const val BAND = 0x38000000
-        private const val WELL = 0x48000000
+        /** Cards lighter than the window's zones (PcDialog.Style). */
         private const val CARD = 0x1CFFFFFF
         private const val CARD_HOVER = 0x30FFFFFF
 
@@ -627,15 +659,6 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
     private var infoMove: MoveTemplate? = null
     private var infoAt = 0L
 
-    /** A zone of the window: darker than the window, framed, with its title on a band. */
-    private fun zone(ctx: DrawContext, x1: Int, y1: Int, x2: Int, y2: Int, title: String?) {
-        ctx.fill(x1, y1, x2, y2, ZONE)
-        UiKit.border(ctx, x1, y1, x2 - x1, y2 - y1, UiKit.BORDER_DIM)
-        if (title != null) {
-            ctx.fill(x1 + 1, y1 + 1, x2 - 1, y1 + 13, BAND)
-            UiKit.sectionTitle(ctx, tr, title, x1 + 4, y1 + 3)
-        }
-    }
     private val K = 1.15f
     private val rowW get() = (MoveTiles.ROW_W * K).toInt()
     private val pitch get() = (MoveTiles.ROW_H * K).toInt() + 3
@@ -644,6 +667,7 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
     override fun render(ctx: DrawContext, mx: Int, my: Int, delta: Float) {
         super.render(ctx, mx, my, delta)
         tip.clear()
+        for (i in 0 until 6) if (members[i] != null) holes[i] = null   // filled since: the reason is moot
         title(ctx, if (index < 0) L("New team", "Nouvelle équipe") else L("Edit the team", "Modifier l'équipe"))
         drawField(ctx, x + 8, y + 22, leftW, mx, my, delta)
 
@@ -667,7 +691,15 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
             }
             UiKit.slot(ctx, x + 11, my2 + 1, 22, 22)
             if (m == null) {
-                ctx.drawText(tr, L("— free —", "— libre —"), x + 38, my2 + 8, UiKit.TEXT_FAINT, false)
+                val hole = holes[i]
+                if (hole == null) ctx.drawText(tr, L("— free —", "— libre —"), x + 38, my2 + 8, UiKit.TEXT_FAINT, false)
+                else {
+                    // an imported set none of the player's Pokémon matched: what it was, and why (pointed at: in full)
+                    ctx.drawText(tr, fit(tr, hole.species, leftW - 34), x + 38, my2 + 3, UiKit.GOLD, false)
+                    ctx.drawText(tr, fit(tr, hole.reason, leftW - 34), x + 38, my2 + 13, UiKit.TEXT_FAINT, false)
+                    if (hov) tip.set(mx, my, hole.species to UiKit.GOLD, hole.why to UiKit.TEXT,
+                        L("Drag a Pokémon here, or add the selected ones.", "Glissez un Pokémon ici, ou ajoutez les Pokémon choisis.") to UiKit.TEXT_FAINT)
+                }
                 continue
             }
             if (m.uuid.isNotBlank()) targets += intArrayOf(x + 8, my2, leftW, 24)
@@ -676,7 +708,13 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
             else {
                 screen.smallPortrait(ctx, e, x + 12, my2 + 2, 20, delta)
                 ctx.drawText(tr, fit(tr, e.displayName, leftW - 46), x + 38, my2 + 3, if (e.shiny) SHINY_COLOR else if (picked == i) 0xFFFFFFFF.toInt() else UiKit.TEXT, false)
-                ctx.drawText(tr, L("Lv ", "Nv ") + e.level + "  ·  " + m.moves.size + "/4", x + 38, my2 + 13, if (picked == i) UiKit.TEXT_MUTED else UiKit.TEXT_FAINT, false)
+                val sub = L("Lv ", "Nv ") + e.level + "  ·  " + m.moves.size + "/4"
+                ctx.drawText(tr, sub, x + 38, my2 + 13, if (picked == i) UiKit.TEXT_MUTED else UiKit.TEXT_FAINT, false)
+                // its Showdown set asked for other EVs: said on the card, in full when pointed at
+                if (PcShowdown.evsDiffer(m.evs, e)) {
+                    ctx.drawText(tr, " ⚠", x + 38 + tr.getWidth(sub), my2 + 13, EV_WARN, false)
+                    if (hov && !inside(mx, my, x + 8 + leftW - 12, my2, 12, 24)) tip.set(mx, my, e.displayName to EV_WARN, PcShowdown.evWarning(m.evs, e) to UiKit.TEXT)
+                }
             }
             val rx2 = x + 8 + leftW - 10
             ctx.drawText(tr, "✕", rx2, my2 + 8, if (inside(mx, my, rx2 - 2, my2 + 4, 10, 14)) UiKit.DANGER else UiKit.TEXT_FAINT, false)
@@ -731,9 +769,14 @@ internal class TeamEditDialog(screen: HunterPcScreen, private val index: Int, in
             drawInfo(ctx, shown)
         }
         UiKit.dots(ctx, x + 5, y + h - 38, w - 10)
-        val hint = error ?: if (slot >= 0) L("A move below, or another slot: they swap.", "Une capacité dessous, ou un autre emplacement : échange.")
-                            else L("Click a move slot, then a move below.", "Cliquez un emplacement, puis une capacité dessous.")
-        ctx.drawText(tr, fit(tr, hint, w - 16), x + 8, y + h - 33, if (error != null) UiKit.DANGER else if (slot >= 0) UiKit.accentBright() else UiKit.TEXT_MUTED, false)
+        // what an import could not do (moves Cobblemon does not know) stays under the window, all of it on hover
+        val note = notes.takeIf { error == null && slot < 0 && it.isNotEmpty() }
+        val hint = error ?: note?.let { "⚠ " + it.first() + (if (it.size > 1) "  (+${it.size - 1})" else "") }
+            ?: if (slot >= 0) L("A move below, or another slot: they swap.", "Une capacité dessous, ou un autre emplacement : échange.")
+            else L("Click a move slot, then a move below.", "Cliquez un emplacement, puis une capacité dessous.")
+        ctx.drawText(tr, fit(tr, hint, w - 16), x + 8, y + h - 33,
+            when { error != null -> UiKit.DANGER; note != null -> UiKit.GOLD; slot >= 0 -> UiKit.accentBright(); else -> UiKit.TEXT_MUTED }, false)
+        if (note != null && inside(mx, my, x + 8, y + h - 35, w - 16, 12)) tip.set(mx, my, *note.map { it to UiKit.TEXT }.toTypedArray())
         button(ctx, x + 8, y + h - 20, 70, L("Cancel", "Annuler"), mx, my)
         button(ctx, x + w - 98, y + h - 20, 90, L("Save", "Enregistrer"), mx, my)
         tip.draw(ctx, tr, screen.width, screen.height)

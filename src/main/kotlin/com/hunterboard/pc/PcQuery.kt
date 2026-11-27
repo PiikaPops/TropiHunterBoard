@@ -41,6 +41,13 @@ data class PcFilterState(
     /** True when nothing narrows the list (the sort does not count). */
     val isEmpty: Boolean get() = copy(sort = SORT_PLACE, reverse = false, ivTarget = DEFAULT_TARGET) == PcFilterState()
 
+    /** How many filters narrow the list, the search text and the sort aside. */
+    val activeFilters: Int get() = listOf(
+        levelMin != 1 || levelMax != 100, ivMin != 0, ageHours != 0, shiny != 0, alpha != 0, legendary != 0,
+        favorite != 0, held != 0, marked != 0, hiddenAbility != 0, duplicates, gender != 0, type.isNotEmpty(),
+        box != -1, ability.isNotEmpty(), size.isNotEmpty(), tag.isNotEmpty(),
+    ).count { it }
+
     companion object {
         const val SORT_PLACE = "place"
         const val SORT_RECENT = "recent"
@@ -108,6 +115,21 @@ object PcQuery {
     }
 
     private fun tri(mode: Int, value: Boolean) = when (mode) { 1 -> value; 2 -> !value; else -> true }
+
+    /**
+     * What [sort] orders by, without the place it falls back on: two Pokémon with the same
+     * rank may come in either order. Arranging uses it to leave equal Pokémon where they are.
+     */
+    fun rank(f: PcFilterState, prefs: PcPrefs): (PcEntry) -> Any = when (f.sort) {
+        PcFilterState.SORT_RECENT -> { e -> prefs.firstSeen(e.uuid) }
+        PcFilterState.SORT_LEVEL -> { e -> listOf(e.level, e.dex) }
+        PcFilterState.SORT_IV -> { e -> listOf(e.ivSum, e.dex) }
+        PcFilterState.SORT_DEX -> { e -> listOf(e.dex, e.formLabel ?: "", e.ivSum) }
+        PcFilterState.SORT_NAME -> { e -> NameUtil.normalize(e.displayName) }
+        PcFilterState.SORT_TYPE -> { e -> listOf(e.types.firstOrNull() ?: "", e.types.getOrNull(1) ?: "", e.dex) }
+        PcFilterState.SORT_TARGET -> { e -> listOf(targetDistance(e, f.ivTarget), e.ivSum) }
+        else -> { e -> e.uuid }
+    }
 
     fun sort(list: List<PcEntry>, f: PcFilterState, prefs: PcPrefs): List<PcEntry> {
         val place = compareBy<PcEntry>({ if (it.place.inParty) -1 else it.place.box }, { it.place.slot })
@@ -259,8 +281,9 @@ object BoxRules {
 data class ReleaseGuards(
     val shiny: Boolean = true,
     val legendary: Boolean = true,
-    val alpha: Boolean = true,
-    val marked: Boolean = true,
+    // alpha and marked Pokémon are no longer protected by default (asked for): ticked by hand if wanted
+    val alpha: Boolean = false,
+    val marked: Boolean = false,
     val held: Boolean = true,
     val tagged: Boolean = true,
     val hiddenAbility: Boolean = false,

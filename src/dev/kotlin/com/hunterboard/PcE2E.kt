@@ -64,6 +64,7 @@ object PcE2E {
     private var teamMoves: List<String> = emptyList()
     private var teamC: UUID? = null
     private var labelBox = -1
+    private var showdownMoves: List<String> = emptyList()
 
     /** An offline PC with every slot of 12 boxes taken, to measure the cost of the full view. */
     private fun fullPc(): HunterPcScreen {
@@ -370,6 +371,121 @@ object PcE2E {
                 listOf(teamA!!, teamB!!).forEach { s.prefs.setTag(it, "pvp", false) }
                 s.prefs.setFavorite(teamA!!, false)
                 teamB = teamC
+                phase = 70; wait = 0
+            }
+            70 -> if (wait > 5) {   // arranging by name: equal names trade places instead of moving
+                val s = screen ?: run { phase = 99; return }
+                val f = PcFilterState(sort = PcFilterState.SORT_NAME)
+                val order = PcQuery.sort(s.entries.filter { !it.place.inParty }, f, s.prefs)
+                val plain = PcOps.planArrangement(order, s.session, 0)
+                val tied = PcOps.planArrangement(order, s.session, 0, null, PcQuery.rank(f, s.prefs))
+                note("arrange by name: ${plain?.size} steps in a fixed order, ${tied?.size} with equal names free")
+                check(tied != null && plain != null && tied.size <= plain.size, "equal Pokémon free to trade places never cost more moves")
+                arranged = order.map { it.uuid }
+                s.ops.start(PcOps.Kind.ARRANGE, tied ?: emptyList())
+                phase = 71; wait = 0
+            }
+            71 -> {
+                val s = screen ?: run { phase = 99; return }
+                if (s.ops.running && wait < 600) return
+                s.ops.clear()
+                val names = onServer(client) { p -> (0 until arranged.size).map { i -> p.pc().get(PCPosition(i / 30, i % 30))?.species?.name } }
+                val wanted = arranged.map { id -> s.entries.first { it.uuid == id }.pokemon.species.name }
+                check(names == wanted, "the server's PC is in name order ($names)")
+                phase = 75; wait = 0
+            }
+            75 -> if (wait > 5) {   // double click: out of the party into the PC, then back
+                val s = screen ?: run { phase = 99; return }
+                val e = s.entries.first { it.place.inParty }
+                s.javaClass.getDeclaredMethod("toggleParty", PcEntry::class.java).apply { isAccessible = true }.invoke(s, e)
+                phase = 76; wait = 0
+            }
+            76 -> {
+                val s = screen ?: run { phase = 99; return }
+                if (s.ops.running && wait < 300) return
+                s.ops.clear()
+                val inPc = onServer(client) { p -> p.pc().get(teamB!!) != null }
+                check(inPc == true, "a double click on a party member puts it in the PC")
+                com.hunterboard.DevAccess.call(s, "refresh", true)
+                val e = s.entries.first { it.uuid == teamB }
+                s.javaClass.getDeclaredMethod("toggleParty", PcEntry::class.java).apply { isAccessible = true }.invoke(s, e)
+                phase = 77; wait = 0
+            }
+            77 -> {
+                val s = screen ?: run { phase = 99; return }
+                if (s.ops.running && wait < 300) return
+                s.ops.clear()
+                val party = onServer(client) { p -> p.party().get(0)?.uuid }
+                check(party == teamB, "a double click on a PC Pokémon brings it into the party")
+                // a Showdown paste: the Pokémon trained with the set's EVs is found, the other set is a hole
+                val a = s.entries.first { it.uuid == teamA }
+                onServer(client) { p ->
+                    val pk = p.pc().get(teamA!!)!!
+                    pk.evs.set(com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK, 252)
+                    pk.evs.set(com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED, 252)
+                    pk.evs.set(com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE, 4)
+                }
+                // Showdown writes moves in English ("Aura Sphere"): Cobblemon's ids are those names squeezed
+                showdownMoves = a.pokemon.moveSet.getMoves().map { m -> m.name.replaceFirstChar { it.uppercase() } }.take(2)
+                phase = 78; wait = 0
+            }
+            78 -> if (wait > 15) {
+                val s = screen ?: run { phase = 99; return }
+                com.hunterboard.DevAccess.call(s, "refresh", true)
+                val a = s.entries.first { it.uuid == teamA }
+                val species = a.pokemon.species.name
+                val paste = "=== [gen9] Test import ===\n\nBob ($species) (M) @ Leftovers\nAbility: ${a.abilityName}\nEVs: 252 Atk / 4 SpD / 252 Spe\n${a.natureName} Nature\n" +
+                    showdownMoves.joinToString("") { "- $it\n" } + "\nGarchomp @ Choice Scarf\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Earthquake\n"
+                val r = com.hunterboard.pc.PcShowdown.build(paste, s.entries, "X")
+                val slots = r.team.slots()
+                note("showdown import: ${r.found}/${r.sets}, problems ${r.problems}, moves ${slots[0]?.moves}")
+                check(r.sets == 2 && r.found == 1 && slots[0]?.uuid == teamA.toString() && slots[1] == null,
+                    "a Showdown paste finds the Pokémon trained with the set's EVs and leaves a hole for the other")
+                check(slots[0]?.moves?.size == showdownMoves.size, "its moves come from the paste")
+                check(r.team.name == "Test import", "the paste's team name is kept ('${r.team.name}')")
+                check(r.holes[0] == null && r.holes[1]?.species == "Garchomp", "the empty place says which set it was (${r.holes[1]?.label})")
+                // the same species asked with other EVs: the trained one is taken all the same, with a warning; blank move lines are no moves
+                val wanted = listOf(252, 0, 252, 4, 0, 0)
+                val other = com.hunterboard.pc.PcShowdown.build("$species\nEVs: 252 HP / 252 Def / 4 SpA\n- \n-   \n", s.entries, "Y")
+                val om = other.team.slots()[0]
+                note("other EVs: ${om?.uuid == teamA.toString()}, ${other.problems}, ${om?.let { com.hunterboard.pc.PcShowdown.evWarning(it.evs, a) }}")
+                check(other.found == 1 && om?.uuid == teamA.toString() && om.evs == wanted && com.hunterboard.pc.PcShowdown.evsDiffer(om.evs, a),
+                    "a trained Pokémon with other EVs is taken, its set's EVs kept for the warning")
+                check(r.team.slots()[0]?.let { !com.hunterboard.pc.PcShowdown.evsDiffer(it.evs, a) } == true, "no warning when the EVs are the set's")
+                check(other.notes.isEmpty(), "blank move lines are not moves (${other.notes})")
+                // a species with no trained one: a hole that says so
+                val untrained = s.entries.groupBy { it.speciesId }.values.first { l -> l.all { it.evSum == 0 } }.first().pokemon.species.name
+                val none = com.hunterboard.pc.PcShowdown.build("$untrained\nEVs: 252 Spe\n", s.entries, "Z")
+                note("untrained: ${none.holes[0]?.label}")
+                check(none.found == 0 && none.holes[0] != null && none.holes[0]?.label != r.holes[1]?.label, "a species with no EVs anywhere leaves a hole that says why")
+                check(com.hunterboard.pc.PcShowdown.parse("Bob\nIVs: 0 Atk\n").second[0].ivs.toList() == listOf(31, 0, 31, 31, 31, 31), "an IVs line is read, 31 elsewhere")
+                // into a saved team: the window edits that team, under its own name
+                s.prefs.saveTeam(com.hunterboard.pc.PcTeam("Gardée", emptyList()))
+                val ti = s.prefs.teams().lastIndex
+                // the trained one with other EVs, and a set nobody here matches: a warning and a hole to see
+                client.keyboard.clipboard = "$species\nEVs: 252 HP / 252 Def / 4 SpA\n- ${showdownMoves.first()}\n\nGarchomp\nEVs: 252 Atk / 4 SpD / 252 Spe\n- Earthquake\n"
+                DevAccess.call(s.teams, "importShowdown", ti)
+                val d = s.dialog
+                check(d is com.hunterboard.pc.TeamEditDialog && DevAccess.get(d, "index") == ti &&
+                    (DevAccess.get(d, "field") as net.minecraft.client.gui.widget.TextFieldWidget).text == "Gardée",
+                    "a paste imported into a saved team edits that team, its name kept")
+                phase = 79; wait = 0
+            }
+            79 -> if (wait > 10) {   // the window with the import, then saved: the warning stays on the team
+                val s = screen ?: run { phase = 99; return }
+                shot(client, "4i_import_into")
+                s.dialog?.let { DevAccess.call(it, "submit") }
+                phase = 80; wait = 0
+            }
+            80 -> if (wait > 10) {
+                val s = screen ?: run { phase = 99; return }
+                val saved = s.prefs.teams().last()
+                check(saved.name == "Gardée" && saved.slots()[0]?.uuid == teamA.toString() && saved.slots()[0]?.evs?.size == 6,
+                    "saved, the team keeps the set's EVs for its warning")
+                shot(client, "4j_team_warning")
+                val open = s.javaClass.getDeclaredField("filtersOpen").apply { isAccessible = true }.getBoolean(s)
+                check(!open, "the filters are folded when the PC opens")
+                shot(client, "4h_folded")
                 phase = 63; wait = 0
             }
             63 -> if (wait > 10) {   // the player may empty the party: deposit its last Pokémon, the way the menu does
@@ -395,6 +511,15 @@ object PcE2E {
             }
             10 -> if (wait > 10) {
                 check(client.currentScreen !is HunterPcScreen, "a close from the server closes HunterBoard's PC")
+                // "open the HunterBoard PC first": /pc lands on it directly
+                com.hunterboard.DevAccess.set(com.hunterboard.ModConfig, "hunterPcFirst", true)
+                onServer(client) { p -> p.server.commandManager.executeWithPrefix(p.commandSource.withLevel(4), "pc") }
+                phase = 13; wait = 0
+            }
+            13 -> if (wait > 20) {
+                check(client.currentScreen is HunterPcScreen, "with 'open first' on, /pc opens HunterBoard's PC (${client.currentScreen?.javaClass?.simpleName})")
+                com.hunterboard.DevAccess.set(com.hunterboard.ModConfig, "hunterPcFirst", false)
+                (client.currentScreen as? HunterPcScreen)?.close()
                 client.setScreen(null)
                 shot(client, "6_hud_shown")
                 client.options.hudHidden = true

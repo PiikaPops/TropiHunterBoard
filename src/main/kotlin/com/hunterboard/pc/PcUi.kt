@@ -23,6 +23,8 @@ internal const val SHINY_COLOR = 0xFFFFD75E.toInt()
 internal const val ALPHA_COLOR = 0xFFFF5A5A.toInt()
 internal const val FAV_COLOR = 0xFFFF8AC8.toInt()
 internal const val LEGEND_COLOR = 0xFFB98CFF.toInt()
+/** A team member whose EVs are not its Showdown set's. */
+internal const val EV_WARN = 0xFFFF9A3C.toInt()
 internal const val ITEM_COLOR = 0xFF7FD4FF.toInt()
 
 internal fun fit(tr: TextRenderer, s: String, w: Int): String {
@@ -212,6 +214,23 @@ internal abstract class PcDialog(val screen: HunterPcScreen, val w: Int, val h: 
             return
         }
         UiKit.button(ctx, tr, bx, by, bw, 14, label, inside(mx, my, bx, by, bw, 14), active)
+    }
+
+    /** A zone of the window: darker than the window, framed, with its title on a band. */
+    protected fun zone(ctx: DrawContext, x1: Int, y1: Int, x2: Int, y2: Int, title: String?) {
+        ctx.fill(x1, y1, x2, y2, ZONE)
+        UiKit.border(ctx, x1, y1, x2 - x1, y2 - y1, UiKit.BORDER_DIM)
+        if (title != null) {
+            ctx.fill(x1 + 1, y1 + 1, x2 - 1, y1 + 13, BAND)
+            UiKit.sectionTitle(ctx, tr, title, x1 + 4, y1 + 3)
+        }
+    }
+
+    /** Zones darker than the window, wells darker still, cards lighter: whatever the theme. */
+    protected companion object Style {
+        const val ZONE = 0x30000000
+        const val BAND = 0x38000000
+        const val WELL = 0x48000000
     }
 
     protected fun danger(ctx: DrawContext, bx: Int, by: Int, bw: Int, label: String, mx: Int, my: Int) {

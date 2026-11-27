@@ -18,6 +18,7 @@ import net.minecraft.util.Identifier
 import org.joml.Matrix4f
 import org.joml.Quaternionf
 import org.lwjgl.opengl.GL11
+import org.lwjgl.system.MemoryUtil
 
 /**
  * Still portraits for the PC grid, each drawn once into an off-screen atlas and then
@@ -151,8 +152,11 @@ internal object PcPortraitAtlas {
         val it = pending.entries.iterator()
         try {
             RenderSystem.backupProjectionMatrix()
+            var measured = 0
             while (it.hasNext() && done < PER_FRAME) {
                 val (k, pokemon) = it.next()
+                // a look seen for the first time is measured first; a few per frame (each one waits for the GPU)
+                val fit = fits[k] ?: (if (measured < MEASURE_PER_FRAME) measure(pokemon).also { fits[k] = it; measured++ } else null) ?: break
                 it.remove()
                 if (tiles.size >= CAPACITY) { tiles.clear(); f.clear(MinecraftClient.IS_SYSTEM_MAC) }
                 val index = tiles.size
@@ -165,13 +169,7 @@ internal object PcPortraitAtlas {
                 RenderSystem.clear(GL11.GL_COLOR_BUFFER_BIT or GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
                 RenderSystem.setProjectionMatrix(Matrix4f().setOrtho(0f, TILE.toFloat(), TILE.toFloat(), 0f, 1000f, 21000f), VertexSorter.BY_Z)
                 try {
-                    val ms = MatrixStack()
-                    ms.translate(TILE * 0.5, -TILE * OFFSET, 0.0)
-                    ms.scale(TILE * SCALE, TILE * SCALE, TILE * SCALE)
-                    val rotation = Quaternionf().rotationXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(325.0).toFloat(), 0f)
-                    drawProfilePokemon(pokemon.asRenderablePokemon(), ms, rotation, PoseType.PROFILE, FloatingState(), 0f, 20f,
-                        ProfileTransformType.SUMMARY, false, 1f, 1f, 1f, 1f, 0f, 0f, 15)
-                    client.bufferBuilders.entityVertexConsumers.draw()
+                    drawModel(pokemon, fit)
                 } catch (e: Throwable) {
                     HunterBoard.LOGGER.debug("[PC] portrait of $k failed: $e")
                 }
@@ -185,7 +183,7 @@ internal object PcPortraitAtlas {
         }
     }
 
-    /** Frees the atlas (16 MB of video memory) when the PC screen goes away. */
+    /** Frees the atlas (16 MB of video memory) when the PC screen goes away; the measures stay. */
     fun release() {
         pending.clear()
         tiles.clear()
@@ -194,9 +192,121 @@ internal object PcPortraitAtlas {
             it.delete()
         }
         fb = null
+        probe?.delete()
+        probe = null
     }
 
     /** Same framing as the live portraits (see Portraits). */
     private const val SCALE = 0.038f
     private const val OFFSET = 0.42
+
+    // ── fitting each look in its cell ──────────────────────────────────────────────────
+    //
+    // Cobblemon's portrait framing (SCALE, OFFSET) is the same for every species, so the big
+    // ones — Wailord, Steelix, Gyarados, Groudon… — came out cut at the cell's edge. Each look
+    // is drawn once, smaller, in a probe buffer and the pixels it covers read back: one that
+    // fits its tile keeps the framing exactly as it was, one that does not is shrunk about its
+    // feet and slid in until it fits whole. Measured once per look for the session.
+
+    /** Where a look's model goes in its tile (pixels, Y down) and its scale. */
+    private class Fit(val x: Float, val y: Float, val scale: Float)
+
+    private val DEFAULT = Fit(TILE * 0.5f, (-TILE * OFFSET).toFloat(), TILE * SCALE)
+    private val fits = HashMap<String, Fit>()
+    private const val PROBE = 256
+    private const val MEASURE_PER_FRAME = 4
+    /** Room left around a shrunk model, in tile pixels. */
+    private const val MARGIN = 1f
+    private var probe: SimpleFramebuffer? = null
+    private var probeFailed = false
+
+    private fun drawModel(pokemon: Pokemon, fit: Fit) {
+        val ms = MatrixStack()
+        ms.translate(fit.x.toDouble(), fit.y.toDouble(), 0.0)
+        ms.scale(fit.scale, fit.scale, fit.scale)
+        val rotation = Quaternionf().rotationXYZ(Math.toRadians(13.0).toFloat(), Math.toRadians(325.0).toFloat(), 0f)
+        drawProfilePokemon(pokemon.asRenderablePokemon(), ms, rotation, PoseType.PROFILE, FloatingState(), 0f, 20f,
+            ProfileTransformType.SUMMARY, false, 1f, 1f, 1f, 1f, 0f, 0f, 15)
+        MinecraftClient.getInstance().bufferBuilders.entityVertexConsumers.draw()
+    }
+
+    private fun ensureProbe(): SimpleFramebuffer? {
+        probe?.let { return it }
+        if (probeFailed) return null
+        return try {
+            SimpleFramebuffer(PROBE, PROBE, true, MinecraftClient.IS_SYSTEM_MAC).also { it.setClearColor(0f, 0f, 0f, 0f); probe = it }
+        } catch (e: Throwable) {
+            HunterBoard.LOGGER.warn("[PC] Portrait probe unavailable, portraits keep Cobblemon's framing: $e")
+            probeFailed = true
+            null
+        }
+    }
+
+    /**
+     * The look drawn [shrink] times its usual size around the probe's centre (the probe is
+     * [PROBE] / [TILE] times finer than a tile), its pixels read back, and its bounds turned
+     * into tile pixels. Touching the probe's edge means it was cut: tried again smaller.
+     */
+    private fun measure(pokemon: Pokemon): Fit {
+        val p = ensureProbe() ?: return DEFAULT
+        val c = TILE / 2f
+        val pc = PROBE / 2f
+        var shrink = 0.35f
+        repeat(3) {
+            val f = PROBE.toFloat() / TILE * shrink
+            p.beginWrite(true)
+            RenderSystem.clearColor(0f, 0f, 0f, 0f)
+            RenderSystem.clear(GL11.GL_COLOR_BUFFER_BIT or GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC)
+            RenderSystem.setProjectionMatrix(Matrix4f().setOrtho(0f, PROBE.toFloat(), PROBE.toFloat(), 0f, 1000f, 21000f), VertexSorter.BY_Z)
+            try {
+                drawModel(pokemon, Fit(pc + f * (DEFAULT.x - c), pc + f * (DEFAULT.y - c), f * DEFAULT.scale))
+            } catch (e: Throwable) {
+                return DEFAULT
+            }
+            val box = readBox() ?: return DEFAULT   // nothing drawn: left as it is
+            if (box[0] == 0 || box[1] == 0 || box[2] >= PROBE - 1 || box[3] >= PROBE - 1) { shrink *= 0.4f; return@repeat }
+            // probe pixels → tile pixels; rows count from the bottom, the tile's Y from the top
+            fun tile(v: Float) = c + (v - pc) / f
+            return fitOf(tile(box[0].toFloat()), tile(PROBE - box[3] - 1f), tile(box[2] + 1f), tile(PROBE - box[1].toFloat()))
+        }
+        return DEFAULT
+    }
+
+    /** The covered pixels' bounds in the bound probe: [minCol, minRow, maxCol, maxRow], rows from the bottom; null if none. */
+    private fun readBox(): IntArray? {
+        val buf = MemoryUtil.memAlloc(PROBE * PROBE * 4)
+        try {
+            GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4)
+            GL11.glReadPixels(0, 0, PROBE, PROBE, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buf)
+            var c0 = PROBE; var r0 = PROBE; var c1 = -1; var r1 = -1
+            for (r in 0 until PROBE) for (col in 0 until PROBE) {
+                if ((buf.get((r * PROBE + col) * 4 + 3).toInt() and 0xFF) > 16) {
+                    if (col < c0) c0 = col
+                    if (col > c1) c1 = col
+                    if (r < r0) r0 = r
+                    if (r > r1) r1 = r
+                }
+            }
+            return if (c1 < 0) null else intArrayOf(c0, r0, c1, r1)
+        } finally {
+            MemoryUtil.memFree(buf)
+        }
+    }
+
+    /** The framing for a model whose usual bounds in its tile are ([x0], [y0])–([x1], [y1]). */
+    private fun fitOf(x0: Float, y0: Float, x1: Float, y1: Float): Fit {
+        val lo = MARGIN
+        val hi = TILE - MARGIN
+        if (x0 >= lo && x1 <= hi && y0 >= lo && y1 <= hi) return DEFAULT
+        val k = minOf(1f, (hi - lo) / (x1 - x0), (hi - lo) / (y1 - y0))
+        // shrunk about its feet (the bottom centre), so it stands where it stood, then slid inside
+        val ax = (x0 + x1) / 2f
+        val ay = y1
+        val nx0 = ax + k * (x0 - ax)
+        val nx1 = ax + k * (x1 - ax)
+        val ny0 = ay + k * (y0 - ay)
+        val dx = when { nx0 < lo -> lo - nx0; nx1 > hi -> hi - nx1; else -> 0f }
+        val dy = when { ny0 < lo -> lo - ny0; ay > hi -> hi - ay; else -> 0f }
+        return Fit(ax + dx + k * (DEFAULT.x - ax), ay + dy + k * (DEFAULT.y - ay), k * DEFAULT.scale)
+    }
 }

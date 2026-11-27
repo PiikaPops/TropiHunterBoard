@@ -113,6 +113,9 @@ loom {
     runs {
         named("client") {
             source(dev)
+            // developer mode: /hbdebug (see DevMode.kt), on unless -Pdev=false; a player adds the
+            // same JVM argument to their launcher
+            vmArg("-Dhunterboard.dev=${findProperty("dev") ?: "true"}")
             (findProperty("uitour") as String?)?.let { dir ->
                 vmArg("-Dhunterboard.uitour=$dir")
                 (findProperty("uitour.themes") as String?)?.let { vmArg("-Dhunterboard.uitour.themes=$it") }
@@ -121,6 +124,9 @@ loom {
                 (findProperty("uitour.pce2e") as String?)?.let { vmArg("-Dhunterboard.uitour.pce2e=$it") }
                 (findProperty("uitour.habitatfeed") as String?)?.let { vmArg("-Dhunterboard.uitour.habitatfeed=$it") }
                 (findProperty("uitour.controlify") as String?)?.let { vmArg("-Dhunterboard.uitour.controlify=$it") }
+                (findProperty("uitour.raid") as String?)?.let { vmArg("-Dhunterboard.uitour.raid=$it") }
+                (findProperty("uitour.painting") as String?)?.let { vmArg("-Dhunterboard.uitour.painting=$it") }
+                (findProperty("uitour.devmode") as String?)?.let { vmArg("-Dhunterboard.uitour.devmode=$it") }
                 val size = ((findProperty("uitour.size") as String?) ?: "960x540").split("x")
                 programArgs("--width", size[0], "--height", size[1])
             }

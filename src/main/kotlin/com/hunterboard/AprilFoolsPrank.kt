@@ -31,30 +31,59 @@ object AprilFoolsPrank {
     private var messageSent = false
     private var revealSent = false
     private var active = false
+    /** Started by `/hbdebug april prank` (developer mode): runs whatever the date. */
+    private var forced = false
     private val fakeEntityIds = mutableListOf<Int>()
     private val fakeEntityPositions = mutableListOf<Vec3d>()
+
+    /** The 1st of April, or pretended to be (`/hbdebug april on`, developer mode). */
+    private fun aprilFools() = AprilPaintings.simulated || AprilPaintings.isAprilFools()
+
+    /** Seconds until the prank starts, or null when it is not waiting to. */
+    fun secondsUntil(): Long? = if (active && !soundPlayed) (DELAY_TICKS - tickCounter).coerceAtLeast(0L) / 20 else null
+
+    /** Between the cry and the reveal. */
+    val running: Boolean get() = active && soundPlayed && !revealSent
+
+    /** Developer mode: the prank now, whatever the date — the cry on the next tick. False out of a world. */
+    fun trigger(): Boolean {
+        val client = MinecraftClient.getInstance()
+        if (client.world == null || client.player == null) return false
+        start(client, DELAY_TICKS - 1)
+        forced = true
+        return true
+    }
+
+    private fun start(client: MinecraftClient, atTick: Long) {
+        // a prank still showing goes first: no Magikarp left behind
+        for (id in fakeEntityIds) client.world?.removeEntity(id, net.minecraft.entity.Entity.RemovalReason.DISCARDED)
+        active = true
+        forced = false
+        tickCounter = atTick
+        soundPlayed = false
+        messageSent = false
+        revealSent = false
+        fakeEntityIds.clear()
+        fakeEntityPositions.clear()
+    }
 
     fun register() {
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             if (!active) {
                 // Activate when joining a world on April 1st
-                if (client.world != null && client.player != null) {
-                    val now = java.time.LocalDate.now()
-                    if (now.monthValue == 4 && now.dayOfMonth == 1) {
-                        active = true
-                        tickCounter = 0
-                        soundPlayed = false
-                        messageSent = false
-                        revealSent = false
-                        fakeEntityIds.clear()
-                        fakeEntityPositions.clear()
-                    }
-                }
+                if (client.world != null && client.player != null && aprilFools()) start(client, 0L)
                 return@register
             }
 
             // Reset if player leaves
             if (client.world == null || client.player == null) {
+                active = false
+                forced = false
+                return@register
+            }
+
+            // the simulated day stopped before the prank began: it does not come
+            if (!soundPlayed && !forced && !aprilFools()) {
                 active = false
                 return@register
             }

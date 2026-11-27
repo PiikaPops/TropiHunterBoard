@@ -36,9 +36,14 @@ object HunterPc {
             .getOrNull()
     }
 
+    /** The PC screens already sent on to HunterBoard's PC ("open it first"). */
+    private val autoOpened = java.util.WeakHashMap<PCGUI, Unit>()
+
     fun register() {
         ClientTickEvents.START_CLIENT_TICK.register {
-            if (betterPcInstalled && ModConfig.classicPcFirst) runCatching { betterPcPending?.set(null, null) }
+            // Better PC waits behind its button too when HunterBoard's PC is to open first
+            if (betterPcInstalled && (ModConfig.classicPcFirst || (ModConfig.hunterPc && ModConfig.hunterPcFirst)))
+                runCatching { betterPcPending?.set(null, null) }
         }
 
         ScreenEvents.AFTER_INIT.register { client, screen, w, h ->
@@ -48,13 +53,17 @@ object HunterPc {
             val top = (h - PCGUI.BASE_HEIGHT) / 2
             val y = if (top >= 18) top - 16 else 2
             var right = (w + PCGUI.BASE_WIDTH) / 2
+            // straight to HunterBoard's PC, once per PC opened: coming back from it, or a resize, stays here
+            if (ModConfig.hunterPc && ModConfig.hunterPcFirst && autoOpened.put(screen, Unit) == null) {
+                client.execute { if (client.currentScreen === screen) open(screen) }
+            }
             if (ModConfig.hunterPc) {
                 val label = Text.literal("✦ " + L("HunterBoard view", "Vue HunterBoard"))
                 val bw = client.textRenderer.getWidth(label) + 14
                 Screens.getButtons(screen).add(ButtonWidget.builder(label) { open(screen) }.dimensions(right - bw, y, bw, 14).build())
                 right -= bw + 4
             }
-            if (betterPcInstalled && ModConfig.classicPcFirst) {
+            if (betterPcInstalled && (ModConfig.classicPcFirst || (ModConfig.hunterPc && ModConfig.hunterPcFirst))) {
                 val label = Text.literal("Better PC")
                 val bw = client.textRenderer.getWidth(label) + 14
                 Screens.getButtons(screen).add(ButtonWidget.builder(label) { openBetterPc(screen) }.dimensions(right - bw, y, bw, 14).build())

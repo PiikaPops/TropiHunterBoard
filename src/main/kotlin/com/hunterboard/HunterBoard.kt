@@ -56,6 +56,14 @@ object HunterBoard : ClientModInitializer {
 
         // Client-side commands for replay publishing (/hbreplay)
         com.hunterboard.replay.ReplayCommands.register()
+        // Developer mode (JVM argument -Dhunterboard.dev=true): /hbdebug, the seasonal
+        // surprises on any day. Without it the command is not registered at all.
+        if (DevMode.enabled) {
+            LOGGER.info("Developer mode on (-Dhunterboard.dev): /hbdebug registered")
+            DebugCommands.register()
+        }
+        // Tropimon paintings that play a video, with its sound on a click
+        VideoPaintings.register()
 
         // Wide locator bar across the top, fed by Tropimon's radar
         LocatorBar.register()

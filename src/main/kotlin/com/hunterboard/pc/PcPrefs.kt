@@ -19,7 +19,12 @@ data class PcSavedSearch(val name: String, val filter: PcFilterState)
 
 /** One Pokémon of a saved team and the moves it should have once equipped (empty = leave them). */
 @Serializable
-data class PcTeamMember(val uuid: String, val moves: List<String> = emptyList())
+data class PcTeamMember(
+    val uuid: String,
+    val moves: List<String> = emptyList(),
+    /** The EVs its Showdown set asked for (HP, Atk, Def, SpA, SpD, Spe); empty: none asked. A warning while they differ. */
+    val evs: List<Int> = emptyList(),
+)
 
 /**
  * A saved team: six places in party order. A place can stay empty (a member with a blank
@@ -76,6 +81,8 @@ data class PcPrefsData(
     val boxRules: Map<String, String> = emptyMap(),
     val teams: List<PcTeam> = emptyList(),
     val release: ReleaseRules = ReleaseRules(),
+    /** 2: the saved release rules no longer tick alpha and marked by default (see init). */
+    val version: Int = 2,
 )
 
 /**
@@ -102,7 +109,9 @@ class PcPrefs private constructor(private val path: Path?, d: PcPrefsData, priva
     var filter = d.filter; set(v) { field = v; dirty() }
     private val rules = d.boxRules.toMutableMap()
     private val teamList = d.teams.toMutableList()
-    var release = d.release; set(v) { if (field != v) { field = v; dirty() } }
+    // Files written before version 2 ticked alpha and marked as the default did then: unticked once.
+    var release = if (d.version >= 2) d.release else d.release.copy(guards = d.release.guards.copy(alpha = false, marked = false))
+        set(v) { if (field != v) { field = v; dirty() } }
 
     private var changed = false
     private var lastSave = 0L
@@ -249,6 +258,12 @@ class PcPrefs private constructor(private val path: Path?, d: PcPrefsData, priva
         /** Preferences that are never written: the tour, or no account to file them under. */
         fun detached(): PcPrefs = PcPrefs(null, PcPrefsData(), false)
 
+        /** Reads a file of any version; one written before version 2 says so (no "version" in it). */
+        private fun decode(text: String): PcPrefsData {
+            val d = JSON.decodeFromString(PcPrefsData.serializer(), text)
+            return if ("\"version\"" in text) d else d.copy(version = 1)
+        }
+
         private fun load(acc: UUID?): PcPrefs {
             if (acc == null) return detached()
             val hash = MessageDigest.getInstance("SHA-256").digest("hunterboard-pc\n$acc".toByteArray())
@@ -256,7 +271,7 @@ class PcPrefs private constructor(private val path: Path?, d: PcPrefsData, priva
             val path = FabricLoader.getInstance().configDir.resolve("hunterboard").resolve("pc").resolve("$hash.json")
             if (!Files.exists(path)) return PcPrefs(path, PcPrefsData(), true)
             return try {
-                PcPrefs(path, JSON.decodeFromString(PcPrefsData.serializer(), Files.readString(path)), false)
+                PcPrefs(path, decode(Files.readString(path)), false)
             } catch (e: Exception) {
                 // keep the unreadable file aside rather than overwrite the player's favourites
                 HunterBoard.LOGGER.error("[PC] Unreadable PC preferences, kept aside: ${e.message}")

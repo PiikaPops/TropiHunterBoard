@@ -49,5 +49,8 @@
   },
   "special_rickroll": {
     "sounds": ["hunterboard:special/rickroll"]
+  },
+  "video.evasion": {
+    "sounds": [{"name": "hunterboard:video/evasion", "stream": true}]
   }
 }

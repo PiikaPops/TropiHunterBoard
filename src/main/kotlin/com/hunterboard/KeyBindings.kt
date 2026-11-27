@@ -13,6 +13,13 @@ object KeyBindings {
     private lateinit var spawnInfoKey: KeyBinding
     private lateinit var searchKey: KeyBinding
     private lateinit var cycleHudModeKey: KeyBinding
+    /**
+     * Hides the raid card, and brings it back. Its own key: the card used to go with
+     * Tropimon's accept key (Y), which the player presses for Tropimon's cards too — to
+     * teleport to the raid from its announcement, or to keep a capture.
+     */
+    lateinit var raidCardKey: KeyBinding
+        private set
 
     fun register() {
         toggleHudKey = KeyBindingHelper.registerKeyBinding(
@@ -47,6 +54,15 @@ object KeyBindings {
                 "key.hunterboard.cycle_mode",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_RIGHT_BRACKET, // $ on French AZERTY
+                "category.hunterboard"
+            )
+        )
+
+        raidCardKey = KeyBindingHelper.registerKeyBinding(
+            KeyBinding(
+                "key.hunterboard.raid_card",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_DELETE, // free in Tropimon's modpack, unlike the letters left
                 "category.hunterboard"
             )
         )
